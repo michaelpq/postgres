@@ -3995,11 +3995,8 @@ str_time(pg_time_t tnow)
  * If so, validate recovery parameters and determine recovery target timeline.
  */
 static void
-readRecoveryCommandFile(void)
+CheckRecoveryReadyFile(void)
 {
-	if (stat(RECOVERY_COMMAND_READY, &stat_buf) != 0)
-		return;		/* not there, so no archive recovery */
-
 	/* Check for compulsory parameters */
 	if (standby_mode && !restore_command[0] && !primary_conninfo[0])
 		ereport(WARNING,
@@ -4025,7 +4022,7 @@ readRecoveryCommandFile(void)
 				!existsTimeLineHistory(recovery_target_timeline))
 				ereport(FATAL,
 						(errmsg("recovery target timeline %u does not exist",
-								rtli)));
+								recovery_target_timeline)));
 			recoveryTargetTLI = recovery_target_timeline;
 			recoveryTargetIsLatest = false;
 		}
@@ -4599,31 +4596,23 @@ StartupXLOG(void)
 	 */
 	CheckRecoveryReadyFile();
 
-	/*
-	 * Save archive_cleanup_command in shared memory so that other processes
-	 * can see it.
-	 */
-	strncpy(XLogCtl->archiveCleanupCommand,
-			archiveCleanupCommand ? archiveCleanupCommand : "",
-			sizeof(XLogCtl->archiveCleanupCommand));
-
 	if (InArchiveRecovery)
 	{
 		if (standby_mode)
 			ereport(LOG,
 					(errmsg("entering standby mode")));
-		else if (recoveryTarget == RECOVERY_TARGET_XID)
+		else if (recovery_target == RECOVERY_TARGET_XID)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to XID %u",
-							recoveryTargetXid)));
-		else if (recoveryTarget == RECOVERY_TARGET_TIME)
+							recovery_target_xid)));
+		else if (recovery_target == RECOVERY_TARGET_TIME)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to %s",
-							timestamptz_to_str(recoveryTargetTime))));
-		else if (recoveryTarget == RECOVERY_TARGET_NAME)
+							timestamptz_to_str(recovery_target_time))));
+		else if (recovery_target == RECOVERY_TARGET_NAME)
 			ereport(LOG,
 					(errmsg("starting point-in-time recovery to \"%s\"",
-							recoveryTargetName)));
+							recovery_target_name)));
 		else
 			ereport(LOG,
 					(errmsg("starting archive recovery")));
@@ -5381,17 +5370,17 @@ StartupXLOG(void)
 		 * Create a comment for the history file to explain why and where
 		 * timeline changed.
 		 */
-		if (recoveryTarget == RECOVERY_TARGET_XID)
+		if (recovery_target == RECOVERY_TARGET_XID)
 			snprintf(reason, sizeof(reason),
 					 "%s transaction %u",
 					 recoveryStopAfter ? "after" : "before",
 					 recoveryStopXid);
-		else if (recoveryTarget == RECOVERY_TARGET_TIME)
+		else if (recovery_target == RECOVERY_TARGET_TIME)
 			snprintf(reason, sizeof(reason),
 					 "%s %s\n",
 					 recoveryStopAfter ? "after" : "before",
 					 timestamptz_to_str(recoveryStopTime));
-		else if (recoveryTarget == RECOVERY_TARGET_NAME)
+		else if (recovery_target == RECOVERY_TARGET_NAME)
 			snprintf(reason, sizeof(reason),
 					 "at restore point \"%s\"",
 					 recoveryStopName);
@@ -8908,7 +8897,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 									 tli, curFileTLI);
 						}
 						curFileTLI = tli;
-						RequestXLogStreaming(curFileTLI, ptr, PrimaryConnInfo);
+						RequestXLogStreaming(curFileTLI, ptr);
 					}
 					/*
 					 * Move to XLOG_FROM_STREAM state in either case. We'll get
