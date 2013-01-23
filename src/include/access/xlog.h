@@ -190,6 +190,20 @@ extern char *XLogArchiveCommand;
 extern bool EnableHotStandby;
 extern bool fullPageWrites;
 extern bool log_checkpoints;
+extern char *restore_command;
+extern char *archive_cleanup_command;
+extern char *recovery_end_command;
+extern bool standby_mode;
+extern char *primary_conninfo;
+extern char *trigger_file;
+extern RecoveryTargetType recovery_target;
+extern TransactionId recovery_target_xid;
+extern TimestampTz recovery_target_time;
+extern char *recovery_target_name;
+extern bool recovery_target_inclusive;
+extern bool pause_at_recovery_target;
+extern char *recovery_target_timeline_string;
+extern TimeLineID recovery_target_timeline;
 
 /* WAL levels */
 typedef enum WalLevel

@@ -198,6 +198,23 @@
 #archive_timeout = 0		# force a logfile segment switch after this
 				# number of seconds; 0 disables
 
+# - Archive Recovery -
+#restore_command = ''		# command to use to restore an archived logfile segment
+				# placeholders: %p = path of file to restore
+				#               %f = file name only
+				# e.g. 'cp /mnt/server/archivedir/%f %p'
+#archive_cleanup_command = ''	# command to execute at every restartpoint
+#recovery_end_command = ''	# command to execute at completion of recovery
+
+# - Recovery Target -
+#recovery_target_xid = ''
+#recovery_target_name = ''
+#recovery_target_time = ''
+#recovery_target_inclusive = on
+#pause_at_recovery_target = on
+#recovery_target_timeline = ''		# timeline ID or 'latest'
+					# (change requires restart)
+
 
 #------------------------------------------------------------------------------
 # REPLICATION
@@ -225,6 +242,10 @@
 
 # These settings are ignored on a master server.
 
+#standby_mode = off			# "on" starts the server as a standby
+					# (change requires restart)
+#primary_conninfo = ''			# connection string to connect to the master
+#trigger_file = ''			# trigger file to promote the standby
 #hot_standby = off			# "on" allows queries during recovery
 					# (change requires restart)
 #max_standby_archive_delay = 30s	# max delay before canceling queries

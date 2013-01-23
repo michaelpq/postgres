@@ -38,8 +38,8 @@
 
   <para>
    To configure a standby
-   server to use <application>pg_archivecleanup</>, put this into its
-   <filename>recovery.conf</filename> configuration file:
+   server to use <application>pg_archivecleanup</>, specify
+   <xref linkend="guc-archive-cleanup-command"> like this:
 <programlisting>
 archive_cleanup_command = 'pg_archivecleanup <replaceable>archivelocation</> %r'
 </programlisting>
@@ -47,7 +47,7 @@ archive_cleanup_command = 'pg_archivecleanup <replaceable>archivelocation</> %r'
    files should be removed.
   </para>
   <para>
-   When used within <xref linkend="archive-cleanup-command">, all WAL files
+   When used within <varname>archive_cleanup_command</>, all WAL files
    logically preceding the value of the <literal>%r</> argument will be removed
    from <replaceable>archivelocation</>. This minimizes the number of files
    that need to be retained, while preserving crash-restart capability.  Use of

@@ -2,23 +2,14 @@
 # PostgreSQL recovery config file
 # -------------------------------
 #
-# Edit this file to provide the parameters that PostgreSQL needs to
-# perform an archive recovery of a database, or to act as a replication
-# standby.
+# PostgreSQL 9.2 or later, recovery.conf is no longer used. Instead,
+# specify all recovery parameters in postgresql.conf and create
+# recovery.trigger to enter archive recovery or standby mode.
 #
-# If "recovery.conf" is present in the PostgreSQL data directory, it is
-# read on postmaster startup.  After successful recovery, it is renamed
-# to "recovery.done" to ensure that we do not accidentally re-enter
-# archive recovery or standby mode.
+# If you must use recovery.conf, specify "include directives" in
+# postgresql.conf like this:
 #
-# This file consists of lines of the form:
-#
-#   name = value
-#
-# Comments are introduced with '#'.
-#
-# The complete list of option names and allowed values can be found
-# in the PostgreSQL documentation.
+#   include 'recovery.conf'
 #
 #---------------------------------------------------------------------------
 # ARCHIVE RECOVERY PARAMETERS

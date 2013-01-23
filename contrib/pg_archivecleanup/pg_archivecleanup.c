@@ -255,7 +255,7 @@ usage(void)
 	printf("  -x EXT         clean up files if they have this extension\n");
 	printf("  -?, --help     show this help, then exit\n");
 	printf("\n"
-		   "For use as archive_cleanup_command in recovery.conf when standby_mode = on:\n"
+		   "For use as archive_cleanup_command in postgresql.conf when standby_mode = on:\n"
 		   "  archive_cleanup_command = 'pg_archivecleanup [OPTION]... ARCHIVELOCATION %%r'\n"
 		   "e.g.\n"
 		   "  archive_cleanup_command = 'pg_archivecleanup /mnt/server/archiverdir %%r'\n");
