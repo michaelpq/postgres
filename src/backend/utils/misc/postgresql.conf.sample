@@ -208,12 +208,12 @@
 
 # - Recovery Target -
 #recovery_target_xid = ''
-#recovery_target_name = ''
-#recovery_target_time = ''
-#recovery_target_inclusive = on
-#pause_at_recovery_target = on
+#recovery_target_name = ''		# e.g. 'daily backup 2011-01-26'
+#recovery_target_time = ''		# e.g. '2004-07-14 22:39:00 EST'
 #recovery_target_timeline = ''		# timeline ID or 'latest'
 					# (change requires restart)
+#recovery_target_inclusive = on		
+#pause_at_recovery_target = on		# Pause recovery once target is reached
 
 
 #------------------------------------------------------------------------------
@@ -242,10 +242,6 @@
 
 # These settings are ignored on a master server.
 
-#standby_mode = off			# "on" starts the server as a standby
-					# (change requires restart)
-#primary_conninfo = ''			# connection string to connect to the master
-#trigger_file = ''			# trigger file to promote the standby
 #hot_standby = off			# "on" allows queries during recovery
 					# (change requires restart)
 #max_standby_archive_delay = 30s	# max delay before canceling queries
@@ -261,6 +257,11 @@
 #wal_receiver_timeout = 60s		# time that receiver waits for
 					# communication from master
 					# in milliseconds; 0 disables
+#standby_mode = off			# "on" starts the server as a standby
+					# (change requires restart)
+#primary_conninfo = ''			# connection string to connect to the master
+					# e.g. 'host=localhost port=5432'
+#trigger_file = ''			# trigger file to promote the standby
 
 
 #------------------------------------------------------------------------------
