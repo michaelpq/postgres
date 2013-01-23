@@ -3996,6 +3996,20 @@ str_time(pg_time_t tnow)
 static void
 CheckRecoveryReadyFile(void)
 {
+	FILE *fd;
+
+	/* Check the presence of recovery trigger file */
+	fd = AllocateFile(RECOVERY_COMMAND_READY, "r");
+	if (fd == NULL)
+	{
+		if (errno == ENOENT)
+			return;		/* not there, so no archive recovery */
+		ereport(FATAL,
+				(errcode_for_file_access(),
+				 errmsg("could not open recovery file trigger \"%s\": %m",
+						RECOVERY_COMMAND_READY)));
+	}
+
 	/* Check for compulsory parameters */
 	if (standby_mode)
 	{
@@ -4489,7 +4503,6 @@ CheckRequiredParameterValues(void)
 									 ControlFile->max_locks_per_xact);
 	}
 }
-
 
 /*
  * This must be called ONCE during postmaster or standalone-backend startup
