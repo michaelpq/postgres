@@ -601,7 +601,6 @@ static void recoveryPausesHere(void);
 static void SetLatestXTime(TimestampTz xtime);
 static void SetCurrentChunkStartTime(TimestampTz xtime);
 static void CheckRequiredParameterValues(void);
-static void CheckRestoreCommandSet(void);
 static void XLogReportParameters(void);
 static void checkTimeLineSwitch(XLogRecPtr lsn, TimeLineID newTLI);
 static void LocalSetXLogInsertAllowed(void);
@@ -3998,11 +3997,20 @@ static void
 CheckRecoveryReadyFile(void)
 {
 	/* Check for compulsory parameters */
-	if (standby_mode && !restore_command[0] && !primary_conninfo[0])
-		ereport(WARNING,
-				(errmsg("neither primary_conninfo nor restore_command is specified"),
-				 errhint("The database server will regularly poll the pg_xlog subdirectory to check for files placed there until either of them is set in postgresql.conf.")));
-	CheckRestoreCommandSet();
+	if (standby_mode)
+	{
+		if (!restore_command[0] && !primary_conninfo[0])
+			ereport(WARNING,
+					(errmsg("Neither primary_conninfo nor restore_command specified"),
+					 errhint("The database server will regularly poll the pg_xlog subdirectory to check for files placed there.")));
+	}
+	else
+	{
+		if (!restore_command[0])
+			ereport(FATAL,
+					(errmsg("restore_command must be specified when "
+							"standby_mode is not enabled")));
+	}
 
 	/* Enable fetching from archive recovery area */
 	InArchiveRecovery = true;
@@ -4482,17 +4490,6 @@ CheckRequiredParameterValues(void)
 	}
 }
 
-/*
- * Check to see if restore_command must be set for archive recovery
- * when standby mode is not enabled
- */
-static void
-CheckRestoreCommandSet(void)
-{
-	if (InArchiveRecovery && !standby_mode && !restore_command[0])
-		ereport(FATAL,
-				(errmsg("restore_command must be specified for archive recovery when standby mode is not enabled")));
-}
 
 /*
  * This must be called ONCE during postmaster or standalone-backend startup
