@@ -48,7 +48,7 @@ static void prepare_new_databases(void);
 static void create_new_objects(void);
 static void copy_clog_xlog_xid(void);
 static void set_frozenxids(void);
-static void setup(char *argv0, bool live_check);
+static void setup(char *argv0, bool *live_check);
 static void cleanup(void);
 
 ClusterInfo old_cluster,
@@ -80,9 +80,9 @@ main(int argc, char **argv)
 	adjust_data_dir(&old_cluster);
 	adjust_data_dir(&new_cluster);
 
-	output_check_banner(&live_check);
+	setup(argv[0], &live_check);
 
-	setup(argv[0], live_check);
+	output_check_banner(live_check);
 
 	check_cluster_versions();
 
@@ -95,7 +95,7 @@ main(int argc, char **argv)
 
 
 	/* -- NEW -- */
-	start_postmaster(&new_cluster);
+	start_postmaster(&new_cluster, true);
 
 	check_new_cluster();
 	report_clusters_compatible();
@@ -116,7 +116,7 @@ main(int argc, char **argv)
 	/* New now using xids of the old system */
 
 	/* -- NEW -- */
-	start_postmaster(&new_cluster);
+	start_postmaster(&new_cluster, true);
 
 	prepare_new_databases();
 
@@ -177,7 +177,7 @@ main(int argc, char **argv)
 
 
 static void
-setup(char *argv0, bool live_check)
+setup(char *argv0, bool *live_check)
 {
 	char		exec_path[MAXPGPATH];	/* full path to my executable */
 
@@ -189,15 +189,39 @@ setup(char *argv0, bool live_check)
 
 	verify_directories();
 
-	/* no postmasters should be running */
-	if (!live_check && is_server_running(old_cluster.pgdata))
-		pg_log(PG_FATAL, "There seems to be a postmaster servicing the old cluster.\n"
-			   "Please shutdown that postmaster and try again.\n");
+	/* no postmasters should be running, except for a live check */
+	if (pid_lock_file_exists(old_cluster.pgdata))
+	{
+		/*
+		 *	If we have a postmaster.pid file, try to start the server.  If
+		 *	it starts, the pid file was stale, so stop the server.  If it
+		 *	doesn't start, assume the server is running.  If the pid file
+		 *	is left over from a server crash, this also allows any committed
+		 *	transactions stored in the WAL to be replayed so they are not
+		 *	lost, because WAL files are not transfered from old to new
+		 *	servers.
+		 */		
+		if (start_postmaster(&old_cluster, false))
+			stop_postmaster(false);
+		else
+		{
+			if (!user_opts.check)
+				pg_log(PG_FATAL, "There seems to be a postmaster servicing the old cluster.\n"
+					   "Please shutdown that postmaster and try again.\n");
+			else
+				*live_check = true;
+		}
+	}
 
 	/* same goes for the new postmaster */
-	if (is_server_running(new_cluster.pgdata))
-		pg_log(PG_FATAL, "There seems to be a postmaster servicing the new cluster.\n"
+	if (pid_lock_file_exists(new_cluster.pgdata))
+	{
+		if (start_postmaster(&new_cluster, false))
+			stop_postmaster(false);
+		else
+			pg_log(PG_FATAL, "There seems to be a postmaster servicing the new cluster.\n"
 			   "Please shutdown that postmaster and try again.\n");
+	}
 
 	/* get path to pg_upgrade executable */
 	if (find_my_exec(argv0, exec_path) < 0)
@@ -314,12 +338,11 @@ create_new_objects(void)
 		snprintf(log_file_name, sizeof(log_file_name), DB_DUMP_LOG_FILE_MASK, old_db->db_oid);
 
 		/*
-		 *	Using pg_restore --single-transaction is faster than other
-		 *	methods, like --jobs.  pg_dump only produces its output at the
-		 *	end, so there is little parallelism using the pipe.
+		 *	pg_dump only produces its output at the end, so there is little
+		 *	parallelism if using the pipe.
 		 */
 		parallel_exec_prog(log_file_name, NULL,
-				  "\"%s/pg_restore\" %s --exit-on-error --single-transaction --verbose --dbname \"%s\" \"%s\"",
+				  "\"%s/pg_restore\" %s --exit-on-error --verbose --dbname \"%s\" \"%s\"",
 				  new_cluster.bindir, cluster_conn_opts(&new_cluster),
 				  old_db->db_name, sql_file_name);
 	}
@@ -382,6 +405,52 @@ copy_clog_xlog_xid(void)
 			  new_cluster.bindir, old_cluster.controldata.chkpnt_nxtxid,
 			  new_cluster.pgdata);
 	check_ok();
+
+	/*
+	 * If both new and old are after the pg_multixact change commit, copy those
+	 * files too.  If the old server is before that change and the new server
+	 * is after, then we don't copy anything but we need to reset pg_control so
+	 * that the new server doesn't attempt to read multis older than the cutoff
+	 * value.
+	 */
+	if (old_cluster.controldata.cat_ver >= MULTIXACT_FORMATCHANGE_CAT_VER &&
+		new_cluster.controldata.cat_ver >= MULTIXACT_FORMATCHANGE_CAT_VER)
+	{
+		copy_subdir_files("pg_multixact/offsets");
+		copy_subdir_files("pg_multixact/members");
+		prep_status("Setting next multixact ID and offset for new cluster");
+		/*
+		 * we preserve all files and contents, so we must preserve both "next"
+		 * counters here and the oldest multi present on system.
+		 */
+		exec_prog(UTILITY_LOG_FILE, NULL, true,
+				  "\"%s/pg_resetxlog\" -O %u -m %u,%u \"%s\"",
+				  new_cluster.bindir,
+				  old_cluster.controldata.chkpnt_nxtmxoff,
+				  old_cluster.controldata.chkpnt_nxtmulti,
+				  old_cluster.controldata.chkpnt_oldstMulti,
+				  new_cluster.pgdata);
+		check_ok();
+	}
+	else if (new_cluster.controldata.cat_ver >= MULTIXACT_FORMATCHANGE_CAT_VER)
+	{
+		prep_status("Setting oldest multixact ID on new cluster");
+		/*
+		 * We don't preserve files in this case, but it's important that the
+		 * oldest multi is set to the latest value used by the old system, so
+		 * that multixact.c returns the empty set for multis that might be
+		 * present on disk.  We set next multi to the value following that; it
+		 * might end up wrapped around (i.e. 0) if the old cluster had
+		 * next=MaxMultiXactId, but multixact.c can cope with that just fine.
+		 */
+		exec_prog(UTILITY_LOG_FILE, NULL, true,
+				  "\"%s/pg_resetxlog\" -m %u,%u \"%s\"",
+				  new_cluster.bindir,
+				  old_cluster.controldata.chkpnt_nxtmulti + 1,
+				  old_cluster.controldata.chkpnt_nxtmulti,
+				  new_cluster.pgdata);
+		check_ok();
+	}
 
 	/* now reset the wal archives in the new cluster */
 	prep_status("Resetting WAL archives");

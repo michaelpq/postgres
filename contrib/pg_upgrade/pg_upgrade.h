@@ -108,6 +108,10 @@ extern char *output_files[];
  */
 #define VISIBILITY_MAP_CRASHSAFE_CAT_VER 201107031
 
+/*
+ * pg_multixact format changed in this catversion:
+ */
+#define MULTIXACT_FORMATCHANGE_CAT_VER 201301231
 
 /*
  * Each relation is represented by a relinfo structure.
@@ -182,6 +186,9 @@ typedef struct
 	uint32		chkpnt_tli;
 	uint32		chkpnt_nxtxid;
 	uint32		chkpnt_nxtoid;
+	uint32		chkpnt_nxtmulti;
+	uint32		chkpnt_nxtmxoff;
+	uint32		chkpnt_oldstMulti;
 	uint32		align;
 	uint32		blocksz;
 	uint32		largesz;
@@ -300,7 +307,7 @@ extern OSInfo os_info;
 
 /* check.c */
 
-void		output_check_banner(bool *live_check);
+void		output_check_banner(bool live_check);
 void		check_and_dump_old_cluster(bool live_check,
 				  char **sequence_script_file_name);
 void		check_new_cluster(void);
@@ -334,7 +341,7 @@ exec_prog(const char *log_file, const char *opt_log_file,
 		  bool throw_error, const char *fmt,...)
 __attribute__((format(PG_PRINTF_ATTRIBUTE, 4, 5)));
 void		verify_directories(void);
-bool		is_server_running(const char *datadir);
+bool		pid_lock_file_exists(const char *datadir);
 
 
 /* file.c */
@@ -422,7 +429,7 @@ __attribute__((format(PG_PRINTF_ATTRIBUTE, 2, 3)));
 
 char	   *cluster_conn_opts(ClusterInfo *cluster);
 
-void		start_postmaster(ClusterInfo *cluster);
+bool		start_postmaster(ClusterInfo *cluster, bool throw_error);
 void		stop_postmaster(bool fast);
 uint32		get_major_server_version(ClusterInfo *cluster);
 void		check_pghost_envvar(void);
