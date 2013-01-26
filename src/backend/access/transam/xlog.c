@@ -63,7 +63,7 @@
 
 
 /* File path names (all relative to $PGDATA) */
-#define RECOVERY_COMMAND_READY	"recovery.trigger"
+#define RECOVERY_COMMAND_FILE	"recovery.conf"
 #define RECOVERY_COMMAND_DONE	"recovery.done"
 #define PROMOTE_SIGNAL_FILE "promote"
 
@@ -4008,15 +4008,15 @@ CheckRecoveryReadyFile(void)
 	FILE *fd;
 
 	/* Check the presence of recovery trigger file */
-	fd = AllocateFile(RECOVERY_COMMAND_READY, "r");
+	fd = AllocateFile(RECOVERY_COMMAND_FILE, "r");
 	if (fd == NULL)
 	{
 		if (errno == ENOENT)
 			return;		/* not there, so no archive recovery */
 		ereport(FATAL,
 				(errcode_for_file_access(),
-				 errmsg("could not open recovery file trigger \"%s\": %m",
-						RECOVERY_COMMAND_READY)));
+				 errmsg("could not open recovery command file \"%s\": %m",
+						RECOVERY_COMMAND_FILE)));
 	}
 
 	/* Check for compulsory parameters */
@@ -4138,11 +4138,11 @@ exitArchiveRecovery(TimeLineID endTLI, XLogSegNo endLogSegNo)
 	 * re-enter archive recovery mode in a subsequent crash.
 	 */
 	unlink(RECOVERY_COMMAND_DONE);
-	if (rename(RECOVERY_COMMAND_READY, RECOVERY_COMMAND_DONE) != 0)
+	if (rename(RECOVERY_COMMAND_FILE, RECOVERY_COMMAND_DONE) != 0)
 		ereport(FATAL,
 				(errcode_for_file_access(),
 				 errmsg("could not rename file \"%s\" to \"%s\": %m",
-						RECOVERY_COMMAND_READY, RECOVERY_COMMAND_DONE)));
+						RECOVERY_COMMAND_FILE, RECOVERY_COMMAND_DONE)));
 
 	ereport(LOG,
 			(errmsg("archive recovery complete")));
