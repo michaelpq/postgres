@@ -594,7 +594,7 @@ static bool InRedo = false;
 static bool bgwriterLaunched = false;
 
 
-static void CheckRecoveryReadyFile(void);
+static void readRecoveryCommandFile(void);
 static void exitArchiveRecovery(TimeLineID endTLI, XLogSegNo endLogSegNo);
 static bool recoveryStopsHere(XLogRecord *record, bool *includeThis);
 static void recoveryPausesHere(void);
@@ -4003,20 +4003,156 @@ str_time(pg_time_t tnow)
  * If so, validate recovery parameters and determine recovery target timeline.
  */
 static void
-CheckRecoveryReadyFile(void)
+readRecoveryCommandFile(void)
 {
 	FILE *fd;
+	ConfigVariable *item,
+		*head = NULL,
+		*tail = NULL;
 
-	/* Check the presence of recovery trigger file */
+	/* Check the presence of recovery command file */
 	fd = AllocateFile(RECOVERY_COMMAND_FILE, "r");
 	if (fd == NULL)
 	{
 		if (errno == ENOENT)
-			return;		/* not there, so no archive recovery */
+			return;				/* not there, so no archive recovery */
 		ereport(FATAL,
 				(errcode_for_file_access(),
 				 errmsg("could not open recovery command file \"%s\": %m",
 						RECOVERY_COMMAND_FILE)));
+	}
+
+	/*
+	 * Since we're asking ParseConfigFp() to report errors as FATAL, there's
+	 * no need to check the return value.
+	 */
+	(void) ParseConfigFp(fd, RECOVERY_COMMAND_FILE, 0, FATAL, &head, &tail);
+
+	FreeFile(fd);
+
+	/*
+	 * Parse each item in recovery command file and set the related GUC
+	 * parameters in consequence. Priority is given to recovery command
+	 * file to postgresql.conf.
+	 */
+	for (item = head; item; item = item->next)
+	{
+		if (strcmp(item->name, "restore_command") == 0)
+		{
+			SetConfigOption("restore_command",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("restore_command = '%s'",
+									 restore_command)));
+		}
+		else if (strcmp(item->name, "recovery_end_command") == 0)
+		{
+			SetConfigOption("recovery_end_command",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("recovery_end_command = '%s'",
+									 recovery_end_command)));
+		}
+		else if (strcmp(item->name, "archive_cleanup_command") == 0)
+		{
+			SetConfigOption("archive_cleanup_command",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("archive_cleanup_command = '%s'",
+									 archive_cleanup_command)));
+		}
+		else if (strcmp(item->name, "pause_at_recovery_target") == 0)
+		{
+			SetConfigOption("pause_at_recovery_target",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("pause_at_recovery_target = '%s'",
+									 pause_at_recovery_target ? "true" : "false")));
+		}
+		else if (strcmp(item->name, "recovery_target_timeline") == 0)
+		{
+			SetConfigOption("recovery_target_timeline",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			if (strcmp(recovery_target_timeline_string, "") != 0)
+				ereport(DEBUG2,
+						(errmsg_internal("recovery_target_timeline = %u", rtli)));
+			ereport(DEBUG2,
+					(errmsg_internal("recovery_target_timeline = latest")));
+		}
+		else if (strcmp(item->name, "recovery_target_xid") == 0)
+		{
+			SetConfigOption("recovery_target_xid",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("recovery_target_xid = %u",
+									 recovery_target_xid)));
+		}
+		else if (strcmp(item->name, "recovery_target_time") == 0)
+		{
+			/*
+			 * if recovery_target_xid or recovery_target_name specified, then
+			 * this overrides recovery_target_time
+			 */
+			if (recoveryTarget == RECOVERY_TARGET_XID ||
+				recoveryTarget == RECOVERY_TARGET_NAME)
+				continue;
+
+			SetConfigOption("recovery_target_time",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("recovery_target_time = '%s'",
+									 timestamptz_to_str(recovery_target_time))));
+		}
+		else if (strcmp(item->name, "recovery_target_name") == 0)
+		{
+			/*
+			 * if recovery_target_xid specified, then this overrides
+			 * recovery_target_name
+			 */
+			if (recoveryTarget == RECOVERY_TARGET_XID)
+				continue;
+
+			SetConfigOption("recovery_target_name",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("recovery_target_name = '%s'",
+									 recovery_target_name)));
+		}
+		else if (strcmp(item->name, "recovery_target_inclusive") == 0)
+		{
+			SetConfigOption("recovery_target_inclusive",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("recovery_target_inclusive = %s",
+									 recovery_target_inclusive ? "true" : "false")));
+		}
+		else if (strcmp(item->name, "standby_mode") == 0)
+		{
+			SetConfigOption("standby_mode",
+							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("standby_mode = '%s'", item->value)));
+		}
+		else if (strcmp(item->name, "primary_conninfo") == 0)
+		{
+			SetConfigOption("primary_conninfo",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("primary_conninfo = '%s'",
+									 primary_conninfo)));
+		}
+		else if (strcmp(item->name, "trigger_file") == 0)
+		{
+			SetConfigOption("trigger_file",
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
+			ereport(DEBUG2,
+					(errmsg_internal("trigger_file = '%s'",
+									 Trigger_file)));
+		}
+		else
+			ereport(FATAL,
+					(errmsg("unrecognized recovery parameter \"%s\"",
+							item->name)));
 	}
 
 	/* Check for compulsory parameters */
@@ -4064,6 +4200,8 @@ CheckRecoveryReadyFile(void)
 			recoveryTargetIsLatest = true;
 		}
 	}
+
+	FreeConfigVariables(head);
 }
 
 /*
@@ -4613,7 +4751,7 @@ StartupXLOG(void)
 	 * Check for recovery trigger file, and if so set up state for offline
 	 * recovery.
 	 */
-	CheckRecoveryReadyFile();
+	readRecoveryCommandFile();
 
 	if (InArchiveRecovery)
 	{
