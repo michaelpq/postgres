@@ -4075,7 +4075,8 @@ readRecoveryCommandFile(void)
 							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			if (strcmp(recovery_target_timeline_string, "") != 0)
 				ereport(DEBUG2,
-						(errmsg_internal("recovery_target_timeline = %u", rtli)));
+						(errmsg_internal("recovery_target_timeline = %u",
+										 recovery_target_timeline)));
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_timeline = latest")));
 		}
@@ -4093,8 +4094,8 @@ readRecoveryCommandFile(void)
 			 * if recovery_target_xid or recovery_target_name specified, then
 			 * this overrides recovery_target_time
 			 */
-			if (recoveryTarget == RECOVERY_TARGET_XID ||
-				recoveryTarget == RECOVERY_TARGET_NAME)
+			if (recovery_target == RECOVERY_TARGET_XID ||
+				recovery_target == RECOVERY_TARGET_NAME)
 				continue;
 
 			SetConfigOption("recovery_target_time",
@@ -4109,7 +4110,7 @@ readRecoveryCommandFile(void)
 			 * if recovery_target_xid specified, then this overrides
 			 * recovery_target_name
 			 */
-			if (recoveryTarget == RECOVERY_TARGET_XID)
+			if (recovery_target == RECOVERY_TARGET_XID)
 				continue;
 
 			SetConfigOption("recovery_target_name",
@@ -4147,7 +4148,7 @@ readRecoveryCommandFile(void)
 							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("trigger_file = '%s'",
-									 Trigger_file)));
+									 trigger_file)));
 		}
 		else
 			ereport(FATAL,
