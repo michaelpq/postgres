@@ -4033,7 +4033,7 @@ readRecoveryCommandFile(void)
 	/*
 	 * Parse each item in recovery command file and set the related GUC
 	 * parameters in consequence. Priority is given to recovery command
-	 * file to postgresql.conf.
+	 * file if parameters are already set in postgresql.conf.
 	 */
 	for (item = head; item; item = item->next)
 	{
