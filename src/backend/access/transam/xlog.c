@@ -4040,7 +4040,7 @@ readRecoveryCommandFile(void)
 		if (strcmp(item->name, "restore_command") == 0)
 		{
 			SetConfigOption("restore_command",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("restore_command = '%s'",
 									 restore_command)));
@@ -4048,7 +4048,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "recovery_end_command") == 0)
 		{
 			SetConfigOption("recovery_end_command",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_end_command = '%s'",
 									 recovery_end_command)));
@@ -4056,7 +4056,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "archive_cleanup_command") == 0)
 		{
 			SetConfigOption("archive_cleanup_command",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("archive_cleanup_command = '%s'",
 									 archive_cleanup_command)));
@@ -4064,7 +4064,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "pause_at_recovery_target") == 0)
 		{
 			SetConfigOption("pause_at_recovery_target",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("pause_at_recovery_target = '%s'",
 									 pause_at_recovery_target ? "true" : "false")));
@@ -4072,7 +4072,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "recovery_target_timeline") == 0)
 		{
 			SetConfigOption("recovery_target_timeline",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			if (strcmp(recovery_target_timeline_string, "") != 0)
 				ereport(DEBUG2,
 						(errmsg_internal("recovery_target_timeline = %u",
@@ -4083,7 +4083,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "recovery_target_xid") == 0)
 		{
 			SetConfigOption("recovery_target_xid",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_xid = %u",
 									 recovery_target_xid)));
@@ -4099,7 +4099,7 @@ readRecoveryCommandFile(void)
 				continue;
 
 			SetConfigOption("recovery_target_time",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_time = '%s'",
 									 timestamptz_to_str(recovery_target_time))));
@@ -4114,7 +4114,7 @@ readRecoveryCommandFile(void)
 				continue;
 
 			SetConfigOption("recovery_target_name",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_name = '%s'",
 									 recovery_target_name)));
@@ -4122,7 +4122,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "recovery_target_inclusive") == 0)
 		{
 			SetConfigOption("recovery_target_inclusive",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("recovery_target_inclusive = %s",
 									 recovery_target_inclusive ? "true" : "false")));
@@ -4137,7 +4137,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "primary_conninfo") == 0)
 		{
 			SetConfigOption("primary_conninfo",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("primary_conninfo = '%s'",
 									 primary_conninfo)));
@@ -4145,7 +4145,7 @@ readRecoveryCommandFile(void)
 		else if (strcmp(item->name, "trigger_file") == 0)
 		{
 			SetConfigOption("trigger_file",
-							pstrdup(item->value), PGC_POSTMASTER, PGC_S_OVERRIDE);
+							pstrdup(item->value), PGC_SIGHUP, PGC_S_OVERRIDE);
 			ereport(DEBUG2,
 					(errmsg_internal("trigger_file = '%s'",
 									 trigger_file)));
