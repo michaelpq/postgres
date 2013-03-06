@@ -21,7 +21,7 @@
 
 
 /* Version identifier for this pg_control format */
-#define PG_CONTROL_VERSION	933
+#define PG_CONTROL_VERSION	935
 
 /*
  * Body of CheckPoint XLOG records.  This is declared here because we keep
@@ -33,6 +33,8 @@ typedef struct CheckPoint
 	XLogRecPtr	redo;			/* next RecPtr available when we began to
 								 * create CheckPoint (i.e. REDO start point) */
 	TimeLineID	ThisTimeLineID; /* current TLI */
+	TimeLineID	PrevTimeLineID; /* previous TLI, if this record begins a new
+								 * timeline (equals ThisTimeLineID otherwise) */
 	bool		fullPageWrites; /* current full_page_writes */
 	uint32		nextXidEpoch;	/* higher-order bits of nextXid */
 	TransactionId nextXid;		/* next free XID */
@@ -64,6 +66,7 @@ typedef struct CheckPoint
 #define XLOG_PARAMETER_CHANGE			0x60
 #define XLOG_RESTORE_POINT				0x70
 #define XLOG_FPW_CHANGE				0x80
+#define XLOG_END_OF_RECOVERY			0x90
 
 
 /*
@@ -122,6 +125,8 @@ typedef struct ControlFileData
 	XLogRecPtr	prevCheckPoint; /* previous check point record ptr */
 
 	CheckPoint	checkPointCopy; /* copy of last check point record */
+
+	XLogRecPtr  unloggedLSN;	/* current fake LSN value, for unlogged rels */
 
 	/*
 	 * These two values determine the minimum point we must recover up to

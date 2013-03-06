@@ -106,7 +106,7 @@ extern void DeconstructQualifiedName(List *names,
 						 char **nspname_p,
 						 char **objname_p);
 extern Oid	LookupNamespaceNoError(const char *nspname);
-extern Oid	LookupExplicitNamespace(const char *nspname);
+extern Oid	LookupExplicitNamespace(const char *nspname, bool missing_ok);
 extern Oid	get_namespace_oid(const char *nspname, bool missing_ok);
 
 extern Oid	LookupCreationNamespace(const char *nspname);
@@ -128,6 +128,7 @@ extern void ResetTempTableNamespace(void);
 
 extern OverrideSearchPath *GetOverrideSearchPath(MemoryContext context);
 extern OverrideSearchPath *CopyOverrideSearchPath(OverrideSearchPath *path);
+extern bool OverrideSearchPathMatchesCurrent(OverrideSearchPath *path);
 extern void PushOverrideSearchPath(OverrideSearchPath *newpath);
 extern void PopOverrideSearchPath(void);
 

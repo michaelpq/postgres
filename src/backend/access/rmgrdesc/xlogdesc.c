@@ -18,6 +18,7 @@
 #include "access/xlog_internal.h"
 #include "catalog/pg_control.h"
 #include "utils/guc.h"
+#include "utils/timestamp.h"
 
 /*
  * GUC support
@@ -40,11 +41,12 @@ xlog_desc(StringInfo buf, uint8 xl_info, char *rec)
 		CheckPoint *checkpoint = (CheckPoint *) rec;
 
 		appendStringInfo(buf, "checkpoint: redo %X/%X; "
-				   "tli %u; fpw %s; xid %u/%u; oid %u; multi %u; offset %u; "
+						 "tli %u; prev tli %u; fpw %s; xid %u/%u; oid %u; multi %u; offset %u; "
 						 "oldest xid %u in DB %u; oldest multi %u in DB %u; "
 						 "oldest running xid %u; %s",
 						 (uint32) (checkpoint->redo >> 32), (uint32) checkpoint->redo,
 						 checkpoint->ThisTimeLineID,
+						 checkpoint->PrevTimeLineID,
 						 checkpoint->fullPageWrites ? "true" : "false",
 						 checkpoint->nextXidEpoch, checkpoint->nextXid,
 						 checkpoint->nextOid,
@@ -118,6 +120,15 @@ xlog_desc(StringInfo buf, uint8 xl_info, char *rec)
 
 		memcpy(&fpw, rec, sizeof(bool));
 		appendStringInfo(buf, "full_page_writes: %s", fpw ? "true" : "false");
+	}
+	else if (info == XLOG_END_OF_RECOVERY)
+	{
+		xl_end_of_recovery xlrec;
+
+		memcpy(&xlrec, rec, sizeof(xl_end_of_recovery));
+		appendStringInfo(buf, "end_of_recovery: tli %u; prev tli %u; time %s",
+						 xlrec.ThisTimeLineID, xlrec.PrevTimeLineID,
+						 timestamptz_to_str(xlrec.end_time));
 	}
 	else
 		appendStringInfo(buf, "UNKNOWN");

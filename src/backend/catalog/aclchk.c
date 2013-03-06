@@ -755,7 +755,7 @@ objectsInSchemaToOids(GrantObjectType objtype, List *nspnames)
 		Oid			namespaceId;
 		List	   *objs;
 
-		namespaceId = LookupExplicitNamespace(nspname);
+		namespaceId = LookupExplicitNamespace(nspname, false);
 
 		switch (objtype)
 		{
@@ -764,6 +764,8 @@ objectsInSchemaToOids(GrantObjectType objtype, List *nspnames)
 				objs = getRelationsInNamespace(namespaceId, RELKIND_RELATION);
 				objects = list_concat(objects, objs);
 				objs = getRelationsInNamespace(namespaceId, RELKIND_VIEW);
+				objects = list_concat(objects, objs);
+				objs = getRelationsInNamespace(namespaceId, RELKIND_MATVIEW);
 				objects = list_concat(objects, objs);
 				objs = getRelationsInNamespace(namespaceId, RELKIND_FOREIGN_TABLE);
 				objects = list_concat(objects, objs);

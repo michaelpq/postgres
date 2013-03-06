@@ -12,7 +12,7 @@ PostgreSQL documentation
 
  <refnamediv>
   <refname>pg_isready</refname>
-  <refpurpose>checks the connection status of a <productname>PostgreSQL</productname> server</refpurpose>
+  <refpurpose>check the connection status of a <productname>PostgreSQL</productname> server</refpurpose>
  </refnamediv>
 
  <indexterm zone="app-pg-isready">
@@ -54,7 +54,8 @@ PostgreSQL documentation
        with a valid <acronym>URI</acronym> prefix
        (<literal>postgresql://</literal>
        or <literal>postgres://</literal>), it is treated as a
-       <parameter>conninfo</parameter> string. See <xref linkend="libpq-connect"> for more information.
+       <parameter>conninfo</parameter> string. See <xref
+       linkend="libpq-connstring"> for more information.
       </para>
       </listitem>
     </varlistentry>
@@ -94,6 +95,18 @@ PostgreSQL documentation
         Do not display status message. This is useful when scripting.
        </para>
       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-t <replaceable class="parameter">seconds</replaceable></></term>
+       <term><option>--timeout=<replaceable class="parameter">seconds</replaceable></></term>
+       <listitem>
+       <para>
+        The maximum number of seconds to wait when attempting connection before
+        returning that the server is not responding. Setting to 0 disables. The
+        default is 3 seconds.
+       </para>
+       </listitem>
      </varlistentry>
 
      <varlistentry>

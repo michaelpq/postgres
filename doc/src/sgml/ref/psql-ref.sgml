@@ -120,7 +120,8 @@ PostgreSQL documentation
        with a valid <acronym>URI</acronym> prefix
        (<literal>postgresql://</literal>
        or <literal>postgres://</literal>), it is treated as a
-       <parameter>conninfo</parameter> string. See <xref linkend="libpq-connect"> for more information.
+       <parameter>conninfo</parameter> string. See <xref
+       linkend="libpq-connstring"> for more information.
       </para>
       </listitem>
     </varlistentry>
@@ -608,9 +609,9 @@ PostgreSQL documentation
 $ <userinput>psql "service=myservice sslmode=require"</userinput>
 $ <userinput>psql postgresql://dbmaster:5433/mydb?sslmode=require</userinput>
 </programlisting>
-     This way you can also use <acronym>LDAP</acronym> for connection parameter lookup as
-     described in <xref linkend="libpq-ldap">.
-     See <xref linkend="libpq-connect"> for more information on all the
+     This way you can also use <acronym>LDAP</acronym> for connection
+     parameter lookup as described in <xref linkend="libpq-ldap">.
+     See <xref linkend="libpq-paramkeywords"> for more information on all the
      available connection options.
     </para>
 
@@ -829,7 +830,7 @@ testdb=&gt;
       <varlistentry id="APP-PSQL-meta-commands-copy">
         <term><literal>\copy { <replaceable class="parameter">table</replaceable> [ ( <replaceable class="parameter">column_list</replaceable> ) ] | ( <replaceable class="parameter">query</replaceable> ) }
         { <literal>from</literal> | <literal>to</literal> }
-        { <replaceable class="parameter">filename</replaceable> | stdin | stdout | pstdin | pstdout }
+        { <replaceable class="parameter">'filename'</replaceable> | program <replaceable class="parameter">'command'</replaceable> | stdin | stdout | pstdin | pstdout }
         [ [ with ] ( <replaceable class="parameter">option</replaceable> [, ...] ) ]</literal></term>
 
         <listitem>
@@ -846,16 +847,14 @@ testdb=&gt;
         </para>
 
         <para>
-        The syntax of the command is similar to that of the
-        <acronym>SQL</acronym> <xref linkend="sql-copy">
-        command, and
-        <replaceable class="parameter">option</replaceable>
-        must indicate one of the options of the
-        <acronym>SQL</acronym> <xref linkend="sql-copy"> command.
-        Note that, because of this,
-        special parsing rules apply to the <command>\copy</command>
-        command. In particular, the variable substitution rules and
-        backslash escapes do not apply.
+        When <literal>program</> is specified,
+        <replaceable class="parameter">command</replaceable> is
+        executed by <application>psql</application> and the data from
+        or to <replaceable class="parameter">command</replaceable> is
+        routed between the server and the client.
+        This means that the execution privileges are those of
+        the local user, not the server, and no SQL superuser
+        privileges are required.
         </para>
 
         <para><literal>\copy ... from stdin | to stdout</literal>
@@ -867,6 +866,19 @@ testdb=&gt;
         <application>psql</application>'s standard input or output, use
         <literal>pstdin</> or <literal>pstdout</>. This option is useful
         for populating tables in-line within a SQL script file.
+        </para>
+
+        <para>
+        The syntax of the command is similar to that of the
+        <acronym>SQL</acronym> <xref linkend="sql-copy">
+        command, and
+        <replaceable class="parameter">option</replaceable>
+        must indicate one of the options of the
+        <acronym>SQL</acronym> <xref linkend="sql-copy"> command.
+        Note that, because of this,
+        special parsing rules apply to the <command>\copy</command>
+        command. In particular, the variable substitution rules and
+        backslash escapes do not apply.
         </para>
 
         <tip>
@@ -1188,7 +1200,7 @@ testdb=&gt;
         class="parameter">pattern</replaceable> is specified, only
         functions whose names match the pattern are shown.  If the
         form <literal>\df+</literal> is used, additional information
-        about each function, including volatility, language, source
+        about each function, including security, volatility, language, source
         code and description, is shown.  By default, only user-created
         objects are shown; supply a pattern or the <literal>S</literal>
         modifier to include system objects.
@@ -1608,10 +1620,54 @@ Tue Oct 26 21:40:57 CEST 1999
         optionally stores the query's output in <replaceable
         class="parameter">filename</replaceable> or pipes the output
         into a separate Unix shell executing <replaceable
-        class="parameter">command</replaceable>. A bare
-        <literal>\g</literal> is virtually equivalent to a semicolon. A
-        <literal>\g</literal> with argument is a <quote>one-shot</quote>
+        class="parameter">command</replaceable>.  The file or command is
+        written to only if the query successfully returns zero or more tuples,
+        not if the query fails or is a non-data-returning SQL command.
+        </para>
+        <para>
+        A bare <literal>\g</literal> is essentially equivalent to a semicolon.
+        A <literal>\g</literal> with argument is a <quote>one-shot</quote>
         alternative to the <command>\o</command> command.
+        </para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\gset</literal> [ <replaceable class="parameter">prefix</replaceable> ]</term>
+
+        <listitem>
+        <para>
+         Sends the current query input buffer to the server and stores the
+         query's output into <application>psql</> variables (see <xref
+         linkend="APP-PSQL-variables" endterm="APP-PSQL-variables-title">).
+         The query to be executed must return exactly one row.  Each column of
+         the row is stored into a separate variable, named the same as the
+         column.  For example:
+<programlisting>
+=&gt; <userinput>SELECT 'hello' AS var1, 10 AS var2</userinput>
+-&gt; <userinput>\gset</userinput>
+=&gt; <userinput>\echo :var1 :var2</userinput>
+hello 10
+</programlisting>
+        </para>
+        <para>
+         If you specify a <replaceable class="parameter">prefix</replaceable>,
+         that string is prepended to the query's column names to create the
+         variable names to use:
+<programlisting>
+=&gt; <userinput>SELECT 'hello' AS var1, 10 AS var2</userinput>
+-&gt; <userinput>\gset result_</userinput>
+=&gt; <userinput>\echo :result_var1 :result_var2</userinput>
+hello 10
+</programlisting>
+        </para>
+        <para>
+         If a column result is NULL, the corresponding variable is unset
+         rather than being set.
+        </para>
+        <para>
+         If the query fails or does not return one row,
+         no variables are changed.
         </para>
         </listitem>
       </varlistentry>
@@ -1689,12 +1745,13 @@ Tue Oct 26 21:40:57 CEST 1999
 
 
       <varlistentry>
-        <term><literal>\l</literal> (or <literal>\list</literal>)</term>
-        <term><literal>\l+</literal> (or <literal>\list+</literal>)</term>
+        <term><literal>\l[+]</literal> or <literal>\list[+] [ <link linkend="APP-PSQL-patterns"><replaceable class="parameter">pattern</replaceable></link> ]</literal></term>
         <listitem>
         <para>
-        List the names, owners, character set encodings, and access privileges
-        of all the databases in the server.
+        List the databases in the server and show their names, owners,
+        character set encodings, and access privileges.
+        If <replaceable class="parameter">pattern</replaceable> is specified,
+        only databases whose names match the pattern are listed.
         If <literal>+</literal> is appended to the command name, database
         sizes, default tablespaces, and descriptions are also displayed.
         (Size information is only available for databases that the current

@@ -37,6 +37,7 @@
 #include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
+#include "catalog/heap.h"
 #include "catalog/index.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -56,6 +57,7 @@
 #include "catalog/schemapg.h"
 #include "catalog/storage.h"
 #include "commands/trigger.h"
+#include "common/relpath.h"
 #include "miscadmin.h"
 #include "optimizer/clauses.h"
 #include "optimizer/planmain.h"
@@ -398,6 +400,7 @@ RelationParseRelOptions(Relation relation, HeapTuple tuple)
 		case RELKIND_TOASTVALUE:
 		case RELKIND_INDEX:
 		case RELKIND_VIEW:
+		case RELKIND_MATVIEW:
 			break;
 		default:
 			return;
@@ -952,6 +955,12 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 
 	/* make sure relation is marked as having no open file yet */
 	relation->rd_smgr = NULL;
+
+	if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
+		heap_is_matview_init_state(relation))
+		relation->rd_isscannable = false;
+	else
+		relation->rd_isscannable = true;
 
 	/*
 	 * now we can free the memory allocated for pg_class_tuple
@@ -1522,6 +1531,7 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * initialize physical addressing information for the relation
 	 */
 	RelationInitPhysicalAddr(relation);
+	relation->rd_isscannable = true;
 
 	/*
 	 * initialize the rel-has-index flag, using hardwired knowledge
@@ -1746,6 +1756,7 @@ RelationReloadIndexInfo(Relation relation)
 	heap_freetuple(pg_class_tuple);
 	/* We must recalculate physical address in case it changed */
 	RelationInitPhysicalAddr(relation);
+	relation->rd_isscannable = true;
 
 	/*
 	 * For a non-system index, there are fields of the pg_index row that are
@@ -1892,6 +1903,11 @@ RelationClearRelation(Relation relation, bool rebuild)
 	if (relation->rd_isnailed)
 	{
 		RelationInitPhysicalAddr(relation);
+		if (relation->rd_rel->relkind == RELKIND_MATVIEW &&
+			heap_is_matview_init_state(relation))
+			relation->rd_isscannable = false;
+		else
+			relation->rd_isscannable = true;
 
 		if (relation->rd_rel->relkind == RELKIND_INDEX)
 		{
@@ -2679,6 +2695,12 @@ RelationBuildLocalRelation(const char *relname,
 	RelationInitLockInfo(rel);	/* see lmgr.c */
 
 	RelationInitPhysicalAddr(rel);
+
+	/* materialized view not initially scannable */
+	if (relkind == RELKIND_MATVIEW)
+		rel->rd_isscannable = false;
+	else
+		rel->rd_isscannable = true;
 
 	/*
 	 * Okay to insert into the relcache hash tables.
@@ -3999,6 +4021,82 @@ RelationGetExclusionInfo(Relation indexRelation,
 
 
 /*
+ * Routines to support ereport() reports of relation-related errors
+ *
+ * These could have been put into elog.c, but it seems like a module layering
+ * violation to have elog.c calling relcache or syscache stuff --- and we
+ * definitely don't want elog.h including rel.h.  So we put them here.
+ */
+
+/*
+ * errtable --- stores schema_name and table_name of a table
+ * within the current errordata.
+ */
+int
+errtable(Relation rel)
+{
+	err_generic_string(PG_DIAG_SCHEMA_NAME,
+					   get_namespace_name(RelationGetNamespace(rel)));
+	err_generic_string(PG_DIAG_TABLE_NAME, RelationGetRelationName(rel));
+
+	return 0;			/* return value does not matter */
+}
+
+/*
+ * errtablecol --- stores schema_name, table_name and column_name
+ * of a table column within the current errordata.
+ *
+ * The column is specified by attribute number --- for most callers, this is
+ * easier and less error-prone than getting the column name for themselves.
+ */
+int
+errtablecol(Relation rel, int attnum)
+{
+	TupleDesc	reldesc = RelationGetDescr(rel);
+	const char *colname;
+
+	/* Use reldesc if it's a user attribute, else consult the catalogs */
+	if (attnum > 0 && attnum <= reldesc->natts)
+		colname = NameStr(reldesc->attrs[attnum - 1]->attname);
+	else
+		colname = get_relid_attribute_name(RelationGetRelid(rel), attnum);
+
+	return errtablecolname(rel, colname);
+}
+
+/*
+ * errtablecolname --- stores schema_name, table_name and column_name
+ * of a table column within the current errordata, where the column name is
+ * given directly rather than extracted from the relation's catalog data.
+ *
+ * Don't use this directly unless errtablecol() is inconvenient for some
+ * reason.  This might possibly be needed during intermediate states in ALTER
+ * TABLE, for instance.
+ */
+int
+errtablecolname(Relation rel, const char *colname)
+{
+	errtable(rel);
+	err_generic_string(PG_DIAG_COLUMN_NAME, colname);
+
+	return 0;			/* return value does not matter */
+}
+
+/*
+ * errtableconstraint --- stores schema_name, table_name and constraint_name
+ * of a table-related constraint within the current errordata.
+ */
+int
+errtableconstraint(Relation rel, const char *conname)
+{
+	errtable(rel);
+	err_generic_string(PG_DIAG_CONSTRAINT_NAME, conname);
+
+	return 0;			/* return value does not matter */
+}
+
+
+/*
  *	load_relcache_init_file, write_relcache_init_file
  *
  *		In late 1992, we started regularly having databases with more than
@@ -4347,6 +4445,11 @@ load_relcache_init_file(bool shared)
 		 */
 		RelationInitLockInfo(rel);
 		RelationInitPhysicalAddr(rel);
+		if (rel->rd_rel->relkind == RELKIND_MATVIEW &&
+			heap_is_matview_init_state(rel))
+			rel->rd_isscannable = false;
+		else
+			rel->rd_isscannable = true;
 	}
 
 	/*

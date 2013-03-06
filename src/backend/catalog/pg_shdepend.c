@@ -1240,11 +1240,14 @@ shdepDropOwned(List *roleids, DropBehavior behavior)
 											sdepForm->objid);
 					break;
 				case SHARED_DEPENDENCY_OWNER:
-					/* Save it for deletion below */
-					obj.classId = sdepForm->classid;
-					obj.objectId = sdepForm->objid;
-					obj.objectSubId = sdepForm->objsubid;
-					add_exact_object_address(&obj, deleteobjs);
+					/* If a local object, save it for deletion below */
+					if (sdepForm->dbid == MyDatabaseId)
+					{
+						obj.classId = sdepForm->classid;
+						obj.objectId = sdepForm->objid;
+						obj.objectSubId = sdepForm->objsubid;
+						add_exact_object_address(&obj, deleteobjs);
+					}
 					break;
 			}
 		}
@@ -1322,8 +1325,12 @@ shdepReassignOwned(List *roleids, Oid newrole)
 		{
 			Form_pg_shdepend sdepForm = (Form_pg_shdepend) GETSTRUCT(tuple);
 
-			/* We only operate on objects in the current database */
-			if (sdepForm->dbid != MyDatabaseId)
+			/*
+			 * We only operate on shared objects and objects in the current
+			 * database
+			 */
+			if (sdepForm->dbid != MyDatabaseId &&
+				sdepForm->dbid != InvalidOid)
 				continue;
 
 			/* Unexpected because we checked for pins above */
@@ -1385,6 +1392,8 @@ shdepReassignOwned(List *roleids, Oid newrole)
 				case OperatorFamilyRelationId:
 				case OperatorClassRelationId:
 				case ExtensionRelationId:
+				case TableSpaceRelationId:
+				case DatabaseRelationId:
 					{
 						Oid			classId = sdepForm->classid;
 						Relation	catalog;

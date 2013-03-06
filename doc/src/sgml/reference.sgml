@@ -49,10 +49,12 @@
    &alterIndex;
    &alterLanguage;
    &alterLargeObject;
+   &alterMaterializedView;
    &alterOperator;
    &alterOperatorClass;
    &alterOperatorFamily;
    &alterRole;
+   &alterRule;
    &alterSchema;
    &alterSequence;
    &alterServer;
@@ -90,6 +92,7 @@
    &createGroup;
    &createIndex;
    &createLanguage;
+   &createMaterializedView;
    &createOperator;
    &createOperatorClass;
    &createOperatorFamily;
@@ -129,6 +132,7 @@
    &dropGroup;
    &dropIndex;
    &dropLanguage;
+   &dropMaterializedView;
    &dropOperator;
    &dropOperatorClass;
    &dropOperatorFamily;
@@ -163,6 +167,7 @@
    &prepare;
    &prepareTransaction;
    &reassignOwned;
+   &refreshMaterializedView;
    &reindex;
    &releaseSavepoint;
    &reset;

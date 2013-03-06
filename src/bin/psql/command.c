@@ -355,7 +355,7 @@ exec_command(const char *cmd,
 					success = describeTableDetails(pattern, show_verbose, show_system);
 				else
 					/* standard listing of interesting things */
-					success = listTables("tvsE", NULL, show_verbose, show_system);
+					success = listTables("tvmsE", NULL, show_verbose, show_system);
 				break;
 			case 'a':
 				success = describeAggregates(pattern, show_verbose, show_system);
@@ -422,6 +422,7 @@ exec_command(const char *cmd,
 				break;
 			case 't':
 			case 'v':
+			case 'm':
 			case 'i':
 			case 's':
 			case 'E':
@@ -731,7 +732,7 @@ exec_command(const char *cmd,
 		free(fname);
 	}
 
-	/* \g means send query */
+	/* \g [filename] -- send query, optionally with output to file/pipe */
 	else if (strcmp(cmd, "g") == 0)
 	{
 		char	   *fname = psql_scan_slash_option(scan_state,
@@ -745,6 +746,22 @@ exec_command(const char *cmd,
 			pset.gfname = pg_strdup(fname);
 		}
 		free(fname);
+		status = PSQL_CMD_SEND;
+	}
+
+	/* \gset [prefix] -- send query and store result into variables */
+	else if (strcmp(cmd, "gset") == 0)
+	{
+		char	   *prefix = psql_scan_slash_option(scan_state,
+													OT_NORMAL, NULL, false);
+
+		if (prefix)
+			pset.gset_prefix = prefix;
+		else
+		{
+			/* we must set a non-NULL prefix to trigger storing */
+			pset.gset_prefix = pg_strdup("");
+		}
 		status = PSQL_CMD_SEND;
 	}
 
@@ -804,10 +821,22 @@ exec_command(const char *cmd,
 	}
 
 	/* \l is list databases */
-	else if (strcmp(cmd, "l") == 0 || strcmp(cmd, "list") == 0)
-		success = listAllDbs(false);
-	else if (strcmp(cmd, "l+") == 0 || strcmp(cmd, "list+") == 0)
-		success = listAllDbs(true);
+	else if (strcmp(cmd, "l") == 0 || strcmp(cmd, "list") == 0 ||
+			 strcmp(cmd, "l+") == 0 || strcmp(cmd, "list+") == 0)
+	{
+		char	   *pattern;
+		bool		show_verbose;
+
+		pattern = psql_scan_slash_option(scan_state,
+										 OT_NORMAL, NULL, true);
+
+		show_verbose = strchr(cmd, '+') ? true : false;
+
+		success = listAllDbs(pattern, show_verbose);
+
+		if (pattern)
+			free(pattern);
+	}
 
 	/*
 	 * large object things

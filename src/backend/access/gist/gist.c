@@ -16,6 +16,7 @@
 
 #include "access/genam.h"
 #include "access/gist_private.h"
+#include "access/heapam_xlog.h"
 #include "catalog/index.h"
 #include "catalog/pg_collation.h"
 #include "miscadmin.h"
@@ -71,9 +72,22 @@ createTempGistContext(void)
 Datum
 gistbuildempty(PG_FUNCTION_ARGS)
 {
-	ereport(ERROR,
-			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("unlogged GiST indexes are not supported")));
+	Relation	index = (Relation) PG_GETARG_POINTER(0);
+	Buffer		buffer;
+
+	/* Initialize the root page */
+	buffer = ReadBufferExtended(index, INIT_FORKNUM, P_NEW, RBM_NORMAL, NULL);
+	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
+
+	/* Initialize and xlog buffer */
+	START_CRIT_SECTION();
+	GISTInitBuffer(buffer, F_LEAF);
+	MarkBufferDirty(buffer);
+	log_newpage_buffer(buffer);
+	END_CRIT_SECTION();
+
+	/* Unlock and release the buffer */
+	UnlockReleaseBuffer(buffer);
 
 	PG_RETURN_VOID();
 }
@@ -391,7 +405,7 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
 								   dist, oldrlink, oldnsn, leftchildbuf,
 								   markfollowright);
 		else
-			recptr = GetXLogRecPtrForTemp();
+			recptr = gistGetFakeLSN(rel);
 
 		for (ptr = dist; ptr; ptr = ptr->next)
 		{
@@ -448,7 +462,7 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
 		}
 		else
 		{
-			recptr = GetXLogRecPtrForTemp();
+			recptr = gistGetFakeLSN(rel);
 			PageSetLSN(page, recptr);
 		}
 
@@ -1237,18 +1251,12 @@ gistSplit(Relation r,
 	IndexTuple *lvectup,
 			   *rvectup;
 	GistSplitVector v;
-	GistEntryVector *entryvec;
 	int			i;
 	SplitedPageLayout *res = NULL;
 
-	/* generate the item array */
-	entryvec = palloc(GEVHDRSZ + (len + 1) * sizeof(GISTENTRY));
-	entryvec->n = len + 1;
-
 	memset(v.spl_lisnull, TRUE, sizeof(bool) * giststate->tupdesc->natts);
 	memset(v.spl_risnull, TRUE, sizeof(bool) * giststate->tupdesc->natts);
-	gistSplitByKey(r, page, itup, len, giststate,
-				   &v, entryvec, 0);
+	gistSplitByKey(r, page, itup, len, giststate, &v, 0);
 
 	/* form left and right vector */
 	lvectup = (IndexTuple *) palloc(sizeof(IndexTuple) * (len + 1));

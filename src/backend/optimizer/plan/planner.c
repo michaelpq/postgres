@@ -1071,7 +1071,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		if (parse->rowMarks)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("SELECT FOR UPDATE/SHARE/KEY UPDATE/KEY SHARE is not allowed with UNION/INTERSECT/EXCEPT")));
+					 errmsg("row-level locks are not allowed with UNION/INTERSECT/EXCEPT")));
 
 		/*
 		 * Calculate pathkeys that represent result ordering requirements
@@ -3386,7 +3386,7 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 	rte = makeNode(RangeTblEntry);
 	rte->rtekind = RTE_RELATION;
 	rte->relid = tableOid;
-	rte->relkind = RELKIND_RELATION;
+	rte->relkind = RELKIND_RELATION;  /* Don't be too picky. */
 	rte->lateral = false;
 	rte->inh = false;
 	rte->inFromCl = true;

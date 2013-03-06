@@ -124,6 +124,7 @@ _equalIntoClause(const IntoClause *a, const IntoClause *b)
 	COMPARE_SCALAR_FIELD(onCommit);
 	COMPARE_STRING_FIELD(tableSpaceName);
 	COMPARE_SCALAR_FIELD(skipData);
+	COMPARE_SCALAR_FIELD(relkind);
 
 	return true;
 }
@@ -1090,6 +1091,7 @@ _equalCopyStmt(const CopyStmt *a, const CopyStmt *b)
 	COMPARE_NODE_FIELD(query);
 	COMPARE_NODE_FIELD(attlist);
 	COMPARE_SCALAR_FIELD(is_from);
+	COMPARE_SCALAR_FIELD(is_program);
 	COMPARE_STRING_FIELD(filename);
 	COMPARE_NODE_FIELD(options);
 
@@ -1524,7 +1526,17 @@ _equalCreateTableAsStmt(const CreateTableAsStmt *a, const CreateTableAsStmt *b)
 {
 	COMPARE_NODE_FIELD(query);
 	COMPARE_NODE_FIELD(into);
+	COMPARE_SCALAR_FIELD(relkind);
 	COMPARE_SCALAR_FIELD(is_select_into);
+
+	return true;
+}
+
+static bool
+_equalRefreshMatViewStmt(const RefreshMatViewStmt *a, const RefreshMatViewStmt *b)
+{
+	COMPARE_SCALAR_FIELD(skipData);
+	COMPARE_NODE_FIELD(relation);
 
 	return true;
 }
@@ -2222,6 +2234,7 @@ _equalRangeTblEntry(const RangeTblEntry *a, const RangeTblEntry *b)
 	COMPARE_SCALAR_FIELD(rtekind);
 	COMPARE_SCALAR_FIELD(relid);
 	COMPARE_SCALAR_FIELD(relkind);
+	COMPARE_SCALAR_FIELD(isResultRel);
 	COMPARE_NODE_FIELD(subquery);
 	COMPARE_SCALAR_FIELD(security_barrier);
 	COMPARE_SCALAR_FIELD(jointype);
@@ -2788,6 +2801,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_CreateTableAsStmt:
 			retval = _equalCreateTableAsStmt(a, b);
+			break;
+		case T_RefreshMatViewStmt:
+			retval = _equalRefreshMatViewStmt(a, b);
 			break;
 		case T_CreateSeqStmt:
 			retval = _equalCreateSeqStmt(a, b);

@@ -192,6 +192,7 @@ const char *subdirs[] = {
 	"base",
 	"base/1",
 	"pg_tblspc",
+	"pg_stat",
 	"pg_stat_tmp"
 };
 
@@ -200,8 +201,6 @@ const char *subdirs[] = {
 static char bin_path[MAXPGPATH];
 static char backend_exec[MAXPGPATH];
 
-static void *pg_malloc(size_t size);
-static char *pg_strdup(const char *s);
 static char **replace_token(char **lines,
 			  const char *token, const char *replacement);
 
@@ -259,6 +258,7 @@ void setup_signals(void);
 void setup_text_search(void);
 void create_data_directory(void);
 void create_xlog_symlink(void);
+void warn_on_mount_point(int error);
 void initialize_data_directory(void);
 
 
@@ -316,43 +316,6 @@ do { \
 #define QUOTE_PATH	"\""
 #define DIR_SEP "\\"
 #endif
-
-/*
- * routines to check mem allocations and fail noisily.
- *
- * Note that we can't call exit_nicely() on a memory failure, as it calls
- * rmtree() which needs memory allocation. So we just exit with a bang.
- */
-static void *
-pg_malloc(size_t size)
-{
-	void	   *result;
-
-	/* Avoid unportable behavior of malloc(0) */
-	if (size == 0)
-		size = 1;
-	result = malloc(size);
-	if (!result)
-	{
-		fprintf(stderr, _("%s: out of memory\n"), progname);
-		exit(1);
-	}
-	return result;
-}
-
-static char *
-pg_strdup(const char *s)
-{
-	char	   *result;
-
-	result = strdup(s);
-	if (!result)
-	{
-		fprintf(stderr, _("%s: out of memory\n"), progname);
-		exit(1);
-	}
-	return result;
-}
 
 static char *
 escape_quotes(const char *src)
@@ -935,14 +898,22 @@ find_matching_ts_config(const char *lc_type)
 
 	/*
 	 * Convert lc_ctype to a language name by stripping everything after an
-	 * underscore.	Just for paranoia, we also stop at '.' or '@'.
+	 * underscore (usual case) or a hyphen (Windows "locale name"; see
+	 * comments at IsoLocaleName()).
+	 *
+	 * XXX Should ' ' be a stop character?  This would select "norwegian" for
+	 * the Windows locale "Norwegian (Nynorsk)_Norway.1252".  If we do so, we
+	 * should also accept the "nn" and "nb" Unix locales.
+	 *
+	 * Just for paranoia, we also stop at '.' or '@'.
 	 */
 	if (lc_type == NULL)
 		langname = pg_strdup("");
 	else
 	{
 		ptr = langname = pg_strdup(lc_type);
-		while (*ptr && *ptr != '_' && *ptr != '.' && *ptr != '@')
+		while (*ptr &&
+			   *ptr != '_' && *ptr != '-' && *ptr != '.' && *ptr != '@')
 			ptr++;
 		*ptr = '\0';
 	}
@@ -2076,7 +2047,7 @@ setup_privileges(void)
 	static char *privileges_setup[] = {
 		"UPDATE pg_class "
 		"  SET relacl = E'{\"=r/\\\\\"$POSTGRES_SUPERUSERNAME\\\\\"\"}' "
-		"  WHERE relkind IN ('r', 'v', 'S') AND relacl IS NULL;\n",
+		"  WHERE relkind IN ('r', 'v', 'm', 'S') AND relacl IS NULL;\n",
 		"GRANT USAGE ON SCHEMA pg_catalog TO PUBLIC;\n",
 		"GRANT CREATE, USAGE ON SCHEMA public TO PUBLIC;\n",
 		"REVOKE ALL ON pg_largeobject FROM PUBLIC;\n",
@@ -3175,7 +3146,9 @@ setup_signals(void)
 void
 create_data_directory(void)
 {
-	switch (pg_check_dir(pg_data))
+	int ret;
+
+	switch ((ret = pg_check_dir(pg_data)))
 	{
 		case 0:
 			/* PGDATA not there, must create it */
@@ -3210,15 +3183,20 @@ create_data_directory(void)
 			break;
 
 		case 2:
+		case 3:
+		case 4:
 			/* Present and not empty */
 			fprintf(stderr,
 					_("%s: directory \"%s\" exists but is not empty\n"),
 					progname, pg_data);
-			fprintf(stderr,
-					_("If you want to create a new database system, either remove or empty\n"
-					  "the directory \"%s\" or run %s\n"
-					  "with an argument other than \"%s\".\n"),
-					pg_data, progname, pg_data);
+			if (ret != 4)
+				warn_on_mount_point(ret);
+			else
+				fprintf(stderr,
+						_("If you want to create a new database system, either remove or empty\n"
+						  "the directory \"%s\" or run %s\n"
+						  "with an argument other than \"%s\".\n"),
+						pg_data, progname, pg_data);
 			exit(1);			/* no further message needed */
 
 		default:
@@ -3237,6 +3215,7 @@ create_xlog_symlink(void)
 	if (strcmp(xlog_dir, "") != 0)
 	{
 		char	   *linkloc;
+		int			ret;
 
 		/* clean up xlog directory name, check it's absolute */
 		canonicalize_path(xlog_dir);
@@ -3247,7 +3226,7 @@ create_xlog_symlink(void)
 		}
 
 		/* check if the specified xlog directory exists/is empty */
-		switch (pg_check_dir(xlog_dir))
+		switch ((ret = pg_check_dir(xlog_dir)))
 		{
 			case 0:
 				/* xlog directory not there, must create it */
@@ -3286,14 +3265,19 @@ create_xlog_symlink(void)
 				break;
 
 			case 2:
+			case 3:
+			case 4:
 				/* Present and not empty */
 				fprintf(stderr,
 						_("%s: directory \"%s\" exists but is not empty\n"),
 						progname, xlog_dir);
-				fprintf(stderr,
-				 _("If you want to store the transaction log there, either\n"
-				   "remove or empty the directory \"%s\".\n"),
-						xlog_dir);
+				if (ret != 4)
+					warn_on_mount_point(ret);
+				else
+					fprintf(stderr,
+					 _("If you want to store the transaction log there, either\n"
+					   "remove or empty the directory \"%s\".\n"),
+							xlog_dir);
 				exit_nicely();
 
 			default:
@@ -3319,6 +3303,21 @@ create_xlog_symlink(void)
 		exit_nicely();
 #endif
 	}
+}
+
+
+void
+warn_on_mount_point(int error)
+{
+	if (error == 2)
+		fprintf(stderr,
+				_("It contains a dot-prefixed/invisible file, perhaps due to it being a mount point.\n"));
+	else if (error == 3)
+		fprintf(stderr,
+				_("It contains a lost+found directory, perhaps due to it being a mount point.\n"));
+
+	fprintf(stderr,
+			_("Using the top-level directory of a mount point is not recommended.\n"));
 }
 
 

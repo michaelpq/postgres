@@ -54,6 +54,7 @@
 #include "access/xlog_internal.h"
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
+#include "common/fe_memutils.h"
 
 extern int	optind;
 extern char *optarg;
@@ -340,7 +341,10 @@ main(int argc, char *argv[])
 		ControlFile.checkPointCopy.nextMultiOffset = set_mxoff;
 
 	if (minXlogTli > ControlFile.checkPointCopy.ThisTimeLineID)
+	{
 		ControlFile.checkPointCopy.ThisTimeLineID = minXlogTli;
+		ControlFile.checkPointCopy.PrevTimeLineID = minXlogTli;
+	}
 
 	if (minXlogSegNo > newXlogSegNo)
 		newXlogSegNo = minXlogSegNo;
@@ -417,7 +421,7 @@ ReadControlFile(void)
 	}
 
 	/* Use malloc to ensure we have a maxaligned buffer */
-	buffer = (char *) malloc(PG_CONTROL_SIZE);
+	buffer = (char *) pg_malloc(PG_CONTROL_SIZE);
 
 	len = read(fd, buffer, PG_CONTROL_SIZE);
 	if (len < 0)
@@ -490,6 +494,7 @@ GuessControlValues(void)
 
 	ControlFile.checkPointCopy.redo = SizeOfXLogLongPHD;
 	ControlFile.checkPointCopy.ThisTimeLineID = 1;
+	ControlFile.checkPointCopy.PrevTimeLineID = 1;
 	ControlFile.checkPointCopy.fullPageWrites = false;
 	ControlFile.checkPointCopy.nextXidEpoch = 0;
 	ControlFile.checkPointCopy.nextXid = FirstNormalTransactionId;
@@ -506,6 +511,7 @@ GuessControlValues(void)
 	ControlFile.state = DB_SHUTDOWNED;
 	ControlFile.time = (pg_time_t) time(NULL);
 	ControlFile.checkPoint = ControlFile.checkPointCopy.redo;
+	ControlFile.unloggedLSN = 1;
 
 	/* minRecoveryPoint, backupStartPoint and backupEndPoint can be left zero */
 
@@ -937,7 +943,7 @@ WriteEmptyXLOG(void)
 	int			nbytes;
 
 	/* Use malloc() to ensure buffer is MAXALIGNED */
-	buffer = (char *) malloc(XLOG_BLCKSZ);
+	buffer = (char *) pg_malloc(XLOG_BLCKSZ);
 	page = (XLogPageHeader) buffer;
 	memset(buffer, 0, XLOG_BLCKSZ);
 

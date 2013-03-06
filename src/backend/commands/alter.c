@@ -51,6 +51,7 @@
 #include "commands/user.h"
 #include "parser/parse_func.h"
 #include "miscadmin.h"
+#include "rewrite/rewriteDefine.h"
 #include "tcop/utility.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -316,6 +317,7 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_TABLE:
 		case OBJECT_SEQUENCE:
 		case OBJECT_VIEW:
+		case OBJECT_MATVIEW:
 		case OBJECT_INDEX:
 		case OBJECT_FOREIGN_TABLE:
 			return RenameRelation(stmt);
@@ -323,6 +325,10 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_COLUMN:
 		case OBJECT_ATTRIBUTE:
 			return renameatt(stmt);
+
+		case OBJECT_RULE:
+			return RenameRewriteRule(stmt->relation, stmt->subname,
+									 stmt->newname);
 
 		case OBJECT_TRIGGER:
 			return renametrig(stmt);
@@ -388,6 +394,7 @@ ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt)
 		case OBJECT_SEQUENCE:
 		case OBJECT_TABLE:
 		case OBJECT_VIEW:
+		case OBJECT_MATVIEW:
 			return AlterTableNamespace(stmt);
 
 		case OBJECT_DOMAIN:

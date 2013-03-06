@@ -50,9 +50,6 @@ struct options
 /* function prototypes */
 static void help(const char *progname);
 void		get_opts(int, char **, struct options *);
-void	   *pg_malloc(size_t size);
-void	   *pg_realloc(void *ptr, size_t size);
-char	   *pg_strdup(const char *str);
 void		add_one_elt(char *eltname, eary *eary);
 char	   *get_comma_elts(eary *eary);
 PGconn	   *sql_conn(struct options *);
@@ -199,53 +196,6 @@ help(const char *progname)
 		   "\nThe default action is to show all database OIDs.\n\n"
 		   "Report bugs to <pgsql-bugs@postgresql.org>.\n",
 		   progname, progname);
-}
-
-void *
-pg_malloc(size_t size)
-{
-	void	   *ptr;
-
-	/* Avoid unportable behavior of malloc(0) */
-	if (size == 0)
-		size = 1;
-	ptr = malloc(size);
-	if (!ptr)
-	{
-		fprintf(stderr, "out of memory\n");
-		exit(1);
-	}
-	return ptr;
-}
-
-void *
-pg_realloc(void *ptr, size_t size)
-{
-	void	   *result;
-
-	/* Avoid unportable behavior of realloc(NULL, 0) */
-	if (ptr == NULL && size == 0)
-		size = 1;
-	result = realloc(ptr, size);
-	if (!result)
-	{
-		fprintf(stderr, "out of memory\n");
-		exit(1);
-	}
-	return result;
-}
-
-char *
-pg_strdup(const char *str)
-{
-	char	   *result = strdup(str);
-
-	if (!result)
-	{
-		fprintf(stderr, "out of memory\n");
-		exit(1);
-	}
-	return result;
 }
 
 /*
@@ -494,7 +444,7 @@ sql_exec_dumpalltables(PGconn *conn, struct options * opts)
 		   "	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
 			 "	LEFT JOIN pg_catalog.pg_database d ON d.datname = pg_catalog.current_database(),"
 			 "	pg_catalog.pg_tablespace t "
-			 "WHERE relkind IN ('r'%s%s) AND "
+			 "WHERE relkind IN ('r', 'm'%s%s) AND "
 			 "	%s"
 			 "		t.oid = CASE"
 			 "			WHEN reltablespace <> 0 THEN reltablespace"
@@ -565,7 +515,7 @@ sql_exec_searchtables(PGconn *conn, struct options * opts)
 		 "	LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \n"
 			 "	LEFT JOIN pg_catalog.pg_database d ON d.datname = pg_catalog.current_database(),\n"
 			 "	pg_catalog.pg_tablespace t \n"
-			 "WHERE relkind IN ('r', 'i', 'S', 't') AND \n"
+			 "WHERE relkind IN ('r', 'm', 'i', 'S', 't') AND \n"
 			 "		t.oid = CASE\n"
 			 "			WHEN reltablespace <> 0 THEN reltablespace\n"
 			 "			ELSE dattablespace\n"

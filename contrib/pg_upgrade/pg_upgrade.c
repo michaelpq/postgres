@@ -35,7 +35,7 @@
 
 
 
-#include "postgres.h"
+#include "postgres_fe.h"
 
 #include "pg_upgrade.h"
 
@@ -407,11 +407,10 @@ copy_clog_xlog_xid(void)
 	check_ok();
 
 	/*
-	 * If both new and old are after the pg_multixact change commit, copy those
-	 * files too.  If the old server is before that change and the new server
-	 * is after, then we don't copy anything but we need to reset pg_control so
-	 * that the new server doesn't attempt to read multis older than the cutoff
-	 * value.
+	 * If the old server is before the MULTIXACT_FORMATCHANGE_CAT_VER change
+	 * (see pg_upgrade.h) and the new server is after, then we don't copy
+	 * pg_multixact files, but we need to reset pg_control so that the new
+	 * server doesn't attempt to read multis older than the cutoff value.
 	 */
 	if (old_cluster.controldata.cat_ver >= MULTIXACT_FORMATCHANGE_CAT_VER &&
 		new_cluster.controldata.cat_ver >= MULTIXACT_FORMATCHANGE_CAT_VER)
@@ -526,8 +525,8 @@ set_frozenxids(void)
 		PQclear(executeQueryOrDie(conn,
 								  "UPDATE	pg_catalog.pg_class "
 								  "SET	relfrozenxid = '%u' "
-		/* only heap and TOAST are vacuumed */
-								  "WHERE	relkind IN ('r', 't')",
+		/* only heap, materialized view, and TOAST are vacuumed */
+								  "WHERE	relkind IN ('r', 'm', 't')",
 								  old_cluster.controldata.chkpnt_nxtxid));
 		PQfinish(conn);
 
@@ -574,7 +573,7 @@ cleanup(void)
 				snprintf(sql_file_name, sizeof(sql_file_name), DB_DUMP_FILE_MASK, old_db->db_oid);
 				unlink(sql_file_name);
 
-				snprintf(log_file_name, sizeof(log_file_name), DB_DUMP_FILE_MASK, old_db->db_oid);
+				snprintf(log_file_name, sizeof(log_file_name), DB_DUMP_LOG_FILE_MASK, old_db->db_oid);
 				unlink(log_file_name);
 			}
 	}

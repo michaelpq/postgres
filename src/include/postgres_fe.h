@@ -24,16 +24,6 @@
 
 #include "c.h"
 
-/*
- * Assert() can be used in both frontend and backend code. In frontend code it
- * just calls the standard assert, if it's available. If use of assertions is
- * not configured, it does nothing.
- */
-#ifdef USE_ASSERT_CHECKING
-#include <assert.h>
-#define Assert(p) assert(p)
-#else
-#define Assert(p)
-#endif
+#include "common/fe_memutils.h"
 
 #endif   /* POSTGRES_FE_H */

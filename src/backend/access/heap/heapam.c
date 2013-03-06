@@ -2214,7 +2214,8 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 	 * If the new tuple is too big for storage or contains already toasted
 	 * out-of-line attributes from some other relation, invoke the toaster.
 	 */
-	if (relation->rd_rel->relkind != RELKIND_RELATION)
+	if (relation->rd_rel->relkind != RELKIND_RELATION &&
+		relation->rd_rel->relkind != RELKIND_MATVIEW)
 	{
 		/* toast table entries should never be recursively toasted */
 		Assert(!HeapTupleHasExternal(tup));
@@ -2802,7 +2803,8 @@ l1:
 	 * because we need to look at the contents of the tuple, but it's OK to
 	 * release the content lock on the buffer first.
 	 */
-	if (relation->rd_rel->relkind != RELKIND_RELATION)
+	if (relation->rd_rel->relkind != RELKIND_RELATION &&
+		relation->rd_rel->relkind != RELKIND_MATVIEW)
 	{
 		/* toast table entries should never be recursively toasted */
 		Assert(!HeapTupleHasExternal(&tp));
@@ -2978,9 +2980,32 @@ heap_update(Relation relation, ItemPointer otid, HeapTuple newtup,
 	lp = PageGetItemId(page, ItemPointerGetOffsetNumber(otid));
 	Assert(ItemIdIsNormal(lp));
 
+	/*
+	 * Fill in enough data in oldtup for HeapSatisfiesHOTandKeyUpdate to work
+	 * properly.
+	 */
+	oldtup.t_tableOid = RelationGetRelid(relation);
 	oldtup.t_data = (HeapTupleHeader) PageGetItem(page, lp);
 	oldtup.t_len = ItemIdGetLength(lp);
 	oldtup.t_self = *otid;
+
+	/* the new tuple is ready, except for this: */
+	newtup->t_tableOid = RelationGetRelid(relation);
+
+	/* Fill in OID for newtup */
+	if (relation->rd_rel->relhasoids)
+	{
+#ifdef NOT_USED
+		/* this is redundant with an Assert in HeapTupleSetOid */
+		Assert(newtup->t_data->t_infomask & HEAP_HASOID);
+#endif
+		HeapTupleSetOid(newtup, HeapTupleGetOid(&oldtup));
+	}
+	else
+	{
+		/* check there is not space for an OID */
+		Assert(!(newtup->t_data->t_infomask & HEAP_HASOID));
+	}
 
 	/*
 	 * If we're not updating any "key" column, we can grab a weaker lock type.
@@ -3243,20 +3268,7 @@ l2:
 	 */
 	CheckForSerializableConflictIn(relation, &oldtup, buffer);
 
-	/* Fill in OID and transaction status data for newtup */
-	if (relation->rd_rel->relhasoids)
-	{
-#ifdef NOT_USED
-		/* this is redundant with an Assert in HeapTupleSetOid */
-		Assert(newtup->t_data->t_infomask & HEAP_HASOID);
-#endif
-		HeapTupleSetOid(newtup, HeapTupleGetOid(&oldtup));
-	}
-	else
-	{
-		/* check there is not space for an OID */
-		Assert(!(newtup->t_data->t_infomask & HEAP_HASOID));
-	}
+	/* Fill in transaction status data */
 
 	/*
 	 * If the tuple we're updating is locked, we need to preserve the locking
@@ -3269,7 +3281,13 @@ l2:
 							  &xmax_old_tuple, &infomask_old_tuple,
 							  &infomask2_old_tuple);
 
-	/* And also prepare an Xmax value for the new copy of the tuple */
+	/*
+	 * And also prepare an Xmax value for the new copy of the tuple.  If there
+	 * was no xmax previously, or there was one but all lockers are now gone,
+	 * then use InvalidXid; otherwise, get the xmax from the old tuple.  (In
+	 * rare cases that might also be InvalidXid and yet not have the
+	 * HEAP_XMAX_INVALID bit set; that's fine.)
+	 */
 	if ((oldtup.t_data->t_infomask & HEAP_XMAX_INVALID) ||
 		(checked_lockers && !locker_remains))
 		xmax_new_tuple = InvalidTransactionId;
@@ -3283,6 +3301,12 @@ l2:
 	}
 	else
 	{
+		/*
+		 * If we found a valid Xmax for the new tuple, then the infomask bits
+		 * to use on the new tuple depend on what was there on the old one.
+		 * Note that since we're doing an update, the only possibility is that
+		 * the lockers had FOR KEY SHARE lock.
+		 */
 		if (oldtup.t_data->t_infomask & HEAP_XMAX_IS_MULTI)
 		{
 			GetMultiXactIdHintBits(xmax_new_tuple, &infomask_new_tuple,
@@ -3306,7 +3330,6 @@ l2:
 	newtup->t_data->t_infomask |= HEAP_UPDATED | infomask_new_tuple;
 	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
 	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
-	newtup->t_tableOid = RelationGetRelid(relation);
 
 	/*
 	 * Replace cid with a combo cid if necessary.  Note that we already put
@@ -3325,7 +3348,8 @@ l2:
 	 * We need to invoke the toaster if there are already any out-of-line
 	 * toasted values present, or if the new tuple is over-threshold.
 	 */
-	if (relation->rd_rel->relkind != RELKIND_RELATION)
+	if (relation->rd_rel->relkind != RELKIND_RELATION &&
+		relation->rd_rel->relkind != RELKIND_MATVIEW)
 	{
 		/* toast table entries should never be recursively toasted */
 		Assert(!HeapTupleHasExternal(&oldtup));
@@ -5092,10 +5116,11 @@ heap_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
 	 * cutoff; it doesn't remove dead members of a very old multixact.
 	 */
 	xid = HeapTupleHeaderGetRawXmax(tuple);
-	if (TransactionIdIsNormal(xid) &&
-		(((!(tuple->t_infomask & HEAP_XMAX_IS_MULTI) &&
-		   TransactionIdPrecedes(xid, cutoff_xid))) ||
-		 MultiXactIdPrecedes(xid, cutoff_multi)))
+	if ((tuple->t_infomask & HEAP_XMAX_IS_MULTI) ?
+		(MultiXactIdIsValid(xid) &&
+		 MultiXactIdPrecedes(xid, cutoff_multi)) :
+		(TransactionIdIsNormal(xid) &&
+		 TransactionIdPrecedes(xid, cutoff_xid)))
 	{
 		HeapTupleHeaderSetXmax(tuple, InvalidTransactionId);
 
@@ -5161,6 +5186,7 @@ GetMultiXactIdHintBits(MultiXactId multi, uint16 *new_infomask,
 	uint16	bits = HEAP_XMAX_IS_MULTI;
 	uint16	bits2 = 0;
 	bool	has_update = false;
+	LockTupleMode	strongest = LockTupleKeyShare;
 
 	/*
 	 * We only use this in multis we just created, so they cannot be values
@@ -5170,32 +5196,47 @@ GetMultiXactIdHintBits(MultiXactId multi, uint16 *new_infomask,
 
 	for (i = 0; i < nmembers; i++)
 	{
+		LockTupleMode	mode;
+
+		/*
+		 * Remember the strongest lock mode held by any member of the
+		 * multixact.
+		 */
+		mode = TUPLOCK_from_mxstatus(members[i].status);
+		if (mode > strongest)
+			strongest = mode;
+
+		/* See what other bits we need */
 		switch (members[i].status)
 		{
 			case MultiXactStatusForKeyShare:
-				bits |= HEAP_XMAX_KEYSHR_LOCK;
-				break;
 			case MultiXactStatusForShare:
-				bits |= HEAP_XMAX_SHR_LOCK;
-				break;
 			case MultiXactStatusForNoKeyUpdate:
-				bits |= HEAP_XMAX_EXCL_LOCK;
 				break;
+
 			case MultiXactStatusForUpdate:
-				bits |= HEAP_XMAX_EXCL_LOCK;
 				bits2 |= HEAP_KEYS_UPDATED;
 				break;
+
 			case MultiXactStatusNoKeyUpdate:
-				bits |= HEAP_XMAX_EXCL_LOCK;
 				has_update = true;
 				break;
+
 			case MultiXactStatusUpdate:
-				bits |= HEAP_XMAX_EXCL_LOCK;
 				bits2 |= HEAP_KEYS_UPDATED;
 				has_update = true;
 				break;
 		}
 	}
+
+	if (strongest == LockTupleExclusive ||
+		strongest == LockTupleNoKeyExclusive)
+		bits |= HEAP_XMAX_EXCL_LOCK;
+	else if (strongest == LockTupleShare)
+		bits |= HEAP_XMAX_SHR_LOCK;
+	else if (strongest == LockTupleKeyShare)
+		bits |= HEAP_XMAX_KEYSHR_LOCK;
+
 	if (!has_update)
 		bits |= HEAP_XMAX_LOCK_ONLY;
 
