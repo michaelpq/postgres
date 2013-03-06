@@ -658,14 +658,13 @@ protocol to make nodes agree on a serializable transactional order.
    <para>
     To set up the standby server, restore the base backup taken from primary
     server (see <xref linkend="backup-pitr-recovery">). Create a recovery
-    command file <filename>recovery.done</> in the standby's cluster data
+    trigger file <filename>recovery.trigger</> in the standby's cluster data
     directory. Turn on <varname>standby_mode</> and set
     <varname>restore_command</> to a simple command to copy files from
     the WAL archive. If you plan to have multiple standby servers for high
     availability purposes, set <varname>recovery_target_timeline</> to
     <literal>latest</>, to make the standby server follow the timeline change
-    that occurs at failover to another standby. Parameters can be set up
-    in either <filename>postgresql.conf</> or <filename>recovery.conf</>.
+    that occurs at failover to another standby.
    </para>
 
    <note>
@@ -1345,11 +1344,16 @@ if (!triggered)
      </listitem>
      <listitem>
       <para>
+       Create a recovery trigger file <filename>recovery.trigger</>
+       in the standby's cluster data directory.
+      </para>
+     </listitem>
+     <listitem>
+      <para>
        Begin recovery on the standby server from the local WAL
-       archive, create a <filename>recovery.conf</> file, then specify a
+       archive, specifying a
        <varname>restore_command</> that waits as described
-       previously (see <xref linkend="backup-pitr-recovery">) in either
-       <filename>postgresql.conf</> or <filename>recovery.conf</>.
+       previously (see <xref linkend="backup-pitr-recovery">).
       </para>
      </listitem>
     </orderedlist>
@@ -1838,9 +1842,9 @@ if (!triggered)
    <title>Administrator's Overview</title>
 
    <para>
-    If <varname>hot_standby</> is turned <literal>on</> in
-    <filename>postgresql.conf</> and there is a <filename>recovery.conf</>
-    file present, the server will run in Hot Standby mode.
+    If <varname>hot_standby</> is turned <literal>on</>
+    and there is a recovery trigger file
+    <filename>recovery.trigger</> present, the server will run in Hot Standby mode.
     However, it may take some time for Hot Standby connections to be allowed,
     because the server will not accept connections until it has completed
     sufficient recovery to provide a consistent state against which queries
