@@ -1009,10 +1009,10 @@ SELECT pg_stop_backup();
    </listitem>
    <listitem>
     <para>
-     Create a recovery trigger file <filename>recovery.trigger</>
-     in the cluster data directory. You might
-     also want to temporarily modify <filename>pg_hba.conf</> to prevent
-     ordinary users from connecting until you are sure the recovery was successful.
+     Create a file called <filename>standby.enabled</> in the cluster data
+     directory. You might also want to temporarily modify <filename>pg_hba.conf</>
+     to prevent ordinary users from connecting until you are sure the recovery
+     was successful.
     </para>
    </listitem>
    <listitem>
@@ -1021,10 +1021,9 @@ SELECT pg_stop_backup();
      proceed to read through the archived WAL files it needs.  Should the
      recovery be terminated because of an external error, the server can
      simply be restarted and it will continue recovery.  Upon completion
-     of the recovery process, the server will rename
-     <filename>recovery.trigger</> to <filename>recovery.done</> (to prevent
-     accidentally re-entering recovery mode later) and then
-     commence normal database operations.
+     of the recovery process, the server will delete
+     <filename>standby.enabled</> (to prevent accidentally re-entering
+     recovery mode later) and then commence normal database operations.
     </para>
    </listitem>
    <listitem>

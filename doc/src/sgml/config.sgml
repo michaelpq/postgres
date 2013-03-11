@@ -2662,7 +2662,7 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
       <listitem>
        <para>
         Specifies whether to start the <productname>PostgreSQL</> server as
-        a standby when recovery trigger file <filename>recovery.trigger</> exists.
+        a standby when the file called <filename>standby.enabled</> exists.
         The default value is <literal>off</>.
         If this parameter is <literal>on</>, the server will not
         stop recovery when the end of archived WAL is reached,
@@ -2673,7 +2673,7 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
        </para>
        <para>
         This parameter can only be set at server start. It only has effect
-        if recovery trigger file <filename>recovery.trigger</> exists.
+        if file <filename>standby.enabled</> exists.
        </para>
       </listitem>
      </varlistentry>
