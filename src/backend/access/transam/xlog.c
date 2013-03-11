@@ -4117,14 +4117,14 @@ CheckRecoveryReadyFile(void)
 {
 	FILE *fd;
 
-	/* Check the presence of recovery.conf */
+	/* Check the presence of recovery.conf, it is not supported anymore */
 	if (AllocateFile(RECOVERY_COMMAND_FILE, "r") != NULL)
 		ereport(FATAL,
 				(errmsg("\"%s\" is not supported anymore as a recovery method",
 						RECOVERY_COMMAND_FILE),
 				 errdetail("Refer to appropriate documentation about migration methods")));
 
-	/* Check the presence of file triggering recovery */
+	/* Check the presence of file standby.enabled, the file triggering recovery */
 	fd = AllocateFile(RECOVERY_ENABLE_FILE, "r");
 	if (fd == NULL)
 	{
@@ -9498,7 +9498,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 		 * process.
 		 */
 		HandleStartupProcInterrupts();
-	} while (StandbyMode);
+	} while (standby_mode);
 
 	return false;
 }
