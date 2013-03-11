@@ -147,7 +147,8 @@ ExecInitForeignScan(ForeignScan *node, EState *estate, int eflags)
 	scanstate->ss.ss_currentRelation = currentRelation;
 
 	/*
-	 * get the scan type from the relation descriptor.
+	 * get the scan type from the relation descriptor.	(XXX at some point we
+	 * might want to let the FDW editorialize on the scan tupdesc.)
 	 */
 	ExecAssignScanType(&scanstate->ss, RelationGetDescr(currentRelation));
 
@@ -160,7 +161,7 @@ ExecInitForeignScan(ForeignScan *node, EState *estate, int eflags)
 	/*
 	 * Acquire function pointers from the FDW's handler, and init fdw_state.
 	 */
-	fdwroutine = GetFdwRoutineByRelId(RelationGetRelid(currentRelation));
+	fdwroutine = GetFdwRoutineForRelation(currentRelation, true);
 	scanstate->fdwroutine = fdwroutine;
 	scanstate->fdw_state = NULL;
 
