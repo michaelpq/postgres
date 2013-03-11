@@ -63,11 +63,12 @@
 
 
 /* File path names (all relative to $PGDATA) */
-#define RECOVERY_COMMAND_READY	"recovery.trigger"
-#define RECOVERY_COMMAND_DONE	"recovery.done"
-#define PROMOTE_SIGNAL_FILE "promote"
-#define FAST_PROMOTE_SIGNAL_FILE "fast_promote"
+#define RECOVERY_ENABLE_FILE		"standby.enabled"
+#define RECOVERY_SIGNAL_FILE		"recover"
+#define FAST_RECOVERY_SIGNAL_FILE	"fast_recover"
 
+/* recovery.conf is not supported anymore */
+#define RECOVERY_COMMAND_FILE	"recovery.conf"
 
 /* User-settable parameters */
 int			CheckPointSegments = 3;
@@ -219,6 +220,9 @@ bool InArchiveRecovery = false;
 
 /* Was the last xlog file restored from archive, or local? */
 static bool restoredFromArchive = false;
+
+/* whether request for fast promotion has been made yet */
+static bool fast_promote = false;
 
 /* if recoveryStopsHere returns true, it saves actual stop xid/time/name here */
 static RecoveryTargetType recoveryStopTarget;
@@ -3296,8 +3300,6 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 				ereport(DEBUG1,
 						(errmsg_internal("reached end of WAL in pg_xlog, entering archive recovery")));
 				InArchiveRecovery = true;
-				if (StandbyModeRequested)
-					StandbyMode = true;
 
 				/* initialize minRecoveryPoint to this record */
 				LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
@@ -3327,12 +3329,12 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 			}
 
 			/* In standby mode, loop back to retry. Otherwise, give up. */
-			if (StandbyMode && !CheckForStandbyTrigger())
+			if (standby_mode && !CheckForStandbyTrigger())
 				continue;
 			else
 				return NULL;
 		}
-	} while (standby_mode && record == NULL && !CheckForStandbyTrigger());
+	}
 }
 
 /*
@@ -4115,8 +4117,15 @@ CheckRecoveryReadyFile(void)
 {
 	FILE *fd;
 
-	/* Check the presence of recovery trigger file */
-	fd = AllocateFile(RECOVERY_COMMAND_READY, "r");
+	/* Check the presence of recovery.conf */
+	if (AllocateFile(RECOVERY_COMMAND_FILE, "r") != NULL)
+		ereport(FATAL,
+				(errmsg("\"%s\" is not supported anymore as a recovery method",
+						RECOVERY_COMMAND_FILE),
+				 errdetail("Refer to appropriate documentation about migration methods")));
+
+	/* Check the presence of file triggering recovery */
+	fd = AllocateFile(RECOVERY_ENABLE_FILE, "r");
 	if (fd == NULL)
 	{
 		if (errno == ENOENT)
@@ -4124,7 +4133,7 @@ CheckRecoveryReadyFile(void)
 		ereport(FATAL,
 				(errcode_for_file_access(),
 				 errmsg("could not open recovery file trigger \"%s\": %m",
-						RECOVERY_COMMAND_READY)));
+						RECOVERY_ENABLE_FILE)));
 	}
 
 	/* Check for compulsory parameters */
@@ -4242,15 +4251,13 @@ exitArchiveRecovery(TimeLineID endTLI, XLogSegNo endLogSegNo)
 	unlink(recoveryPath);		/* ignore any error */
 
 	/*
-	 * Rename the config file out of the way, so that we don't accidentally
-	 * re-enter archive recovery mode in a subsequent crash.
+	 * Remove file that triggered the recovery
 	 */
-	unlink(RECOVERY_COMMAND_DONE);
-	if (rename(RECOVERY_COMMAND_READY, RECOVERY_COMMAND_DONE) != 0)
+	if (unlink(RECOVERY_ENABLE_FILE) != 0)
 		ereport(FATAL,
 				(errcode_for_file_access(),
-				 errmsg("could not rename file \"%s\" to \"%s\": %m",
-						RECOVERY_COMMAND_READY, RECOVERY_COMMAND_DONE)));
+				 errmsg("could not remove file \"%s\": %m",
+						RECOVERY_ENABLE_FILE)));
 
 	ereport(LOG,
 			(errmsg("archive recovery complete")));
@@ -4789,8 +4796,6 @@ StartupXLOG(void)
 		 * archive recovery directly.
 		 */
 		InArchiveRecovery = true;
-		if (StandbyModeRequested)
-			StandbyMode = true;
 
 		/*
 		 * When a backup_label file is present, we want to roll forward from
@@ -4855,8 +4860,6 @@ StartupXLOG(void)
 			 ControlFile->state == DB_SHUTDOWNED))
 		{
 			InArchiveRecovery = true;
-			if (StandbyModeRequested)
-				StandbyMode = true;
 		}
 
 		/*
@@ -9224,7 +9227,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * file, we still finish replaying as much as we can from
 					 * archive and pg_xlog before failover.
 					 */
-					if (StandbyMode && CheckForStandbyTrigger())
+					if (standby_mode && CheckForStandbyTrigger())
 					{
 						ShutdownWalRcv();
 						return false;
@@ -9234,7 +9237,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * Not in standby mode, and we've now tried the archive and
 					 * pg_xlog.
 					 */
-					if (!StandbyMode)
+					if (!standby_mode)
 						return false;
 
 					/*
@@ -9555,15 +9558,15 @@ CheckForStandbyTrigger(void)
 		 * Startup to know whether we're doing fast or normal
 		 * promotion. Fast promotion takes precedence.
 		 */
-		if (stat(FAST_PROMOTE_SIGNAL_FILE, &stat_buf) == 0)
+		if (stat(FAST_RECOVERY_SIGNAL_FILE, &stat_buf) == 0)
 		{
-			unlink(FAST_PROMOTE_SIGNAL_FILE);
-			unlink(PROMOTE_SIGNAL_FILE);
+			unlink(FAST_RECOVERY_SIGNAL_FILE);
+			unlink(RECOVERY_SIGNAL_FILE);
 			fast_promote = true;
 		}
-		else if (stat(PROMOTE_SIGNAL_FILE, &stat_buf) == 0)
+		else if (stat(RECOVERY_SIGNAL_FILE, &stat_buf) == 0)
 		{
-			unlink(PROMOTE_SIGNAL_FILE);
+			unlink(RECOVERY_SIGNAL_FILE);
 			fast_promote = false;
 		}
 
@@ -9609,8 +9612,8 @@ CheckPromoteSignal(void)
 {
 	struct stat stat_buf;
 
-	if (stat(PROMOTE_SIGNAL_FILE, &stat_buf) == 0 ||
-		stat(FAST_PROMOTE_SIGNAL_FILE, &stat_buf) == 0)
+	if (stat(RECOVERY_SIGNAL_FILE, &stat_buf) == 0 ||
+		stat(FAST_RECOVERY_SIGNAL_FILE, &stat_buf) == 0)
 		return true;
 
 	return false;
