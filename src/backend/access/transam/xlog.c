@@ -3303,7 +3303,7 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 				ereport(DEBUG1,
 						(errmsg_internal("reached end of WAL in pg_xlog, entering archive recovery")));
 				InArchiveRecovery = true;
-				if (StandbyModeRequested)
+				if (ArchiveRecoveryRequested && StandbyModeRequested)
 					StandbyMode = true;
 
 				/* initialize minRecoveryPoint to this record */
@@ -4804,7 +4804,10 @@ StartupXLOG(void)
 		 * archive recovery directly.
 		 */
 		InArchiveRecovery = true;
-		if (StandbyModeRequested)
+		//This is not necessarily true... it can be set in postgresql.conf
+		//even if a backup label is present... and that standby.enabled is not
+		//here
+		if (ArchiveRecoveryRequested && StandbyModeRequested)
 			StandbyMode = true;
 
 		/*
@@ -4870,7 +4873,7 @@ StartupXLOG(void)
 			 ControlFile->state == DB_SHUTDOWNED))
 		{
 			InArchiveRecovery = true;
-			if (StandbyModeRequested)
+			if (ArchiveRecoveryRequested && StandbyModeRequested)
 				StandbyMode = true;
 		}
 
@@ -5527,7 +5530,7 @@ StartupXLOG(void)
 	 * We don't need the latch anymore. It's not strictly necessary to disown
 	 * it, but let's do it for the sake of tidiness.
 	 */
-	if (StandbyModeRequested)
+	if (ArchiveRecoveryRequested && StandbyModeRequested)
 		DisownLatch(&XLogCtl->recoveryWakeupLatch);
 
 	/*
@@ -9046,7 +9049,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 		 * Request a restartpoint if we've replayed too much xlog since the
 		 * last one.
 		 */
-		if (StandbyModeRequested && bgwriterLaunched)
+		if (ArchiveRecoveryRequested && StandbyModeRequested && bgwriterLaunched)
 		{
 			if (XLogCheckpointNeeded(readSegNo))
 			{
