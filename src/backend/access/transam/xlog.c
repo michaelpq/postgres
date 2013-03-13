@@ -4736,6 +4736,9 @@ StartupXLOG(void)
 	 * recovery.
 	 */
 	CheckRecoveryReadyFile();
+	//This is deadly incorrect!
+	//ArchiveRecoveryRequested cannot set to true but other parameters
+	// can !!!! Need to check how process goes after that!
 
 	if (ArchiveRecoveryRequested)
 	{
@@ -4779,7 +4782,7 @@ StartupXLOG(void)
 	 * Take ownership of the wakeup latch if we're going to sleep during
 	 * recovery.
 	 */
-	if (StandbyModeRequested)
+	if (ArchiveRecoveryRequested && StandbyModeRequested)
 		OwnLatch(&XLogCtl->recoveryWakeupLatch);
 
 	/* Set up XLOG reader facility */
