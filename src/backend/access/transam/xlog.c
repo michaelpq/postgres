@@ -63,9 +63,9 @@
 
 
 /* File path names (all relative to $PGDATA) */
-#define RECOVERY_ENABLE_FILE		"standby.enabled"
-#define RECOVERY_SIGNAL_FILE		"recover"
-#define FAST_RECOVERY_SIGNAL_FILE	"fast_recover"
+#define RECOVERY_ENABLE_FILE	"standby.enabled"
+#define PROMOTE_SIGNAL_FILE	"promote"
+#define FAST_PROMOTE_SIGNAL_FILE "fast_promote"
 
 /* recovery.conf is not supported anymore */
 #define RECOVERY_COMMAND_FILE	"recovery.conf"
@@ -87,7 +87,7 @@ int			CommitSiblings = 5; /* # concurrent xacts needed to sleep */
 char	   *restore_command = NULL;
 char	   *archive_cleanup_command = NULL;
 char	   *recovery_end_command = NULL;
-bool		standby_mode = false;
+bool		StandbyModeRequested = false;
 char	   *primary_conninfo = NULL;
 char	   *trigger_file = NULL;
 RecoveryTargetType	recovery_target = RECOVERY_TARGET_UNSET;
@@ -98,6 +98,9 @@ bool		recovery_target_inclusive = true;
 bool		pause_at_recovery_target = true;
 char	   *recovery_target_timeline_string = NULL;
 TimeLineID	recovery_target_timeline = 0;
+
+/* are we currently in standby mode? */
+bool StandbyMode = false;
 
 #ifdef WAL_DEBUG
 bool		XLOG_DEBUG = false;
@@ -3243,7 +3246,7 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 			/*
 			 * We only end up here without a message when XLogPageRead() failed
 			 * - in that case we already logged something.
-			 * In standby_mode that only happens if we have been triggered, so
+			 * In StandbyMode that only happens if we have been triggered, so
 			 * we shouldn't loop anymore in that case.
 			 */
 			if (errormsg)
@@ -3300,6 +3303,8 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 				ereport(DEBUG1,
 						(errmsg_internal("reached end of WAL in pg_xlog, entering archive recovery")));
 				InArchiveRecovery = true;
+				if (StandbyModeRequested)
+					StandbyMode = true;
 
 				/* initialize minRecoveryPoint to this record */
 				LWLockAcquire(ControlFileLock, LW_EXCLUSIVE);
@@ -3329,7 +3334,7 @@ ReadRecord(XLogReaderState *xlogreader, XLogRecPtr RecPtr, int emode,
 			}
 
 			/* In standby mode, loop back to retry. Otherwise, give up. */
-			if (standby_mode && !CheckForStandbyTrigger())
+			if (StandbyMode && !CheckForStandbyTrigger())
 				continue;
 			else
 				return NULL;
@@ -4129,7 +4134,7 @@ CheckRecoveryReadyFile(void)
 	if (fd == NULL)
 	{
 		if (errno == ENOENT)
-			return;		/* not there, so no archive recovery */
+			return;				/* not there, so no archive recovery */
 		ereport(FATAL,
 				(errcode_for_file_access(),
 				 errmsg("could not open recovery file trigger \"%s\": %m",
@@ -4137,7 +4142,7 @@ CheckRecoveryReadyFile(void)
 	}
 
 	/* Check for compulsory parameters */
-	if (standby_mode)
+	if (StandbyModeRequested)
 	{
 		if (!restore_command[0] && !primary_conninfo[0])
 			ereport(WARNING,
@@ -4734,7 +4739,7 @@ StartupXLOG(void)
 
 	if (ArchiveRecoveryRequested)
 	{
-		if (standby_mode)
+		if (StandbyModeRequested)
 			ereport(LOG,
 					(errmsg("entering standby mode")));
 		else if (recovery_target == RECOVERY_TARGET_XID)
@@ -4774,7 +4779,7 @@ StartupXLOG(void)
 	 * Take ownership of the wakeup latch if we're going to sleep during
 	 * recovery.
 	 */
-	if (standby_mode)
+	if (StandbyModeRequested)
 		OwnLatch(&XLogCtl->recoveryWakeupLatch);
 
 	/* Set up XLOG reader facility */
@@ -4796,6 +4801,8 @@ StartupXLOG(void)
 		 * archive recovery directly.
 		 */
 		InArchiveRecovery = true;
+		if (StandbyModeRequested)
+			StandbyMode = true;
 
 		/*
 		 * When a backup_label file is present, we want to roll forward from
@@ -4860,6 +4867,8 @@ StartupXLOG(void)
 			 ControlFile->state == DB_SHUTDOWNED))
 		{
 			InArchiveRecovery = true;
+			if (StandbyModeRequested)
+				StandbyMode = true;
 		}
 
 		/*
@@ -4875,7 +4884,7 @@ StartupXLOG(void)
 					(errmsg("checkpoint record is at %X/%X",
 							(uint32) (checkPointLoc >> 32), (uint32) checkPointLoc)));
 		}
-		else if (standby_mode)
+		else if (StandbyMode)
 		{
 			/*
 			 * The last valid checkpoint record required for a streaming
@@ -5515,7 +5524,7 @@ StartupXLOG(void)
 	 * We don't need the latch anymore. It's not strictly necessary to disown
 	 * it, but let's do it for the sake of tidiness.
 	 */
-	if (standby_mode)
+	if (StandbyModeRequested)
 		DisownLatch(&XLogCtl->recoveryWakeupLatch);
 
 	/*
@@ -5523,7 +5532,7 @@ StartupXLOG(void)
 	 * recovery to force fetching the files (which would be required at end of
 	 * recovery, e.g., timeline history file) from archive or pg_xlog.
 	 */
-	SetConfigOption("standby_mode", "false", PGC_POSTMASTER, PGC_S_OVERRIDE);
+	StandbyMode = false;
 
 	/*
 	 * Re-fetch the last valid or last applied record, so we can identify the
@@ -9034,7 +9043,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 		 * Request a restartpoint if we've replayed too much xlog since the
 		 * last one.
 		 */
-		if (standby_mode && bgwriterLaunched)
+		if (StandbyModeRequested && bgwriterLaunched)
 		{
 			if (XLogCheckpointNeeded(readSegNo))
 			{
@@ -9137,7 +9146,7 @@ next_record_is_invalid:
 	readSource = 0;
 
 	/* In standby-mode, keep trying */
-	if (standby_mode)
+	if (StandbyMode)
 		goto retry;
 	else
 		return -1;
@@ -9227,7 +9236,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * file, we still finish replaying as much as we can from
 					 * archive and pg_xlog before failover.
 					 */
-					if (standby_mode && CheckForStandbyTrigger())
+					if (StandbyMode && CheckForStandbyTrigger())
 					{
 						ShutdownWalRcv();
 						return false;
@@ -9237,7 +9246,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 					 * Not in standby mode, and we've now tried the archive and
 					 * pg_xlog.
 					 */
-					if (!standby_mode)
+					if (!StandbyMode)
 						return false;
 
 					/*
@@ -9498,7 +9507,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 		 * process.
 		 */
 		HandleStartupProcInterrupts();
-	} while (standby_mode);
+	} while (StandbyMode);
 
 	return false;
 }
@@ -9558,15 +9567,15 @@ CheckForStandbyTrigger(void)
 		 * Startup to know whether we're doing fast or normal
 		 * promotion. Fast promotion takes precedence.
 		 */
-		if (stat(FAST_RECOVERY_SIGNAL_FILE, &stat_buf) == 0)
+		if (stat(FAST_PROMOTE_SIGNAL_FILE, &stat_buf) == 0)
 		{
-			unlink(FAST_RECOVERY_SIGNAL_FILE);
-			unlink(RECOVERY_SIGNAL_FILE);
+			unlink(FAST_PROMOTE_SIGNAL_FILE);
+			unlink(PROMOTE_SIGNAL_FILE);
 			fast_promote = true;
 		}
-		else if (stat(RECOVERY_SIGNAL_FILE, &stat_buf) == 0)
+		else if (stat(PROMOTE_SIGNAL_FILE, &stat_buf) == 0)
 		{
-			unlink(RECOVERY_SIGNAL_FILE);
+			unlink(PROMOTE_SIGNAL_FILE);
 			fast_promote = false;
 		}
 
@@ -9612,8 +9621,8 @@ CheckPromoteSignal(void)
 {
 	struct stat stat_buf;
 
-	if (stat(RECOVERY_SIGNAL_FILE, &stat_buf) == 0 ||
-		stat(FAST_RECOVERY_SIGNAL_FILE, &stat_buf) == 0)
+	if (stat(PROMOTE_SIGNAL_FILE, &stat_buf) == 0 ||
+		stat(FAST_PROMOTE_SIGNAL_FILE, &stat_buf) == 0)
 		return true;
 
 	return false;

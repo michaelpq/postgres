@@ -193,7 +193,7 @@ extern bool log_checkpoints;
 extern char *restore_command;
 extern char *archive_cleanup_command;
 extern char *recovery_end_command;
-extern bool standby_mode;
+extern bool	StandbyModeRequested;
 extern char *primary_conninfo;
 extern char *trigger_file;
 extern RecoveryTargetType recovery_target;

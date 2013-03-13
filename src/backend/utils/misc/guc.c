@@ -1415,7 +1415,7 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Sets whether to start the server as a standby."),
 			NULL
 		},
-		&standby_mode,
+		&StandbyModeRequested,
 		false,
 		NULL, NULL, NULL
 	},

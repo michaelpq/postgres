@@ -236,7 +236,7 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 				 * incorrectly conclude we've reached the end of WAL and we're
 				 * done recovering ...
 				 */
-				if (standby_mode && stat_buf.st_size < expectedSize)
+				if (StandbyMode && stat_buf.st_size < expectedSize)
 					elevel = DEBUG1;
 				else
 					elevel = FATAL;
