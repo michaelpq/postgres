@@ -4114,7 +4114,7 @@ str_time(pg_time_t tnow)
 }
 
 /*
- * Check to see if there is a recovery trigger file (recovery.trigger).
+ * Check to see if there is a recovery trigger file (standby.enabled).
  * If so, validate recovery parameters and determine recovery target timeline.
  */
 static void
@@ -5027,7 +5027,7 @@ StartupXLOG(void)
 
 	/*
 	 * Check whether we need to force recovery from WAL.  If it appears to
-	 * have been a clean shutdown and we did not have a recovery.trigger file,
+	 * have been a clean shutdown and we did not have a standby.enabled file,
 	 * then assume no recovery needed.
 	 */
 	if (checkPoint.redo < RecPtr)
@@ -5041,7 +5041,7 @@ StartupXLOG(void)
 		InRecovery = true;
 	else if (ArchiveRecoveryRequested)
 	{
-		/* force recovery due to presence of recovery.trigger */
+		/* force recovery due to presence of standby.enabled */
 		InRecovery = true;
 	}
 
