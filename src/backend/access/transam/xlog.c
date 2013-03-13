@@ -4736,9 +4736,6 @@ StartupXLOG(void)
 	 * recovery.
 	 */
 	CheckRecoveryReadyFile();
-	//This is deadly incorrect!
-	//ArchiveRecoveryRequested cannot set to true but other parameters
-	// can !!!! Need to check how process goes after that!
 
 	if (ArchiveRecoveryRequested)
 	{
@@ -4804,9 +4801,6 @@ StartupXLOG(void)
 		 * archive recovery directly.
 		 */
 		InArchiveRecovery = true;
-		//This is not necessarily true... it can be set in postgresql.conf
-		//even if a backup label is present... and that standby.enabled is not
-		//here
 		if (ArchiveRecoveryRequested && StandbyModeRequested)
 			StandbyMode = true;
 
