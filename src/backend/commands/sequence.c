@@ -20,6 +20,7 @@
 #include "access/xlogutils.h"
 #include "catalog/dependency.h"
 #include "catalog/namespace.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "commands/sequence.h"
@@ -392,7 +393,6 @@ fill_seq_with_data(Relation rel, HeapTuple tuple)
 		recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG, rdata);
 
 		PageSetLSN(page, recptr);
-		PageSetTLI(page, ThisTimeLineID);
 	}
 
 	END_CRIT_SECTION();
@@ -476,7 +476,6 @@ AlterSequence(AlterSeqStmt *stmt)
 		recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG, rdata);
 
 		PageSetLSN(page, recptr);
-		PageSetTLI(page, ThisTimeLineID);
 	}
 
 	END_CRIT_SECTION();
@@ -486,6 +485,8 @@ AlterSequence(AlterSeqStmt *stmt)
 	/* process OWNED BY if given */
 	if (owned_by)
 		process_owned_by(seqrel, owned_by);
+
+	InvokeObjectPostAlterHook(RelationRelationId, relid, 0);
 
 	relation_close(seqrel, NoLock);
 
@@ -738,7 +739,6 @@ nextval_internal(Oid relid)
 		recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG, rdata);
 
 		PageSetLSN(page, recptr);
-		PageSetTLI(page, ThisTimeLineID);
 	}
 
 	/* Now update sequence tuple to the intended final state */
@@ -916,7 +916,6 @@ do_setval(Oid relid, int64 next, bool iscalled)
 		recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG, rdata);
 
 		PageSetLSN(page, recptr);
-		PageSetTLI(page, ThisTimeLineID);
 	}
 
 	END_CRIT_SECTION();
@@ -1119,7 +1118,7 @@ read_seq_tuple(SeqTable elm, Relation rel, Buffer *buf, HeapTuple seqtuple)
 		HeapTupleHeaderSetXmax(seqtuple->t_data, InvalidTransactionId);
 		seqtuple->t_data->t_infomask &= ~HEAP_XMAX_COMMITTED;
 		seqtuple->t_data->t_infomask |= HEAP_XMAX_INVALID;
-		SetBufferCommitInfoNeedsSave(*buf);
+		MarkBufferDirtyHint(*buf);
 	}
 
 	seq = (Form_pg_sequence) GETSTRUCT(seqtuple);
@@ -1595,7 +1594,6 @@ seq_redo(XLogRecPtr lsn, XLogRecord *record)
 		elog(PANIC, "seq_redo: failed to add item to page");
 
 	PageSetLSN(localpage, lsn);
-	PageSetTLI(localpage, ThisTimeLineID);
 
 	memcpy(page, localpage, BufferGetPageSize(buffer));
 	MarkBufferDirty(buffer);

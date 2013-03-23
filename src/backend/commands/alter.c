@@ -19,6 +19,7 @@
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/objectaccess.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_conversion.h"
 #include "catalog/pg_event_trigger.h"
@@ -280,6 +281,8 @@ AlterObjectRename_internal(Relation rel, Oid objectId, const char *new_name)
 	/* Perform actual update */
 	simple_heap_update(rel, &oldtup->t_self, newtup);
 	CatalogUpdateIndexes(rel, newtup);
+
+	InvokeObjectPostAlterHook(classId, objectId, 0);
 
 	/* Release memory */
 	pfree(values);
@@ -657,6 +660,8 @@ AlterObjectNamespace_internal(Relation rel, Oid objid, Oid nspOid)
 	changeDependencyFor(classId, objid,
 						NamespaceRelationId, oldNspOid, nspOid);
 
+	InvokeObjectPostAlterHook(classId, objid, 0);
+
 	return oldNspOid;
 }
 
@@ -745,58 +750,6 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 
 			return InvalidOid;	/* keep compiler happy */
 	}
-}
-
-/*
- * Return a copy of the tuple for the object with the given object OID, from
- * the given catalog (which must have been opened by the caller and suitably
- * locked).  NULL is returned if the OID is not found.
- *
- * We try a syscache first, if available.
- *
- * XXX this function seems general in possible usage.  Given sufficient callers
- * elsewhere, we should consider moving it to a more appropriate place.
- */
-static HeapTuple
-get_catalog_object_by_oid(Relation catalog, Oid objectId)
-{
-	HeapTuple	tuple;
-	Oid			classId = RelationGetRelid(catalog);
-	int			oidCacheId = get_object_catcache_oid(classId);
-
-	if (oidCacheId > 0)
-	{
-		tuple = SearchSysCacheCopy1(oidCacheId, ObjectIdGetDatum(objectId));
-		if (!HeapTupleIsValid(tuple))  /* should not happen */
-			return NULL;
-	}
-	else
-	{
-		Oid			oidIndexId = get_object_oid_index(classId);
-		SysScanDesc	scan;
-		ScanKeyData	skey;
-
-		Assert(OidIsValid(oidIndexId));
-
-		ScanKeyInit(&skey,
-					ObjectIdAttributeNumber,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(objectId));
-
-		scan = systable_beginscan(catalog, oidIndexId, true,
-								  SnapshotNow, 1, &skey);
-		tuple = systable_getnext(scan);
-		if (!HeapTupleIsValid(tuple))
-		{
-			systable_endscan(scan);
-			return NULL;
-		}
-		tuple = heap_copytuple(tuple);
-
-		systable_endscan(scan);
-	}
-
-	return tuple;
 }
 
 /*
@@ -934,4 +887,6 @@ AlterObjectOwner_internal(Relation rel, Oid objectId, Oid new_ownerId)
 		pfree(nulls);
 		pfree(replaces);
 	}
+
+	InvokeObjectPostAlterHook(classId, objectId, 0);
 }

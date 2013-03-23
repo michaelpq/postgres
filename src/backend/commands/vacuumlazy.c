@@ -672,8 +672,8 @@ lazy_scan_heap(Relation onerel, LVRelStats *vacrelstats,
 			{
 				PageSetAllVisible(page);
 				MarkBufferDirty(buf);
-				visibilitymap_set(onerel, blkno, InvalidXLogRecPtr, vmbuffer,
-								  InvalidTransactionId);
+				visibilitymap_set(onerel, blkno, buf, InvalidXLogRecPtr,
+								  vmbuffer, InvalidTransactionId);
 			}
 
 			UnlockReleaseBuffer(buf);
@@ -876,7 +876,6 @@ lazy_scan_heap(Relation onerel, LVRelStats *vacrelstats,
 				recptr = log_heap_freeze(onerel, buf, FreezeLimit,
 										 MultiXactFrzLimit, frozen, nfrozen);
 				PageSetLSN(page, recptr);
-				PageSetTLI(page, ThisTimeLineID);
 			}
 		}
 
@@ -908,8 +907,8 @@ lazy_scan_heap(Relation onerel, LVRelStats *vacrelstats,
 			{
 				PageSetAllVisible(page);
 				MarkBufferDirty(buf);
-				visibilitymap_set(onerel, blkno, InvalidXLogRecPtr, vmbuffer,
-								  visibility_cutoff_xid);
+				visibilitymap_set(onerel, blkno, buf, InvalidXLogRecPtr,
+								  vmbuffer, visibility_cutoff_xid);
 			}
 			else if (!all_visible_according_to_vm)
 			{
@@ -919,8 +918,8 @@ lazy_scan_heap(Relation onerel, LVRelStats *vacrelstats,
 				 * allowed.  Set the visibility map bit as well so that we get
 				 * back in sync.
 				 */
-				visibilitymap_set(onerel, blkno, InvalidXLogRecPtr, vmbuffer,
-								  visibility_cutoff_xid);
+				visibilitymap_set(onerel, blkno, buf, InvalidXLogRecPtr,
+								  vmbuffer, visibility_cutoff_xid);
 			}
 		}
 
@@ -1155,7 +1154,7 @@ lazy_vacuum_page(Relation onerel, BlockNumber blkno, Buffer buffer,
 	{
 		Assert(BufferIsValid(*vmbuffer));
 		PageSetAllVisible(page);
-		visibilitymap_set(onerel, blkno, InvalidXLogRecPtr, *vmbuffer,
+		visibilitymap_set(onerel, blkno, buffer, InvalidXLogRecPtr, *vmbuffer,
 				visibility_cutoff_xid);
 	}
 
@@ -1171,7 +1170,6 @@ lazy_vacuum_page(Relation onerel, BlockNumber blkno, Buffer buffer,
 								unused, uncnt,
 								vacrelstats->latestRemovedXid);
 		PageSetLSN(page, recptr);
-		PageSetTLI(page, ThisTimeLineID);
 	}
 
 	END_CRIT_SECTION();

@@ -105,11 +105,8 @@ spgbuild(PG_FUNCTION_ARGS)
 		recptr = XLogInsert(RM_SPGIST_ID, XLOG_SPGIST_CREATE_INDEX, &rdata);
 
 		PageSetLSN(BufferGetPage(metabuffer), recptr);
-		PageSetTLI(BufferGetPage(metabuffer), ThisTimeLineID);
 		PageSetLSN(BufferGetPage(rootbuffer), recptr);
-		PageSetTLI(BufferGetPage(rootbuffer), ThisTimeLineID);
 		PageSetLSN(BufferGetPage(nullbuffer), recptr);
-		PageSetTLI(BufferGetPage(nullbuffer), ThisTimeLineID);
 	}
 
 	END_CRIT_SECTION();
@@ -157,6 +154,7 @@ spgbuildempty(PG_FUNCTION_ARGS)
 	SpGistInitMetapage(page);
 
 	/* Write the page.	If archiving/streaming, XLOG it. */
+	PageSetChecksumInplace(page, SPGIST_METAPAGE_BLKNO);
 	smgrwrite(index->rd_smgr, INIT_FORKNUM, SPGIST_METAPAGE_BLKNO,
 			  (char *) page, true);
 	if (XLogIsNeeded())
@@ -166,6 +164,7 @@ spgbuildempty(PG_FUNCTION_ARGS)
 	/* Likewise for the root page. */
 	SpGistInitPage(page, SPGIST_LEAF);
 
+	PageSetChecksumInplace(page, SPGIST_ROOT_BLKNO);
 	smgrwrite(index->rd_smgr, INIT_FORKNUM, SPGIST_ROOT_BLKNO,
 			  (char *) page, true);
 	if (XLogIsNeeded())
@@ -175,6 +174,7 @@ spgbuildempty(PG_FUNCTION_ARGS)
 	/* Likewise for the null-tuples root page. */
 	SpGistInitPage(page, SPGIST_LEAF | SPGIST_NULLS);
 
+	PageSetChecksumInplace(page, SPGIST_NULL_BLKNO);
 	smgrwrite(index->rd_smgr, INIT_FORKNUM, SPGIST_NULL_BLKNO,
 			  (char *) page, true);
 	if (XLogIsNeeded())

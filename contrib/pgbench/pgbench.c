@@ -35,11 +35,11 @@
 
 #include "getopt_long.h"
 #include "libpq-fe.h"
-#include "libpq/pqsignal.h"
 #include "portability/instr_time.h"
 
 #include <ctype.h>
 #include <math.h>
+#include <signal.h>
 
 #ifndef WIN32
 #include <sys/time.h>

@@ -189,6 +189,10 @@ EXPLAIN (VERBOSE, COSTS false) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, 
 EXPLAIN (VERBOSE, COSTS false) SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1]; -- ArrayRef
 EXPLAIN (VERBOSE, COSTS false) SELECT * FROM ft1 t1 WHERE c6 = E'foo''s\\bar';  -- check special chars
 EXPLAIN (VERBOSE, COSTS false) SELECT * FROM ft1 t1 WHERE c8 = 'foo';  -- can't be sent to remote
+-- parameterized remote path
+EXPLAIN (VERBOSE, COSTS false)
+  SELECT * FROM ft2 a, ft2 b WHERE a.c1 = 47 AND b.c1 = a.c2;
+SELECT * FROM ft2 a, ft2 b WHERE a.c1 = 47 AND b.c1 = a.c2;
 
 -- ===================================================================
 -- parameterized queries
@@ -307,7 +311,9 @@ UPDATE ft2 SET c2 = ft2.c2 + 500, c3 = ft2.c3 || '_update9', c7 = DEFAULT
   FROM ft1 WHERE ft1.c1 = ft2.c2 AND ft1.c1 % 10 = 9;
 UPDATE ft2 SET c2 = ft2.c2 + 500, c3 = ft2.c3 || '_update9', c7 = DEFAULT
   FROM ft1 WHERE ft1.c1 = ft2.c2 AND ft1.c1 % 10 = 9;
-DELETE FROM ft2 WHERE c1 % 10 = 5 RETURNING *;
+EXPLAIN (verbose, costs off)
+  DELETE FROM ft2 WHERE c1 % 10 = 5 RETURNING c1, c4;
+DELETE FROM ft2 WHERE c1 % 10 = 5 RETURNING c1, c4;
 EXPLAIN (verbose, costs off)
 DELETE FROM ft2 USING ft1 WHERE ft1.c1 = ft2.c2 AND ft1.c1 % 10 = 2;
 DELETE FROM ft2 USING ft1 WHERE ft1.c1 = ft2.c2 AND ft1.c1 % 10 = 2;

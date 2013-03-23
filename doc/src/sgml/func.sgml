@@ -7151,16 +7151,19 @@ SELECT EXTRACT(SECOND FROM TIME '17:12:28.5');
       <listitem>
        <para>
         The number of the week of the year that the day is in.  By definition
-        (<acronym>ISO</acronym> 8601), the first week of a year
-        contains January 4 of that year.  (The <acronym>ISO</acronym>-8601
-        week starts on Monday.)  In other words, the first Thursday of
-        a year is in week 1 of that year.
+        (<acronym>ISO</acronym> 8601), weeks start on Mondays and the first
+        week of a year contains January 4 of that year.  In other words, the
+        first Thursday of a year is in week 1 of that year.
        </para>
        <para>
-        Because of this, it is possible for early January dates to be part of the
-        52nd or 53rd week of the previous year.  For example, <literal>2005-01-01</>
-        is part of the 53rd week of year 2004, and <literal>2006-01-01</> is part of
-        the 52nd week of year 2005.
+        In the ISO definition, it is possible for early-January dates to be
+        part of the 52nd or 53rd week of the previous year, and for
+        late-December dates to be part of the first week of the next year.
+        For example, <literal>2005-01-01</> is part of the 53rd week of year
+        2004, and <literal>2006-01-01</> is part of the 52nd week of year
+        2005, while <literal>2012-12-31</> is part of the first week of 2013.
+        It's recommended to use the <literal>isoyear</> field together with
+        <literal>week</> to get consistent results.
        </para>
 
 <screen>
@@ -13928,6 +13931,10 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
    </indexterm>
 
    <indexterm>
+    <primary>pg_identify_object</primary>
+   </indexterm>
+
+   <indexterm>
     <primary>pg_get_constraintdef</primary>
    </indexterm>
 
@@ -14025,6 +14032,11 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
        <entry><literal><function>pg_describe_object(<parameter>catalog_id</parameter>, <parameter>object_id</parameter>, <parameter>object_sub_id</parameter>)</function></literal></entry>
        <entry><type>text</type></entry>
        <entry>get description of a database object</entry>
+      </row>
+      <row>
+       <entry><literal><function>pg_identify_object(<parameter>catalog_id</parameter> <type>oid</>, <parameter>object_id</parameter> <type>oid</>, <parameter>object_sub_id</parameter> <type>integer</>)</function></literal></entry>
+       <entry><parameter>type</> <type>text</>, <parameter>schema</> <type>text</>, <parameter>name</> <type>text</>, <parameter>identity</> <type>text</></entry>
+       <entry>get identity of a database object</entry>
       </row>
       <row>
        <entry><literal><function>pg_get_constraintdef(<parameter>constraint_oid</parameter>)</function></literal></entry>
@@ -14270,10 +14282,28 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
   </para>
 
   <para>
-   <function>pg_describe_object</function> returns a description of a database
+   <function>pg_describe_object</function> returns a textual description of a database
    object specified by catalog OID, object OID and a (possibly zero) sub-object ID.
+   This description is intended to be human-readable, and might be translated,
+   depending on server configuration.
    This is useful to determine the identity of an object as stored in the
    <structname>pg_depend</structname> catalog.
+  </para>
+
+  <para>
+   <function>pg_identify_object</function> returns a row containing enough information
+   to uniquely identify the database object specified by catalog OID, object OID and a
+   (possibly zero) sub-object ID.  This information is intended to be machine-readable,
+   and is never translated.
+   <parameter>type</> identifies the type of database object;
+   <parameter>schema</> is the schema name that the object belongs in, or
+   <literal>NULL</> for object types that do not belong to schemas;
+   <parameter>name</> is the name of the object, quoted if necessary, only
+   present if it can be used (alongside schema name, if pertinent) as an unique
+   identifier of the object, otherwise <literal>NULL</>;
+   <parameter>identity</> is the complete object identity, with the precise format
+   depending on object type, and each part within the format being
+   schema-qualified and quoted as necessary.
   </para>
 
   <para>

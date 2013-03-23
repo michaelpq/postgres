@@ -76,6 +76,8 @@ SetRelationIsScannable(Relation relation)
 		log_newpage(&(relation->rd_node), MAIN_FORKNUM, 0, page);
 
 	RelationOpenSmgr(relation);
+
+	PageSetChecksumInplace(page, 0);
 	smgrextend(relation->rd_smgr, MAIN_FORKNUM, 0, (char *) page, true);
 
 	pfree(page);
@@ -198,8 +200,8 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	 * Swap the physical files of the target and transient tables, then
 	 * rebuild the target's indexes and throw away the transient table.
 	 */
-	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, RecentXmin,
-					 ReadNextMultiXactId());
+	finish_heap_swap(matviewOid, OIDNewHeap, false, false, true, true,
+					 RecentXmin, ReadNextMultiXactId());
 
 	RelationCacheInvalidateEntry(matviewOid);
 }
