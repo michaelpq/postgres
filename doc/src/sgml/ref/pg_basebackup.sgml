@@ -190,11 +190,11 @@ PostgreSQL documentation
 
      <varlistentry>
       <term><option>-R</option></term>
-      <term><option>--write-recovery-conf</option></term>
+      <term><option>--write-standby-enable</option></term>
       <listitem>
 
        <para>
-        Write a minimal recovery.conf in the output directory (or into
+        Write a minimal standby.enabled in the output directory (or into
         the base archive file when using tar format) to ease setting
         up a standby server.
        </para>
