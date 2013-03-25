@@ -43,7 +43,7 @@ int			compresslevel = 0;
 bool		includewal = false;
 bool		streamwal = false;
 bool		fastcheckpoint = false;
-bool		writerecoveryconf = false;
+bool		writestandby = false;
 int			standby_message_timeout = 10 * 1000;		/* 10 sec = default */
 
 /* Progress counters */
@@ -68,9 +68,6 @@ static int	has_xlogendptr = 0;
 static volatile LONG has_xlogendptr = 0;
 #endif
 
-/* Contents of recovery.conf to be generated */
-static PQExpBuffer recoveryconfcontents = NULL;
-
 /* Function headers */
 static void usage(void);
 static void verify_dir_is_empty_or_create(char *dirname);
@@ -78,8 +75,7 @@ static void progress_report(int tablespacenum, const char *filename);
 
 static void ReceiveTarFile(PGconn *conn, PGresult *res, int rownum);
 static void ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum);
-static void GenerateRecoveryConf(PGconn *conn);
-static void WriteRecoveryConf(void);
+static void WriteStandbyEnabled(void);
 static void BaseBackup(void);
 
 static bool reached_end_position(XLogRecPtr segendpos, uint32 timeline,
@@ -110,8 +106,8 @@ usage(void)
 	printf(_("\nOptions controlling the output:\n"));
 	printf(_("  -D, --pgdata=DIRECTORY receive base backup into directory\n"));
 	printf(_("  -F, --format=p|t       output format (plain (default), tar)\n"));
-	printf(_("  -R, --write-recovery-conf\n"
-			 "                         write recovery.conf after backup\n"));
+	printf(_("  -R, --write-standby-enable\n"
+			 "                         write standby.enabled after backup\n"));
 	printf(_("  -x, --xlog             include required WAL files in backup (fetch mode)\n"));
 	printf(_("  -X, --xlog-method=fetch|stream\n"
 			 "                         include required WAL files with specified method\n"));
@@ -667,7 +663,7 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 		{
 			/*
 			 * End of chunk. If requested, and this is the base tablespace,
-			 * write recovery.conf into the tarfile. When done, close the file
+			 * write standby.enabled into the tarfile. When done, close the file
 			 * (but not stdout).
 			 *
 			 * Also, write two completely empty blocks at the end of the tar
@@ -677,22 +673,16 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 
 			MemSet(zerobuf, 0, sizeof(zerobuf));
 
-			if (basetablespace && writerecoveryconf)
+			if (basetablespace && writestandby)
 			{
 				char		header[512];
-				int			padding;
 
-				tarCreateHeader(header, "recovery.conf", NULL,
-								recoveryconfcontents->len,
+				tarCreateHeader(header, "standby.enabled", NULL,
+								0,
 								0600, 04000, 02000,
 								time(NULL));
 
-				padding = ((recoveryconfcontents->len + 511) & ~511) - recoveryconfcontents->len;
-
 				WRITE_TAR_DATA(header, sizeof(header));
-				WRITE_TAR_DATA(recoveryconfcontents->data, recoveryconfcontents->len);
-				if (padding)
-					WRITE_TAR_DATA(zerobuf, padding);
 			}
 
 			/* 2 * 512 bytes empty data at end of file */
@@ -733,11 +723,11 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 			disconnect_and_exit(1);
 		}
 
-		if (!writerecoveryconf || !basetablespace)
+		if (!writestandby || !basetablespace)
 		{
 			/*
-			 * When not writing recovery.conf, or when not working on the base
-			 * tablespace, we never have to look for an existing recovery.conf
+			 * When not writing standby.enabled, or when not working on the base
+			 * tablespace, we never have to look for an existing standby.enabled
 			 * file in the stream.
 			 */
 			WRITE_TAR_DATA(copybuf, r);
@@ -745,7 +735,7 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 		else
 		{
 			/*
-			 * Look for a recovery.conf in the existing tar stream. If it's
+			 * Look for a standby.enabled in the existing tar stream. If it's
 			 * there, we must skip it so we can later overwrite it with our
 			 * own version of the file.
 			 *
@@ -791,12 +781,12 @@ ReceiveTarFile(PGconn *conn, PGresult *res, int rownum)
 						 * We have the complete header structure in tarhdr,
 						 * look at the file metadata: - the subsequent file
 						 * contents have to be skipped if the filename is
-						 * recovery.conf - find out the size of the file
+						 * standby.enabled - find out the size of the file
 						 * padded to the next multiple of 512
 						 */
 						int			padding;
 
-						skip_file = (strcmp(&tarhdr[0], "recovery.conf") == 0);
+						skip_file = (strcmp(&tarhdr[0], "standby.enabled") == 0);
 
 						sscanf(&tarhdr[124], "%11o", (unsigned int *) &filesz);
 
@@ -1102,115 +1092,26 @@ ReceiveAndUnpackTarFile(PGconn *conn, PGresult *res, int rownum)
 	if (copybuf != NULL)
 		PQfreemem(copybuf);
 
-	if (basetablespace && writerecoveryconf)
-		WriteRecoveryConf();
+	if (basetablespace && writestandby)
+		WriteStandbyEnabled();
 }
 
-/*
- * Escape single quotes used in connection parameters
- */
-static char *
-escape_quotes(const char *src)
-{
-	char	   *result = escape_single_quotes_ascii(src);
-
-	if (!result)
-	{
-		fprintf(stderr, _("%s: out of memory\n"), progname);
-		exit(1);
-	}
-	return result;
-}
 
 /*
- * Create a recovery.conf file in memory using a PQExpBuffer
+ * Write a standby.enabled file into the directory specified in basedir.
  */
 static void
-GenerateRecoveryConf(PGconn *conn)
-{
-	PQconninfoOption *connOptions;
-	PQconninfoOption *option;
-
-	recoveryconfcontents = createPQExpBuffer();
-	if (!recoveryconfcontents)
-	{
-		fprintf(stderr, _("%s: out of memory\n"), progname);
-		disconnect_and_exit(1);
-	}
-
-	connOptions = PQconninfo(conn);
-	if (connOptions == NULL)
-	{
-		fprintf(stderr, _("%s: out of memory\n"), progname);
-		disconnect_and_exit(1);
-	}
-
-	appendPQExpBufferStr(recoveryconfcontents, "standby_mode = 'on'\n");
-	appendPQExpBufferStr(recoveryconfcontents, "primary_conninfo = '");
-
-	for (option = connOptions; option && option->keyword; option++)
-	{
-		char	   *escaped;
-
-		/*
-		 * Do not emit this setting if: - the setting is "replication",
-		 * "dbname" or "fallback_application_name", since these would be
-		 * overridden by the libpqwalreceiver module anyway. - not set or
-		 * empty.
-		 */
-		if (strcmp(option->keyword, "replication") == 0 ||
-			strcmp(option->keyword, "dbname") == 0 ||
-			strcmp(option->keyword, "fallback_application_name") == 0 ||
-			(option->val == NULL) ||
-			(option->val != NULL && option->val[0] == '\0'))
-			continue;
-
-		/*
-		 * Write "keyword='value'" pieces, the value string is escaped if
-		 * necessary and doubled single quotes around the value string.
-		 */
-		escaped = escape_quotes(option->val);
-
-		appendPQExpBuffer(recoveryconfcontents, "%s=''%s'' ", option->keyword, escaped);
-
-		free(escaped);
-	}
-
-	appendPQExpBufferStr(recoveryconfcontents, "'\n");
-	if (PQExpBufferBroken(recoveryconfcontents))
-	{
-		fprintf(stderr, _("%s: out of memory\n"), progname);
-		disconnect_and_exit(1);
-	}
-
-	PQconninfoFree(connOptions);
-}
-
-
-/*
- * Write a recovery.conf file into the directory specified in basedir,
- * with the contents already collected in memory.
- */
-static void
-WriteRecoveryConf(void)
+WriteStandbyEnabled(void)
 {
 	char		filename[MAXPGPATH];
 	FILE	   *cf;
 
-	sprintf(filename, "%s/recovery.conf", basedir);
+	sprintf(filename, "%s/standby.enabled", basedir);
 
 	cf = fopen(filename, "w");
 	if (cf == NULL)
 	{
 		fprintf(stderr, _("%s: could not create file \"%s\": %s\n"), progname, filename, strerror(errno));
-		disconnect_and_exit(1);
-	}
-
-	if (fwrite(recoveryconfcontents->data, recoveryconfcontents->len, 1, cf) != 1)
-	{
-		fprintf(stderr,
-				_("%s: could not write to file \"%s\": %s\n"),
-				progname, filename, strerror(errno));
 		disconnect_and_exit(1);
 	}
 
@@ -1237,12 +1138,6 @@ BaseBackup(void)
 	if (!conn)
 		/* Error message already written in GetConnection() */
 		exit(1);
-
-	/*
-	 * Build contents of recovery.conf if requested
-	 */
-	if (writerecoveryconf)
-		GenerateRecoveryConf(conn);
 
 	/*
 	 * Run IDENTIFY_SYSTEM so we can get the timeline
@@ -1512,9 +1407,6 @@ BaseBackup(void)
 #endif
 	}
 
-	/* Free the recovery.conf contents */
-	destroyPQExpBuffer(recoveryconfcontents);
-
 	/*
 	 * End of copy data. Final result is already checked inside the loop.
 	 */
@@ -1535,7 +1427,7 @@ main(int argc, char **argv)
 		{"pgdata", required_argument, NULL, 'D'},
 		{"format", required_argument, NULL, 'F'},
 		{"checkpoint", required_argument, NULL, 'c'},
-		{"write-recovery-conf", no_argument, NULL, 'R'},
+		{"write-standby-enable", no_argument, NULL, 'R'},
 		{"xlog", no_argument, NULL, 'x'},
 		{"xlog-method", required_argument, NULL, 'X'},
 		{"gzip", no_argument, NULL, 'z'},
@@ -1596,7 +1488,7 @@ main(int argc, char **argv)
 				}
 				break;
 			case 'R':
-				writerecoveryconf = true;
+				writestandby = true;
 				break;
 			case 'x':
 				if (includewal)
