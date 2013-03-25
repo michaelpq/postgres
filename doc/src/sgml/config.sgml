@@ -2166,9 +2166,19 @@ include 'filename'
 
      </variablelist>
     </sect2>
+   </sect1>
+
+   <sect1 id="runtime-config-recovery">
+    <title>Recovery</title>
 
     <sect2 id="runtime-config-wal-archive-recovery">
      <title>Archive Recovery</title>
+
+     <para>
+      These settings control the behavior of server when put in recovery by
+      creating a recovery trigger file <filename>standby.enabled</> in data
+      folder. Those parameters are not used if server is not in recovery.
+     </para>
 
      <variablelist>
       <varlistentry id="guc-restore-command" xreflabel="restore_command">
