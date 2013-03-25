@@ -2449,6 +2449,30 @@ restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows
      </variablelist>
      </sect2>
 
+    <sect2 id="runtime-config-">
+     <title>Migration from recovery.conf</title>
+
+     <para>
+      Prior <productname>PostgreSQL</> 9.2, all the recovery parameters had
+      to be specified in a configuration file called <filename>recovery.conf</>
+      located at the root of data folder of server. Servers running
+      <productname>PostgreSQL</> 9.3 and above return an error if
+      <filename>recovery.conf</> is found in data folder.
+     </para>
+
+     <para>
+      <filename>postgresql.conf</> provides two parameters allowing the
+      inclusion of external configuration files by either setting
+      <literal>include_if_exists</> to include a given file or <literal>include_dir</>
+      to include a directory containing a set of files configuration files.
+      In order to migrate an existing <filename>recovery.conf</> used with
+      a server whose version is lower than 9.2, set one of those parameters to
+      include it correctly. It is also necessary to rename <filename>recovery.conf</>
+      to a new name if the file included is located at root of data folder.
+     </para>
+
+    </sect2>
+
    </sect1>
 
    <sect1 id="runtime-config-replication">
