@@ -2,3 +2,4 @@ test: concurrent-database
 test: concurrent-role
 test: concurrent-domain
 test: concurrent-event-trigger
+test: concurrent-fdw

@@ -1,7 +1,9 @@
 # Test for interactions with DDL commands manipulating event trigger
 # objects.
 # The following set of commands can interact in concurrency:
-
+# - ALTER EVENT TRIGGER ENABLE
+# - ALTER EVENT TRIGGER DISABLE
+# - ALTER EVENT TRIGGER OWNER TO
 
 setup
 {
