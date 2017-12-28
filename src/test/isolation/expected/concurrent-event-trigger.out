@@ -1,0 +1,55 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_disable s2_begin s2_disable s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_disable: ALTER EVENT TRIGGER notice_ddl DISABLE;
+step s2_begin: BEGIN;
+step s2_disable: ALTER EVENT TRIGGER notice_ddl DISABLE; <waiting ...>
+step s1_commit: COMMIT;
+step s2_disable: <... completed>
+error in steps s1_commit s2_disable: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_disable s2_begin s2_enable s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_disable: ALTER EVENT TRIGGER notice_ddl DISABLE;
+step s2_begin: BEGIN;
+step s2_enable: ALTER EVENT TRIGGER notice_ddl ENABLE REPLICA; <waiting ...>
+step s1_commit: COMMIT;
+step s2_enable: <... completed>
+error in steps s1_commit s2_enable: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_disable s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_disable: ALTER EVENT TRIGGER notice_ddl DISABLE;
+step s2_begin: BEGIN;
+step s2_owner: ALTER EVENT TRIGGER notice_ddl OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_enable s2_begin s2_enable s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_enable: ALTER EVENT TRIGGER notice_ddl ENABLE REPLICA;
+step s2_begin: BEGIN;
+step s2_enable: ALTER EVENT TRIGGER notice_ddl ENABLE REPLICA; <waiting ...>
+step s1_commit: COMMIT;
+step s2_enable: <... completed>
+error in steps s1_commit s2_enable: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_enable s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_enable: ALTER EVENT TRIGGER notice_ddl ENABLE REPLICA;
+step s2_begin: BEGIN;
+step s2_owner: ALTER EVENT TRIGGER notice_ddl OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_owner s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_owner: ALTER EVENT TRIGGER notice_ddl OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_owner: ALTER EVENT TRIGGER notice_ddl OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
