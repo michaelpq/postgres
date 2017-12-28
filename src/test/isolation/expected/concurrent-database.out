@@ -1,0 +1,105 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_alterdb_with s2_begin s2_alterdb_with s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_with: 
+	ALTER DATABASE regress_database WITH ALLOW_CONNECTIONS true;
+step s2_begin: BEGIN;
+step s2_alterdb_with: 
+	ALTER DATABASE regress_database WITH ALLOW_CONNECTIONS true; <waiting ...>
+step s1_commit: COMMIT;
+step s2_alterdb_with: <... completed>
+error in steps s1_commit s2_alterdb_with: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_with s2_begin s2_alterdb_set s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_with: 
+	ALTER DATABASE regress_database WITH ALLOW_CONNECTIONS true;
+step s2_begin: BEGIN;
+step s2_alterdb_set: 
+	ALTER DATABASE regress_database SET commit_delay = '10';
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_with s2_begin s2_alterdb_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_with: 
+	ALTER DATABASE regress_database WITH ALLOW_CONNECTIONS true;
+step s2_begin: BEGIN;
+step s2_alterdb_owner: 
+	ALTER DATABASE regress_database OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_with s2_begin s2_alterdb_tbc s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_with: 
+	ALTER DATABASE regress_database WITH ALLOW_CONNECTIONS true;
+step s2_begin: BEGIN;
+step s2_alterdb_tbc: 
+	ALTER DATABASE regress_database SET TABLESPACE TO DEFAULT;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_set s2_begin s2_alterdb_set s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_set: 
+	ALTER DATABASE regress_database SET commit_delay = '10';
+step s2_begin: BEGIN;
+step s2_alterdb_set: 
+	ALTER DATABASE regress_database SET commit_delay = '10'; <waiting ...>
+step s1_commit: COMMIT;
+step s2_alterdb_set: <... completed>
+error in steps s1_commit s2_alterdb_set: ERROR:  duplicate key value violates unique constraint "pg_db_role_setting_databaseid_rol_index"
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_set s2_begin s2_alterdb_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_set: 
+	ALTER DATABASE regress_database SET commit_delay = '10';
+step s2_begin: BEGIN;
+step s2_alterdb_owner: 
+	ALTER DATABASE regress_database OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_set s2_begin s2_alterdb_tbc s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_set: 
+	ALTER DATABASE regress_database SET commit_delay = '10';
+step s2_begin: BEGIN;
+step s2_alterdb_tbc: 
+	ALTER DATABASE regress_database SET TABLESPACE TO DEFAULT;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_owner s2_begin s2_alterdb_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_owner: 
+	ALTER DATABASE regress_database OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_alterdb_owner: 
+	ALTER DATABASE regress_database OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_owner s2_begin s2_alterdb_tbc s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_owner: 
+	ALTER DATABASE regress_database OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_alterdb_tbc: 
+	ALTER DATABASE regress_database SET TABLESPACE TO DEFAULT;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterdb_tbc s2_begin s2_alterdb_tbc s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterdb_tbc: 
+	ALTER DATABASE regress_database SET TABLESPACE TO DEFAULT;
+step s2_begin: BEGIN;
+step s2_alterdb_tbc: 
+	ALTER DATABASE regress_database SET TABLESPACE TO DEFAULT;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
