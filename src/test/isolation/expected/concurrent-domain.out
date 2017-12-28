@@ -1,0 +1,519 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_set_notnull s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_set_notnull: <... completed>
+error in steps s1_commit s2_dom_set_notnull: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_drop_notnull s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_set_default s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_set_default: <... completed>
+error in steps s1_commit s2_dom_set_default: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_drop_default s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_drop_default: <... completed>
+error in steps s1_commit s2_dom_drop_default: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_add_con s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_schema_priv: <... completed>
+error in steps s1_commit s2_dom_schema_priv: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_notnull s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_notnull: 
+	ALTER DOMAIN regress_domain_conc SET NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_notnull s2_begin s2_dom_drop_notnull s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_notnull s2_begin s2_dom_set_default s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_notnull s2_begin s2_dom_drop_default s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_notnull s2_begin s2_dom_add_con s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_notnull s2_begin s2_dom_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_notnull s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_notnull s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_notnull: 
+	ALTER DOMAIN regress_domain_conc DROP NOT NULL;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_default s2_begin s2_dom_set_default s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1;
+step s2_begin: BEGIN;
+step s2_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_set_default: <... completed>
+error in steps s1_commit s2_dom_set_default: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_default s2_begin s2_dom_drop_default s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1;
+step s2_begin: BEGIN;
+step s2_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_drop_default: <... completed>
+error in steps s1_commit s2_dom_drop_default: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_default s2_begin s2_dom_add_con s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1;
+step s2_begin: BEGIN;
+step s2_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_default s2_begin s2_dom_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1;
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_default s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_schema_priv: <... completed>
+error in steps s1_commit s2_dom_schema_priv: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_set_default s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_set_default: 
+	ALTER DOMAIN regress_domain_conc SET DEFAULT 1;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_default s2_begin s2_dom_drop_default s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT;
+step s2_begin: BEGIN;
+step s2_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_drop_default: <... completed>
+error in steps s1_commit s2_dom_drop_default: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_default s2_begin s2_dom_add_con s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT;
+step s2_begin: BEGIN;
+step s2_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_default s2_begin s2_dom_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT;
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_default s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_schema_priv: <... completed>
+error in steps s1_commit s2_dom_schema_priv: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_drop_default s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_drop_default: 
+	ALTER DOMAIN regress_domain_conc DROP DEFAULT;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_add_con s2_begin s2_dom_add_con2 s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s2_begin: BEGIN;
+step s2_dom_add_con2: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con2 CHECK (VALUE > 0);
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_add_con s2_begin s2_dom_drop_con s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s2_begin: BEGIN;
+step s2_dom_drop_con: 
+	ALTER DOMAIN regress_domain_conc DROP CONSTRAINT dom_con;
+ERROR:  constraint "dom_con" of domain "regress_domain_conc" does not exist
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_add_con s2_begin s2_dom_validate_con s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s2_begin: BEGIN;
+step s2_dom_validate_con: 
+	ALTER DOMAIN regress_domain_conc VALIDATE CONSTRAINT dom_con;
+ERROR:  constraint "dom_con" of domain "regress_domain_conc" does not exist
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_add_con s2_begin s2_dom_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_add_con s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_add_con s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_drop_con s2_begin s2_dom_drop_con s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_drop_con: 
+	ALTER DOMAIN regress_domain_conc DROP CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_drop_con: 
+	ALTER DOMAIN regress_domain_conc DROP CONSTRAINT dom_con; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_drop_con: <... completed>
+error in steps s1_commit s2_dom_drop_con: ERROR:  cache lookup failed for constraint 16509
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_drop_con s2_begin s2_dom_validate_con s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_drop_con: 
+	ALTER DOMAIN regress_domain_conc DROP CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_validate_con: 
+	ALTER DOMAIN regress_domain_conc VALIDATE CONSTRAINT dom_con; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_validate_con: <... completed>
+error in steps s1_commit s2_dom_validate_con: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_drop_con s2_begin s2_dom_owner s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_drop_con: 
+	ALTER DOMAIN regress_domain_conc DROP CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_drop_con s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_drop_con: 
+	ALTER DOMAIN regress_domain_conc DROP CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_drop_con s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_drop_con: 
+	ALTER DOMAIN regress_domain_conc DROP CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_schema_priv: <... completed>
+error in steps s1_commit s2_dom_schema_priv: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_validate_con s2_begin s2_dom_validate_con s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_validate_con: 
+	ALTER DOMAIN regress_domain_conc VALIDATE CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_validate_con: 
+	ALTER DOMAIN regress_domain_conc VALIDATE CONSTRAINT dom_con; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_validate_con: <... completed>
+error in steps s1_commit s2_dom_validate_con: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_validate_con s2_begin s2_dom_owner s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_validate_con: 
+	ALTER DOMAIN regress_domain_conc VALIDATE CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_validate_con s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_validate_con: 
+	ALTER DOMAIN regress_domain_conc VALIDATE CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema; <waiting ...>
+step s1_commit: COMMIT;
+step s2_dom_schema_priv: <... completed>
+error in steps s1_commit s2_dom_schema_priv: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_dom_add_con s1_begin s1_dom_validate_con s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_dom_add_con: 
+	ALTER DOMAIN regress_domain_conc ADD CONSTRAINT dom_con CHECK (VALUE > 0);
+step s1_begin: BEGIN;
+step s1_dom_validate_con: 
+	ALTER DOMAIN regress_domain_conc VALIDATE CONSTRAINT dom_con;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_owner s2_begin s2_dom_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_owner s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_owner s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_owner: 
+	ALTER DOMAIN regress_domain_conc OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_schema_priv s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_schema_publ s2_begin s2_dom_schema_priv s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s2_begin: BEGIN;
+step s2_dom_schema_priv: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA regress_domain_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_dom_schema_publ s2_begin s2_dom_schema_publ s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s2_begin: BEGIN;
+step s2_dom_schema_publ: 
+	ALTER DOMAIN regress_domain_conc SET SCHEMA public;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;

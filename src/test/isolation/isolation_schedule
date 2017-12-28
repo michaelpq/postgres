@@ -1,2 +1,3 @@
 test: concurrent-database
 test: concurrent-role
+test: concurrent-domain
