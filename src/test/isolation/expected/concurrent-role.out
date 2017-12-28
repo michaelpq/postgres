@@ -1,0 +1,45 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_alterrole_set s2_begin s2_alterrole_set s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterrole_set: 
+	ALTER ROLE regress_role_conc SET commit_delay = '10';
+step s2_begin: BEGIN;
+step s2_alterrole_set: 
+	ALTER ROLE regress_role_conc SET commit_delay = '10'; <waiting ...>
+step s1_commit: COMMIT;
+step s2_alterrole_set: <... completed>
+error in steps s1_commit s2_alterrole_set: ERROR:  duplicate key value violates unique constraint "pg_db_role_setting_databaseid_rol_index"
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterrole_set s2_begin s2_alterrole_opt s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterrole_set: 
+	ALTER ROLE regress_role_conc SET commit_delay = '10';
+step s2_begin: BEGIN;
+step s2_alterrole_opt: 
+	ALTER ROLE regress_role_conc PASSWORD 'foo';
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterrole_opt s2_begin s2_alterrole_set s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterrole_opt: 
+	ALTER ROLE regress_role_conc PASSWORD 'foo';
+step s2_begin: BEGIN;
+step s2_alterrole_set: 
+	ALTER ROLE regress_role_conc SET commit_delay = '10';
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alterrole_opt s2_begin s2_alterrole_opt s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alterrole_opt: 
+	ALTER ROLE regress_role_conc PASSWORD 'foo';
+step s2_begin: BEGIN;
+step s2_alterrole_opt: 
+	ALTER ROLE regress_role_conc PASSWORD 'foo'; <waiting ...>
+step s1_commit: COMMIT;
+step s2_alterrole_opt: <... completed>
+error in steps s1_commit s2_alterrole_opt: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
