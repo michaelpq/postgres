@@ -3,3 +3,4 @@ test: concurrent-role
 test: concurrent-domain
 test: concurrent-event-trigger
 test: concurrent-fdw
+test: concurrent-server

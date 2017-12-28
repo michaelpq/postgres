@@ -1,0 +1,33 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_options s2_begin s2_options s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_options: 
+	ALTER SERVER regress_server OPTIONS (a '1');
+step s2_begin: BEGIN;
+step s2_options: 
+	ALTER SERVER regress_server OPTIONS (a '1'); <waiting ...>
+step s1_commit: COMMIT;
+step s2_options: <... completed>
+error in steps s1_commit s2_options: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_options s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_options: 
+	ALTER SERVER regress_server OPTIONS (a '1');
+step s2_begin: BEGIN;
+step s2_owner: 
+	ALTER SERVER regress_server OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_owner s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_owner: 
+	ALTER SERVER regress_server OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_owner: 
+	ALTER SERVER regress_server OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
