@@ -1,0 +1,229 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_begin s1_add_attr s2_begin s2_add_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_add_attr: 
+	ALTER TYPE regress_type ADD ATTRIBUTE b1 int;
+step s2_begin: BEGIN;
+step s2_add_attr: 
+	ALTER TYPE regress_type ADD ATTRIBUTE b2 int; <waiting ...>
+step s1_commit: COMMIT;
+step s2_add_attr: <... completed>
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_add_attr s2_begin s2_drop_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_add_attr: 
+	ALTER TYPE regress_type ADD ATTRIBUTE b1 int;
+step s2_begin: BEGIN;
+step s2_drop_attr: 
+	ALTER TYPE regress_type DROP ATTRIBUTE a; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_attr: <... completed>
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_add_attr s2_begin s2_alter_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_add_attr: 
+	ALTER TYPE regress_type ADD ATTRIBUTE b1 int;
+step s2_begin: BEGIN;
+step s2_alter_attr: 
+	ALTER TYPE regress_type ALTER ATTRIBUTE a TYPE int8; <waiting ...>
+step s1_commit: COMMIT;
+step s2_alter_attr: <... completed>
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_add_attr s2_begin s2_rename_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_add_attr: 
+	ALTER TYPE regress_type ADD ATTRIBUTE b1 int;
+step s2_begin: BEGIN;
+step s2_rename_attr: 
+	ALTER TYPE regress_type RENAME ATTRIBUTE a TO b; <waiting ...>
+step s1_commit: COMMIT;
+step s2_rename_attr: <... completed>
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_add_attr s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_add_attr: 
+	ALTER TYPE regress_type ADD ATTRIBUTE b1 int;
+step s2_begin: BEGIN;
+step s2_owner: 
+	ALTER TYPE regress_type OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_add_attr s2_begin s2_schema s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_add_attr: 
+	ALTER TYPE regress_type ADD ATTRIBUTE b1 int;
+step s2_begin: BEGIN;
+step s2_schema: 
+	ALTER TYPE regress_type SET SCHEMA regress_type_schema; <waiting ...>
+step s1_commit: COMMIT;
+step s2_schema: <... completed>
+error in steps s1_commit s2_schema: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_drop_attr s2_begin s2_drop_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_drop_attr: 
+	ALTER TYPE regress_type DROP ATTRIBUTE a;
+step s2_begin: BEGIN;
+step s2_drop_attr: 
+	ALTER TYPE regress_type DROP ATTRIBUTE a; <waiting ...>
+step s1_commit: COMMIT;
+step s2_drop_attr: <... completed>
+error in steps s1_commit s2_drop_attr: ERROR:  column "a" of relation "regress_type" does not exist
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_drop_attr s2_begin s2_alter_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_drop_attr: 
+	ALTER TYPE regress_type DROP ATTRIBUTE a;
+step s2_begin: BEGIN;
+step s2_alter_attr: 
+	ALTER TYPE regress_type ALTER ATTRIBUTE a TYPE int8; <waiting ...>
+step s1_commit: COMMIT;
+step s2_alter_attr: <... completed>
+error in steps s1_commit s2_alter_attr: ERROR:  column "a" of relation "regress_type" does not exist
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_drop_attr s2_begin s2_rename_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_drop_attr: 
+	ALTER TYPE regress_type DROP ATTRIBUTE a;
+step s2_begin: BEGIN;
+step s2_rename_attr: 
+	ALTER TYPE regress_type RENAME ATTRIBUTE a TO b; <waiting ...>
+step s1_commit: COMMIT;
+step s2_rename_attr: <... completed>
+error in steps s1_commit s2_rename_attr: ERROR:  column "a" does not exist
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_drop_attr s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_drop_attr: 
+	ALTER TYPE regress_type DROP ATTRIBUTE a;
+step s2_begin: BEGIN;
+step s2_owner: 
+	ALTER TYPE regress_type OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_drop_attr s2_begin s2_schema s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_drop_attr: 
+	ALTER TYPE regress_type DROP ATTRIBUTE a;
+step s2_begin: BEGIN;
+step s2_schema: 
+	ALTER TYPE regress_type SET SCHEMA regress_type_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alter_attr s2_begin s2_alter_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alter_attr: 
+	ALTER TYPE regress_type ALTER ATTRIBUTE a TYPE int8;
+step s2_begin: BEGIN;
+step s2_alter_attr: 
+	ALTER TYPE regress_type ALTER ATTRIBUTE a TYPE int8; <waiting ...>
+step s1_commit: COMMIT;
+step s2_alter_attr: <... completed>
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alter_attr s2_begin s2_rename_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alter_attr: 
+	ALTER TYPE regress_type ALTER ATTRIBUTE a TYPE int8;
+step s2_begin: BEGIN;
+step s2_rename_attr: 
+	ALTER TYPE regress_type RENAME ATTRIBUTE a TO b; <waiting ...>
+step s1_commit: COMMIT;
+step s2_rename_attr: <... completed>
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alter_attr s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alter_attr: 
+	ALTER TYPE regress_type ALTER ATTRIBUTE a TYPE int8;
+step s2_begin: BEGIN;
+step s2_owner: 
+	ALTER TYPE regress_type OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_alter_attr s2_begin s2_schema s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_alter_attr: 
+	ALTER TYPE regress_type ALTER ATTRIBUTE a TYPE int8;
+step s2_begin: BEGIN;
+step s2_schema: 
+	ALTER TYPE regress_type SET SCHEMA regress_type_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_rename_attr s2_begin s2_rename_attr s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_rename_attr: 
+	ALTER TYPE regress_type RENAME ATTRIBUTE a TO b;
+step s2_begin: BEGIN;
+step s2_rename_attr: 
+	ALTER TYPE regress_type RENAME ATTRIBUTE a TO b; <waiting ...>
+step s1_commit: COMMIT;
+step s2_rename_attr: <... completed>
+error in steps s1_commit s2_rename_attr: ERROR:  column "a" does not exist
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_rename_attr s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_rename_attr: 
+	ALTER TYPE regress_type RENAME ATTRIBUTE a TO b;
+step s2_begin: BEGIN;
+step s2_owner: 
+	ALTER TYPE regress_type OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_rename_attr s2_begin s2_schema s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_rename_attr: 
+	ALTER TYPE regress_type RENAME ATTRIBUTE a TO b;
+step s2_begin: BEGIN;
+step s2_schema: 
+	ALTER TYPE regress_type SET SCHEMA regress_type_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_owner s2_begin s2_owner s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_owner: 
+	ALTER TYPE regress_type OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_owner: 
+	ALTER TYPE regress_type OWNER TO CURRENT_USER;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_owner s2_begin s2_schema s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_owner: 
+	ALTER TYPE regress_type OWNER TO CURRENT_USER;
+step s2_begin: BEGIN;
+step s2_schema: 
+	ALTER TYPE regress_type SET SCHEMA regress_type_schema;
+step s1_commit: COMMIT;
+step s2_commit: COMMIT;
+
+starting permutation: s1_begin s1_schema s2_begin s2_schema s1_commit s2_commit
+step s1_begin: BEGIN;
+step s1_schema: 
+	ALTER TYPE regress_type SET SCHEMA regress_type_schema;
+step s2_begin: BEGIN;
+step s2_schema: 
+	ALTER TYPE regress_type SET SCHEMA regress_type_schema; <waiting ...>
+step s1_commit: COMMIT;
+step s2_schema: <... completed>
+error in steps s1_commit s2_schema: ERROR:  tuple concurrently updated
+step s2_commit: COMMIT;

@@ -5,3 +5,4 @@ test: concurrent-event-trigger
 test: concurrent-fdw
 test: concurrent-server
 test: concurrent-user-mapping
+test: concurrent-type
