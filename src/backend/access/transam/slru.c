@@ -120,6 +120,13 @@ typedef enum
 	SLRU_CLOSE_FAILED
 } SlruErrorCause;
 
+/*
+ * Static area used as placeholder for O_DIRECT operations.  Make sure
+ * to keep its size at twice the block size so as it would be aligned
+ * with the OS pages.
+ */
+static char direct_buf[BLCKSZ + BLCKSZ];
+
 static SlruErrorCause slru_errcause;
 static int	slru_errno;
 
@@ -644,6 +651,12 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
 	int			offset = rpageno * BLCKSZ;
 	char		path[MAXPGPATH];
 	int			fd;
+	int			direct_flag = 0;
+	char	   *aligned_buf = (char *) TYPEALIGN(BLCKSZ, direct_buf);
+
+	/* Use direct I/O if configured as such */
+	if (direct_io)
+		direct_flag |= O_DIRECT | O_DSYNC;
 
 	SlruFileName(ctl, path, segno);
 
@@ -654,7 +667,7 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
 	 * SlruPhysicalWritePage).  Hence, if we are InRecovery, allow the case
 	 * where the file doesn't exist, and return zeroes instead.
 	 */
-	fd = OpenTransientFile(path, O_RDWR | PG_BINARY);
+	fd = OpenTransientFile(path, O_RDWR | PG_BINARY | direct_flag);
 	if (fd < 0)
 	{
 		if (errno != ENOENT || !InRecovery)
@@ -681,7 +694,7 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
 
 	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_SLRU_READ);
-	if (read(fd, shared->page_buffer[slotno], BLCKSZ) != BLCKSZ)
+	if (read(fd, aligned_buf, BLCKSZ) != BLCKSZ)
 	{
 		pgstat_report_wait_end();
 		slru_errcause = SLRU_READ_FAILED;
@@ -697,6 +710,9 @@ SlruPhysicalReadPage(SlruCtl ctl, int pageno, int slotno)
 		slru_errno = errno;
 		return false;
 	}
+
+	/* copy contents back to the slot */
+	memcpy(shared->page_buffer[slotno], aligned_buf, BLCKSZ);
 
 	return true;
 }
@@ -724,6 +740,12 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
 	int			offset = rpageno * BLCKSZ;
 	char		path[MAXPGPATH];
 	int			fd = -1;
+	int			direct_flag = 0;
+	char	   *aligned_buf = (char *) TYPEALIGN(BLCKSZ, direct_buf);
+
+	/* Use direct I/O if configured as such */
+	if (direct_io)
+		direct_flag |= O_DIRECT | O_DSYNC;
 
 	/*
 	 * Honor the write-WAL-before-data rule, if appropriate, so that we do not
@@ -804,7 +826,7 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
 		 * don't use O_EXCL or O_TRUNC or anything like that.
 		 */
 		SlruFileName(ctl, path, segno);
-		fd = OpenTransientFile(path, O_RDWR | O_CREAT | PG_BINARY);
+		fd = OpenTransientFile(path, O_RDWR | O_CREAT | PG_BINARY | direct_flag);
 		if (fd < 0)
 		{
 			slru_errcause = SLRU_OPEN_FAILED;
@@ -840,9 +862,12 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
 		return false;
 	}
 
+	/* use aligned buffer for O_DIRECT */
+	memcpy(aligned_buf, shared->page_buffer[slotno], BLCKSZ);
+
 	errno = 0;
 	pgstat_report_wait_start(WAIT_EVENT_SLRU_WRITE);
-	if (write(fd, shared->page_buffer[slotno], BLCKSZ) != BLCKSZ)
+	if (write(fd, aligned_buf, BLCKSZ) != BLCKSZ)
 	{
 		pgstat_report_wait_end();
 		/* if write didn't set errno, assume problem is no disk space */
@@ -858,12 +883,13 @@ SlruPhysicalWritePage(SlruCtl ctl, int pageno, int slotno, SlruFlush fdata)
 
 	/*
 	 * If not part of Flush, need to fsync now.  We assume this happens
-	 * infrequently enough that it's not a performance issue.
+	 * infrequently enough that it's not a performance issue.  O_DIRECT
+	 * has already made sure that this happens.
 	 */
 	if (!fdata)
 	{
 		pgstat_report_wait_start(WAIT_EVENT_SLRU_SYNC);
-		if (ctl->do_fsync && pg_fsync(fd))
+		if (!direct_io && ctl->do_fsync && pg_fsync(fd))
 		{
 			pgstat_report_wait_end();
 			slru_errcause = SLRU_FSYNC_FAILED;

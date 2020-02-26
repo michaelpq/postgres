@@ -148,6 +148,9 @@ int			max_safe_fds = 32;	/* default if not changed */
 /* Whether it is safe to continue running after fsync() fails. */
 bool		data_sync_retry = false;
 
+/* Use O_DIRECT for operations involving relation files and SLRUs */
+bool		direct_io = true;
+
 /* Debugging.... */
 
 #ifdef FDDEBUG

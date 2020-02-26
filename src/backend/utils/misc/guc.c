@@ -594,6 +594,8 @@ const char *const config_group_names[] =
 	gettext_noop("Resource Usage / Background Writer"),
 	/* RESOURCES_ASYNCHRONOUS */
 	gettext_noop("Resource Usage / Asynchronous Behavior"),
+	/* RESOURCES_IO */
+	gettext_noop("Resource Usage / I/O"),
 	/* WAL */
 	gettext_noop("Write-Ahead Log"),
 	/* WAL_SETTINGS */
@@ -1830,6 +1832,15 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&data_sync_retry,
 		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"direct_io", PGC_POSTMASTER, RESOURCES_IO,
+			gettext_noop("Use direct I/O when flushing relations and SLRUs."),
+		},
+		&direct_io,
+		true,
 		NULL, NULL, NULL
 	},
 

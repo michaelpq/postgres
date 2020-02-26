@@ -159,6 +159,12 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
 static CycleCtr mdsync_cycle_ctr = 0;
 static CycleCtr mdckpt_cycle_ctr = 0;
 
+/*
+ * Static area used as placeholder for O_DIRECT operations.  Make sure
+ * to keep its size at twice the block size so as it would be aligned
+ * with the OS pages.
+ */
+static char direct_buf[BLCKSZ + BLCKSZ];
 
 /*** behavior for mdopen & _mdfd_getseg ***/
 /* ereport if segment not present */
@@ -296,6 +302,7 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 	MdfdVec    *mdfd;
 	char	   *path;
 	File		fd;
+	int			direct_flag = 0;
 
 	if (isRedo && reln->md_num_open_segs[forkNum] > 0)
 		return;					/* created and opened already... */
@@ -304,7 +311,11 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 
 	path = relpath(reln->smgr_rnode, forkNum);
 
-	fd = PathNameOpenFile(path, O_RDWR | O_CREAT | O_EXCL | PG_BINARY);
+	/* Use direct I/O if configured as such */
+	if (direct_io)
+		direct_flag |= O_DIRECT | O_DSYNC;
+
+	fd = PathNameOpenFile(path, O_RDWR | O_CREAT | O_EXCL | PG_BINARY | direct_flag);
 
 	if (fd < 0)
 	{
@@ -317,7 +328,7 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 		 * already, even if isRedo is not set.  (See also mdopen)
 		 */
 		if (isRedo || IsBootstrapProcessingMode())
-			fd = PathNameOpenFile(path, O_RDWR | PG_BINARY);
+			fd = PathNameOpenFile(path, O_RDWR | PG_BINARY | direct_flag);
 		if (fd < 0)
 		{
 			/* be sure to report the error reported by create, not open */
@@ -498,11 +509,17 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	off_t		seekpos;
 	int			nbytes;
 	MdfdVec    *v;
+	char	   *aligned_buf = (char *) TYPEALIGN(BLCKSZ, direct_buf);
 
 	/* This assert is too expensive to have on normally ... */
 #ifdef CHECK_WRITE_VS_EXTEND
 	Assert(blocknum >= mdnblocks(reln, forknum));
 #endif
+
+	/*
+	 * Copy contents into an aligned buffer for direct I/O.
+	 */
+	memcpy(aligned_buf, buffer, BLCKSZ);
 
 	/*
 	 * If a relation manages to grow to 2^32-1 blocks, refuse to extend it any
@@ -537,7 +554,7 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 				 errmsg("could not seek to block %u in file \"%s\": %m",
 						blocknum, FilePathName(v->mdfd_vfd))));
 
-	if ((nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, WAIT_EVENT_DATA_FILE_EXTEND)) != BLCKSZ)
+	if ((nbytes = FileWrite(v->mdfd_vfd, aligned_buf, BLCKSZ, WAIT_EVENT_DATA_FILE_EXTEND)) != BLCKSZ)
 	{
 		if (nbytes < 0)
 			ereport(ERROR,
@@ -576,6 +593,7 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 	MdfdVec    *mdfd;
 	char	   *path;
 	File		fd;
+	int			direct_flag = 0;
 
 	/* No work if already open */
 	if (reln->md_num_open_segs[forknum] > 0)
@@ -583,7 +601,11 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 
 	path = relpath(reln->smgr_rnode, forknum);
 
-	fd = PathNameOpenFile(path, O_RDWR | PG_BINARY);
+	/* Use direct I/O if configured as such */
+	if (direct_io)
+		direct_flag |= O_DIRECT | O_DSYNC;
+
+	fd = PathNameOpenFile(path, O_RDWR | PG_BINARY | direct_flag);
 
 	if (fd < 0)
 	{
@@ -594,7 +616,8 @@ mdopen(SMgrRelation reln, ForkNumber forknum, int behavior)
 		 * substitute for mdcreate() in bootstrap mode only. (See mdcreate)
 		 */
 		if (IsBootstrapProcessingMode())
-			fd = PathNameOpenFile(path, O_RDWR | O_CREAT | O_EXCL | PG_BINARY);
+			fd = PathNameOpenFile(path,
+					O_RDWR | O_CREAT | O_EXCL | PG_BINARY | direct_flag);
 		if (fd < 0)
 		{
 			if ((behavior & EXTENSION_RETURN_NULL) &&
@@ -726,6 +749,7 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	off_t		seekpos;
 	int			nbytes;
 	MdfdVec    *v;
+	char	   *aligned_buf = (char *) TYPEALIGN(BLCKSZ, direct_buf);
 
 	TRACE_POSTGRESQL_SMGR_MD_READ_START(forknum, blocknum,
 										reln->smgr_rnode.node.spcNode,
@@ -746,7 +770,7 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 				 errmsg("could not seek to block %u in file \"%s\": %m",
 						blocknum, FilePathName(v->mdfd_vfd))));
 
-	nbytes = FileRead(v->mdfd_vfd, buffer, BLCKSZ, WAIT_EVENT_DATA_FILE_READ);
+	nbytes = FileRead(v->mdfd_vfd, aligned_buf, BLCKSZ, WAIT_EVENT_DATA_FILE_READ);
 
 	TRACE_POSTGRESQL_SMGR_MD_READ_DONE(forknum, blocknum,
 									   reln->smgr_rnode.node.spcNode,
@@ -773,7 +797,7 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		 * update a block that was later truncated away.
 		 */
 		if (zero_damaged_pages || InRecovery)
-			MemSet(buffer, 0, BLCKSZ);
+			MemSet(aligned_buf, 0, BLCKSZ);
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
@@ -781,6 +805,11 @@ mdread(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 							blocknum, FilePathName(v->mdfd_vfd),
 							nbytes, BLCKSZ)));
 	}
+
+	/*
+	 * Copy the result from the aligned buffer to the real one.
+	 */
+	memcpy(buffer, aligned_buf, BLCKSZ);
 }
 
 /*
@@ -797,11 +826,17 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	off_t		seekpos;
 	int			nbytes;
 	MdfdVec    *v;
+	char	   *aligned_buf = (char *) TYPEALIGN(BLCKSZ, direct_buf);
 
 	/* This assert is too expensive to have on normally ... */
 #ifdef CHECK_WRITE_VS_EXTEND
 	Assert(blocknum < mdnblocks(reln, forknum));
 #endif
+
+	/*
+	 * Copy contents into an aligned buffer for direct I/O.
+	 */
+	memcpy(aligned_buf, buffer, BLCKSZ);
 
 	TRACE_POSTGRESQL_SMGR_MD_WRITE_START(forknum, blocknum,
 										 reln->smgr_rnode.node.spcNode,
@@ -822,7 +857,7 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 				 errmsg("could not seek to block %u in file \"%s\": %m",
 						blocknum, FilePathName(v->mdfd_vfd))));
 
-	nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, WAIT_EVENT_DATA_FILE_WRITE);
+	nbytes = FileWrite(v->mdfd_vfd, aligned_buf, BLCKSZ, WAIT_EVENT_DATA_FILE_WRITE);
 
 	TRACE_POSTGRESQL_SMGR_MD_WRITE_DONE(forknum, blocknum,
 										reln->smgr_rnode.node.spcNode,
@@ -1030,11 +1065,14 @@ mdimmedsync(SMgrRelation reln, ForkNumber forknum)
 	{
 		MdfdVec    *v = &reln->md_seg_fds[forknum][segno - 1];
 
-		if (FileSync(v->mdfd_vfd, WAIT_EVENT_DATA_FILE_IMMEDIATE_SYNC) < 0)
+		/* nothing to do with direct I/O */
+		if (!direct_io &&
+			FileSync(v->mdfd_vfd, WAIT_EVENT_DATA_FILE_IMMEDIATE_SYNC) < 0)
 			ereport(data_sync_elevel(ERROR),
 					(errcode_for_file_access(),
 					 errmsg("could not fsync file \"%s\": %m",
 							FilePathName(v->mdfd_vfd))));
+
 		segno--;
 	}
 }
@@ -1433,8 +1471,14 @@ mdpostckpt(void)
 static void
 register_dirty_segment(SMgrRelation reln, ForkNumber forknum, MdfdVec *seg)
 {
+	return;
+
 	/* Temp relations should never be fsync'd */
 	Assert(!SmgrIsTemp(reln));
+
+	/* Not actually needed with direct I/O */
+	if (direct_io)
+		return;
 
 	if (pendingOpsTable)
 	{
@@ -1812,11 +1856,16 @@ _mdfd_openseg(SMgrRelation reln, ForkNumber forknum, BlockNumber segno,
 	MdfdVec    *v;
 	int			fd;
 	char	   *fullpath;
+	int			direct_flag = 0;
 
 	fullpath = _mdfd_segpath(reln, forknum, segno);
 
+	/* Use direct I/O if configured as such */
+	if (direct_io)
+		direct_flag |= O_DIRECT | O_DSYNC;
+
 	/* open the file */
-	fd = PathNameOpenFile(fullpath, O_RDWR | PG_BINARY | oflags);
+	fd = PathNameOpenFile(fullpath, O_RDWR | PG_BINARY | direct_flag | oflags);
 
 	pfree(fullpath);
 
