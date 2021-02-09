@@ -201,3 +201,63 @@ select * from parted_copytest where b = 1;
 select * from parted_copytest where b = 2;
 
 drop table parted_copytest;
+
+--
+-- progress reporting
+--
+
+-- setup
+-- reuse employer datatype, that has a small sized data set
+
+create table progress_reporting (
+	name 		text,
+	age			int4,
+	location 	point,
+	salary 		int4,
+	manager 	name
+);
+
+-- Add a trigger to 'raise info' the contents of pg_stat_progress_copy. This
+-- allows us to test and verify the contents of this view, which would
+-- otherwise require a concurrent session checking that table.
+create function notice_after_progress_reporting() returns trigger AS
+$$
+declare report record;
+begin
+	-- We cannot expect 'pid' nor 'relid' to be consistent over runs due to
+	-- variance in system process ids, and concurrency in runs of tests.
+	-- Additionally, due to the usage of this test in pg_regress, the 'datid'
+	-- also is not consistent between runs.
+	select into report (to_jsonb(r) - '{pid,relid,datid}'::text[]) as value
+		from pg_stat_progress_copy r
+		where pid = pg_backend_pid();
+
+	raise info 'progress: %', report.value::text;
+
+	RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+create trigger check_after_progress_reporting
+	after insert on progress_reporting
+	for each statement
+	execute function notice_after_progress_reporting();
+
+-- reporting of STDIO imports, and correct bytes-processed/tuples-processed reporting
+
+copy progress_reporting from stdin;
+sharon	25	(15,12)	1000	sam
+sam	30	(10,5)	2000	bill
+bill	20	(11,10)	1000	sharon
+\.
+
+-- reporting of FILE imports, and correct reporting of tuples-excluded
+
+copy progress_reporting from '@abs_srcdir@/data/emp.data'
+	where (salary < 2000);
+
+-- cleanup progress_reporting
+
+drop trigger check_after_progress_reporting on progress_reporting;
+drop function notice_after_progress_reporting();
+drop table progress_reporting;
