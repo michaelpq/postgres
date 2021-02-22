@@ -48,6 +48,8 @@ GetTableAmRoutine(Oid amhandler)
 	 * easier to keep AMs up to date, e.g. when forward porting them to a new
 	 * major version.
 	 */
+	Assert(routine->slot_callbacks != NULL);
+
 	Assert(routine->scan_begin != NULL);
 	Assert(routine->scan_end != NULL);
 	Assert(routine->scan_rescan != NULL);
