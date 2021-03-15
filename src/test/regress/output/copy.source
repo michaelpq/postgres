@@ -169,10 +169,11 @@ drop table parted_copytest;
 -- Progress reporting for COPY
 --
 create table tab_progress_reporting (
-	name 		text,
-	age		int4,
-	salary 		int4,
-	manager 	name
+	name text,
+	age int4,
+	location point,
+	salary int4,
+	manager name
 );
 -- Add a trigger to catch and print the contents of the catalog view
 -- pg_stat_progress_copy.  This allows to test some of the contents of
@@ -190,27 +191,20 @@ begin
 
 	raise info 'progress: %', report.value::text;
 
-	RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+	return new;
+end;
+$$ language plpgsql;
 create trigger check_after_tab_progress_reporting
 	after insert on tab_progress_reporting
 	for each statement
 	execute function notice_after_tab_progress_reporting();
 -- Generate progress report with PIPE.
-copy progress_reporting from stdin;
-ERROR:  relation "progress_reporting" does not exist
-sharon	25	1000	sam
-sam	30	2000	bill
-bill	20	1000	sharon
-\.
-invalid command \.
+copy tab_progress_reporting from stdin;
+INFO:  progress: {"type": "PIPE", "command": "COPY FROM", "datname": "regression", "tuples_excluded": 0, "tuples_processed": 3}
 -- Generate report with FILE, wiht excluded tuples.
-copy progress_reporting from '@abs_srcdir@/data/emp.data'
+copy tab_progress_reporting from '@abs_srcdir@/data/emp.data'
 	where (salary < 2000);
-ERROR:  syntax error at or near "sharon"
-LINE 1: sharon 25 1000 sam
-        ^
+INFO:  progress: {"type": "FILE", "command": "COPY FROM", "datname": "regression", "tuples_excluded": 1, "tuples_processed": 2}
 drop trigger check_after_tab_progress_reporting on tab_progress_reporting;
 drop function notice_after_tab_progress_reporting();
 drop table tab_progress_reporting;
