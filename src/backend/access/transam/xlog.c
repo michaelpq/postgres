@@ -3668,7 +3668,7 @@ InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 	 * Perform the rename using link if available, paranoidly trying to avoid
 	 * overwriting an existing file (there shouldn't be one).
 	 */
-	if (durable_rename_excl(tmppath, path, LOG) != 0)
+	if (durable_rename_excl(tmppath, path, LOG, true) != 0)
 	{
 		if (use_lock)
 			LWLockRelease(ControlFileLock);

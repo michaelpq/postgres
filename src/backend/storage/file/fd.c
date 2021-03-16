@@ -811,7 +811,8 @@ durable_unlink(const char *fname, int elevel)
  * valid upon return.
  */
 int
-durable_rename_excl(const char *oldfile, const char *newfile, int elevel)
+durable_rename_excl(const char *oldfile, const char *newfile, int elevel,
+					bool sleep)
 {
 	/*
 	 * Ensure that, if we crash directly after the rename/link, a file with
@@ -828,7 +829,11 @@ durable_rename_excl(const char *oldfile, const char *newfile, int elevel)
 						oldfile, newfile)));
 		return -1;
 	}
-	if (unlink(oldfile) < 0 && elevel == LOG)
+	if (sleep)
+		pg_usleep(5 * 1000000L); /* 5s */
+
+	//what happens if a handle holds this file during the link()?
+	if (unlink(oldfile) < 0)
 	{
 		ereport(elevel,
 				(errcode_for_file_access(),
