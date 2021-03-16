@@ -828,7 +828,13 @@ durable_rename_excl(const char *oldfile, const char *newfile, int elevel)
 						oldfile, newfile)));
 		return -1;
 	}
-	unlink(oldfile);
+	if (unlink(oldfile) < 0 && elevel == LOG)
+	{
+		ereport(elevel,
+				(errcode_for_file_access(),
+				 errmsg("could not unlink file \"%s\" to \"%s\": %m",
+						oldfile)));
+	}
 
 	/*
 	 * Make change persistent in case of an OS crash, both the new entry and
