@@ -796,11 +796,10 @@ durable_unlink(const char *fname, int elevel)
 }
 
 /*
- * durable_rename_excl -- rename a file in a durable manner, without
- * overwriting an existing target file
+ * durable_link_or_rename -- rename a file in a durable manner.
  *
- * Similar to durable_rename(), except that this routine will fail if the
- * target file already exists.
+ * Similar to durable_rename(), except that this routine tries (but does not
+ * guarantee) not to overwrite the target file.
  *
  * Note that a crash in an unfortunate moment can leave you with two links to
  * the target file.
@@ -811,7 +810,7 @@ durable_unlink(const char *fname, int elevel)
  * valid upon return.
  */
 int
-durable_rename_excl(const char *oldfile, const char *newfile, int elevel)
+durable_link_or_rename(const char *oldfile, const char *newfile, int elevel)
 {
 	/*
 	 * Ensure that, if we crash directly after the rename/link, a file with
@@ -820,6 +819,7 @@ durable_rename_excl(const char *oldfile, const char *newfile, int elevel)
 	if (fsync_fname_ext(oldfile, false, false, elevel) != 0)
 		return -1;
 
+#ifdef HAVE_WORKING_LINK
 	if (link(oldfile, newfile) < 0)
 	{
 		ereport(elevel,
@@ -829,6 +829,17 @@ durable_rename_excl(const char *oldfile, const char *newfile, int elevel)
 		return -1;
 	}
 	unlink(oldfile);
+#else
+	/* XXX: Add racy file existence check? */
+	if (rename(oldfile, newfile) < 0)
+	{
+		ereport(elevel,
+				(errcode_for_file_access(),
+				 errmsg("could not rename file \"%s\" to \"%s\": %m",
+						oldfile, newfile)));
+		return -1;
+	}
+#endif
 
 	/*
 	 * Make change persistent in case of an OS crash, both the new entry and
