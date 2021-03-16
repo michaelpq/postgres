@@ -829,16 +829,19 @@ durable_rename_excl(const char *oldfile, const char *newfile, int elevel,
 						oldfile, newfile)));
 		return -1;
 	}
-	if (sleep)
-		pg_usleep(5 * 1000000L); /* 5s */
+	//if (sleep)
+	//	pg_usleep(5 * 1000000L); /* 5s */
 
 	//what happens if a handle holds this file during the link()?
-	if (unlink(oldfile) < 0)
+	if (!sleep)
 	{
-		ereport(elevel,
-				(errcode_for_file_access(),
-				 errmsg("could not unlink file \"%s\" to \"%s\": %m",
-						oldfile)));
+		if (unlink(oldfile) < 0)
+		{
+			ereport(elevel,
+					(errcode_for_file_access(),
+					 errmsg("could not unlink file \"%s\" to \"%s\": %m",
+							oldfile)));
+		}
 	}
 
 	/*
