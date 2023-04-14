@@ -69,6 +69,8 @@ CATALOG(pg_index,2610,IndexRelationId) BKI_SCHEMA_MACRO
  */
 typedef FormData_pg_index *Form_pg_index;
 
+DECLARE_TOAST(pg_index, 4551, 4552);
+
 DECLARE_INDEX(pg_index_indrelid_index, 2678, IndexIndrelidIndexId, on pg_index using btree(indrelid oid_ops));
 DECLARE_UNIQUE_INDEX_PKEY(pg_index_indexrelid_index, 2679, IndexRelidIndexId, on pg_index using btree(indexrelid oid_ops));
 
