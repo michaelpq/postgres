@@ -2798,6 +2798,7 @@ deleted2:
  * we acquired the pg_class row.  If pg_class had a TOAST table, this would
  * be a risk; fortunately, it doesn't.
  */
+//this needs to be very very careful...
 static AutoVacOpts *
 extract_autovac_opts(HeapTuple tup, TupleDesc pg_class_desc)
 {

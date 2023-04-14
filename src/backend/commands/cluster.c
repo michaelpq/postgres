@@ -1509,6 +1509,7 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
 	 * relfrozenxid updates here since swap_relation_files() needs to write to
 	 * pg_class for non-mapped relations anyway.
 	 */
+	//this is a second risk zone.
 	if (OIDOldHeap == RelationRelationId)
 	{
 		Relation	relRelation;
