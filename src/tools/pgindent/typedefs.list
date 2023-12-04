@@ -2492,6 +2492,7 @@ SeqScan
 SeqScanState
 SeqTable
 SeqTableData
+SequenceAmRoutine
 SerCommitSeqNo
 SerialControl
 SerialIOData
@@ -3462,6 +3463,7 @@ lineno_t
 list_sort_comparator
 local_relopt
 local_relopts
+local_sequence_magic
 local_source
 locale_t
 locate_agg_of_level_context
@@ -3725,7 +3727,6 @@ save_buffer
 scram_state
 scram_state_enum
 sem_t
-sequence_magic
 set_join_pathlist_hook_type
 set_rel_pathlist_hook_type
 shm_mq
@@ -3942,6 +3943,7 @@ xl_heap_visible
 xl_invalid_page
 xl_invalid_page_key
 xl_invalidations
+xl_local_seq_rec
 xl_logical_message
 xl_multi_insert_tuple
 xl_multixact_create
@@ -3953,7 +3955,6 @@ xl_replorigin_drop
 xl_replorigin_set
 xl_restore_point
 xl_running_xacts
-xl_seq_rec
 xl_smgr_create
 xl_smgr_truncate
 xl_standby_lock

@@ -22,6 +22,7 @@
 #include "access/reloptions.h"
 #include "access/relscan.h"
 #include "access/sysattr.h"
+#include "access/sequenceam.h"
 #include "access/tableam.h"
 #include "access/toast_compression.h"
 #include "access/xact.h"
@@ -957,10 +958,17 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	}
 	else if (RELKIND_HAS_TABLE_AM(relkind))
 		accessMethod = default_table_access_method;
+	else if (relkind == RELKIND_SEQUENCE)
+		accessMethod = default_sequence_access_method;
 
-	/* look up the access method, verify it is for a table */
+	/* look up the access method, verify it is for a table or a sequence */
 	if (accessMethod != NULL)
-		accessMethodId = get_table_am_oid(accessMethod, false);
+	{
+		if (relkind == RELKIND_SEQUENCE)
+			accessMethodId = get_sequence_am_oid(accessMethod, false);
+		else
+			accessMethodId = get_table_am_oid(accessMethod, false);
+	}
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed in
