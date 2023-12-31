@@ -3923,13 +3923,6 @@ make: *** [postgres] Error 1
    </para>
 
    <para>
-    Native builds of <application>psql</application> don't support command
-    line editing. The <productname>Cygwin</productname> build does support
-    command line editing, so it should be used where psql is needed for
-    interactive use on <productname>Windows</productname>.
-   </para>
-
-   <para>
     PostgreSQL can be built using the Visual C++ compiler suite from Microsoft.
     These compilers can be either from <productname>Visual Studio</productname>,
     <productname>Visual Studio Express</productname> or some versions of the
