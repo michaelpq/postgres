@@ -1666,7 +1666,11 @@ ProcessUtilitySlow(ParseState *pstate,
 				break;
 
 			case T_CreateSeqStmt:
+				EventTriggerAlterTableStart(parsetree);
 				address = DefineSequence(pstate, (CreateSeqStmt *) parsetree);
+				/* stashed internally */
+				commandCollected = true;
+				EventTriggerAlterTableEnd();
 				break;
 
 			case T_AlterSeqStmt:
