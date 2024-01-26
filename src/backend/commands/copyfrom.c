@@ -1416,7 +1416,7 @@ BeginCopyFrom(ParseState *pstate,
 	oldcontext = MemoryContextSwitchTo(cstate->copycontext);
 
 	/* Extract options from the statement node tree */
-	ProcessCopyOptions(pstate, &cstate->opts, true /* is_from */ , options);
+	ProcessCopyOptions(pstate, &cstate->opts, true /* is_from */ , cstate, options);
 
 	/* Process the target relation */
 	cstate->rel = rel;

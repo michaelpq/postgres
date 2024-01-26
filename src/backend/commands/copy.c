@@ -442,6 +442,9 @@ defGetCopyOnErrorChoice(DefElem *def, ParseState *pstate, bool is_from)
  * a list of options.  In that usage, 'opts_out' can be passed as NULL and
  * the collected data is just leaked until CurrentMemoryContext is reset.
  *
+ * 'cstate' is CopyToState* for !is_from, CopyFromState* for is_from. 'cstate'
+ * may be NULL. For example, file_fdw uses NULL.
+ *
  * Note that additional checking, such as whether column names listed in FORCE
  * QUOTE actually exist, has to be applied later.  This just checks for
  * self-consistency of the options list.
@@ -450,6 +453,7 @@ void
 ProcessCopyOptions(ParseState *pstate,
 				   CopyFormatOptions *opts_out,
 				   bool is_from,
+				   void *cstate,
 				   List *options)
 {
 	bool		format_specified = false;
@@ -464,30 +468,54 @@ ProcessCopyOptions(ParseState *pstate,
 
 	opts_out->file_encoding = -1;
 
-	/* Extract options from the statement node tree */
+	/*
+	 * Extract only the "format" option to detect target routine as the first
+	 * step
+	 */
 	foreach(option, options)
 	{
 		DefElem    *defel = lfirst_node(DefElem, option);
 
 		if (strcmp(defel->defname, "format") == 0)
 		{
-			char	   *fmt = defGetString(defel);
-
 			if (format_specified)
 				errorConflictingDefElem(defel, pstate);
 			format_specified = true;
-			if (strcmp(fmt, "text") == 0)
-				 /* default format */ ;
-			else if (strcmp(fmt, "csv") == 0)
-				opts_out->csv_mode = true;
-			else if (strcmp(fmt, "binary") == 0)
-				opts_out->binary = true;
+
+			if (is_from)
+			{
+				char	   *fmt = defGetString(defel);
+
+				if (strcmp(fmt, "text") == 0)
+					 /* default format */ ;
+				else if (strcmp(fmt, "csv") == 0)
+				{
+					opts_out->csv_mode = true;
+				}
+				else if (strcmp(fmt, "binary") == 0)
+				{
+					opts_out->binary = true;
+				}
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("COPY format \"%s\" not recognized", fmt),
+							 parser_errposition(pstate, defel->location)));
+			}
 			else
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("COPY format \"%s\" not recognized", fmt),
-						 parser_errposition(pstate, defel->location)));
+				ProcessCopyOptionFormatTo(pstate, opts_out, defel);
 		}
+	}
+	if (!format_specified)
+		/* Set the default format. */
+		ProcessCopyOptionFormatTo(pstate, opts_out, NULL);
+	/* Extract options except "format" from the statement node tree */
+	foreach(option, options)
+	{
+		DefElem    *defel = lfirst_node(DefElem, option);
+
+		if (strcmp(defel->defname, "format") == 0)
+			continue;
 		else if (strcmp(defel->defname, "freeze") == 0)
 		{
 			if (freeze_specified)
@@ -616,11 +644,18 @@ ProcessCopyOptions(ParseState *pstate,
 			opts_out->on_error = defGetCopyOnErrorChoice(defel, pstate, is_from);
 		}
 		else
-			ereport(ERROR,
-					(errcode(ERRCODE_SYNTAX_ERROR),
-					 errmsg("option \"%s\" not recognized",
-							defel->defname),
-					 parser_errposition(pstate, defel->location)));
+		{
+			bool		processed = false;
+
+			if (!is_from)
+				processed = opts_out->to_routine->CopyToProcessOption(cstate, defel);
+			if (!processed)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("option \"%s\" not recognized",
+								defel->defname),
+						 parser_errposition(pstate, defel->location)));
+		}
 	}
 
 	/*
