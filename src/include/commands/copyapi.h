@@ -31,13 +31,16 @@ typedef struct CopyFromRoutine
 	 */
 	void		(*CopyFromStart) (CopyFromState cstate, TupleDesc tupDesc);
 
-	/* Copy one row.   Returns false if no more tuples.
+	/* Copy one row.
+	 *
+	 * Returns false if no more tuples.
+	 *
 	   //document arguments..
 	 */
 	bool		(*CopyFromOneRow) (CopyFromState cstate, ExprContext *econtext,
 								   Datum *values, bool *nulls);
 
-	/* Called when COPY FROM has ended.  This will finalize something. */
+	/* Called when COPY FROM has ended. */
 	void		(*CopyFromEnd) (CopyFromState cstate);
 } CopyFromRoutine;
 
@@ -52,10 +55,17 @@ typedef struct CopyToRoutine
 	 */
 	void		(*CopyToStart) (CopyToState cstate, TupleDesc tupDesc);
 
-	/* Copy one row for COPY TO. */
+	/*
+	 * Copy one row for COPY TO.
+	 * //document arguments
+	 */
 	void		(*CopyToOneRow) (CopyToState cstate, TupleTableSlot *slot);
 
-	/* Called when COPY TO is ended.  This will send a trailer. */
+	/*
+	 * Called when COPY TO has ended
+	 * //document arguments
+	 * This will send a trailer.
+	 */
 	void		(*CopyToEnd) (CopyToState cstate);
 } CopyToRoutine;
 
