@@ -858,6 +858,8 @@ NextCopyFromRawFields(CopyFromState cstate, char ***fields, int *nfields)
 
 typedef char *(*PostpareColumnValue) (CopyFromState cstate, char *string, int m);
 
+//This is used as a pseudo-callback for the one-row callback.  Is that
+// really the best thing there is to do?
 static inline char *
 PostpareColumnValueText(CopyFromState cstate, char *string, int m)
 {
@@ -891,16 +893,22 @@ PostpareColumnValueCSV(CopyFromState cstate, char *string, int m)
 }
 
 /*
- * We don't use this function as a callback directly. We define
- * CopyFromTextOneRow() and CopyFromCSVOneRow() and use them instead. It's for
- * eliminating a "if (cstate->opts.csv_mode)" branch. This callback is called
- * per tuple. So this optimization will be valuable when many tuples are
- * copied.
+ * CopyFromTextBasedOneRow
  *
- * cstate->in_functions must be initialized in CopyFromTextBasedStart().
+ * Workhorse for CopyFromTextOneRow() and CopyFromCSVOneRow().
+ *
+ * This function is not directly used as a callback; it is CopyFromTextOneRow()
+ * and CopyFromCSVOneRow()'s responsibility to do that instead.  This eliminates
+ * "if" branches with csv_mode, which is an optimization that matters for
+ * performance as these callbacks are called once per tuple.
  */
 static inline bool
-CopyFromTextBasedOneRow(CopyFromState cstate, ExprContext *econtext, Datum *values, bool *nulls, CopyReadAttributes copy_read_attributes, PostpareColumnValue postpare_column_value)
+CopyFromTextBasedOneRow(CopyFromState cstate,
+						ExprContext *econtext,
+						Datum *values,
+						bool *nulls,
+						CopyReadAttributes copy_read_attributes,
+						PostpareColumnValue postpare_column_value)
 {
 	TupleDesc	tupDesc;
 	AttrNumber	attr_count;
@@ -917,7 +925,8 @@ CopyFromTextBasedOneRow(CopyFromState cstate, ExprContext *econtext, Datum *valu
 	attr_count = list_length(cstate->attnumlist);
 
 	/* read raw fields in the next line */
-	if (!NextCopyFromRawFieldsInternal(cstate, &field_strings, &fldct, copy_read_attributes))
+	if (!NextCopyFromRawFieldsInternal(cstate, &field_strings,
+									   &fldct, copy_read_attributes))
 		return false;
 
 	/* check for overflowing fields */
@@ -992,16 +1001,23 @@ CopyFromTextBasedOneRow(CopyFromState cstate, ExprContext *econtext, Datum *valu
 	return true;
 }
 
+
 bool
-CopyFromTextOneRow(CopyFromState cstate, ExprContext *econtext, Datum *values, bool *nulls)
+CopyFromTextOneRow(CopyFromState cstate, ExprContext *econtext,
+				   Datum *values, bool *nulls)
 {
-	return CopyFromTextBasedOneRow(cstate, econtext, values, nulls, CopyReadAttributesText, PostpareColumnValueText);
+	return CopyFromTextBasedOneRow(cstate, econtext, values, nulls,
+								   CopyReadAttributesText,
+								   PostpareColumnValueText);
 }
 
 bool
-CopyFromCSVOneRow(CopyFromState cstate, ExprContext *econtext, Datum *values, bool *nulls)
+CopyFromCSVOneRow(CopyFromState cstate, ExprContext *econtext,
+				  Datum *values, bool *nulls)
 {
-	return CopyFromTextBasedOneRow(cstate, econtext, values, nulls, CopyReadAttributesCSV, PostpareColumnValueCSV);
+	return CopyFromTextBasedOneRow(cstate, econtext, values, nulls,
+								   CopyReadAttributesCSV,
+								   PostpareColumnValueCSV);
 }
 
 /*

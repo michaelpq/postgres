@@ -129,7 +129,7 @@ static void ClosePipeFromProgram(CopyFromState cstate);
  * This must initialize cstate->in_functions for CopyFromTextBasedOneRow().
  */
 static void
-CopyFromTextBasedStart(CopyFromState cstate, TupleDesc tupDesc)
+CopyFromTextStart(CopyFromState cstate, TupleDesc tupDesc)
 {
 	AttrNumber	num_phys_attrs = tupDesc->natts;
 	AttrNumber	attr_count;
@@ -151,12 +151,13 @@ CopyFromTextBasedStart(CopyFromState cstate, TupleDesc tupDesc)
 	initStringInfo(&cstate->line_buf);
 
 	/*
-	 * Pick up the required catalog information for each attribute in the
-	 * relation, including the input function, the element type (to pass to
-	 * the input function).
+	 * Assign the required catalog information for each attribute in the
+	 * relation, including the input function and the element type (to pass
+	 * to the input function).
 	 */
 	cstate->in_functions = (FmgrInfo *) palloc(num_phys_attrs * sizeof(FmgrInfo));
 	cstate->typioparams = (Oid *) palloc(num_phys_attrs * sizeof(Oid));
+
 	for (int attnum = 1; attnum <= num_phys_attrs; attnum++)
 	{
 		Form_pg_attribute att = TupleDescAttr(tupDesc, attnum - 1);
@@ -179,8 +180,9 @@ CopyFromTextBasedStart(CopyFromState cstate, TupleDesc tupDesc)
 }
 
 static void
-CopyFromTextBasedEnd(CopyFromState cstate)
+CopyFromTextEnd(CopyFromState cstate)
 {
+	/* nothing to do */
 }
 
 /*
@@ -188,6 +190,8 @@ CopyFromTextBasedEnd(CopyFromState cstate)
  */
 
 /*
+ * CopyFromBinaryStart
+ *
  * This must initialize cstate->in_functions for CopyFromBinaryOneRow().
  */
 static void
@@ -196,12 +200,13 @@ CopyFromBinaryStart(CopyFromState cstate, TupleDesc tupDesc)
 	AttrNumber	num_phys_attrs = tupDesc->natts;
 
 	/*
-	 * Pick up the required catalog information for each attribute in the
-	 * relation, including the input function, the element type (to pass to
-	 * the input function).
+	 * Assign the required catalog information for each attribute in the
+	 * relation, including the input function and the element type (to pass
+	 * to the input function).
 	 */
 	cstate->in_functions = (FmgrInfo *) palloc(num_phys_attrs * sizeof(FmgrInfo));
 	cstate->typioparams = (Oid *) palloc(num_phys_attrs * sizeof(Oid));
+
 	for (int attnum = 1; attnum <= num_phys_attrs; attnum++)
 	{
 		Form_pg_attribute att = TupleDescAttr(tupDesc, attnum - 1);
@@ -224,24 +229,25 @@ CopyFromBinaryStart(CopyFromState cstate, TupleDesc tupDesc)
 static void
 CopyFromBinaryEnd(CopyFromState cstate)
 {
+	/* nothing to do */
 }
 
 /*
- * CopyFromTextBased*() are shared with "csv". CopyFromText*() are only for "text".
+ * Callback routines assigned to each format.
+ *
+ * Note that start and end callbacks are shared for CSV and text, while
+ * the per-row callback is kept separated.
  */
 static const CopyFromRoutine CopyFromRoutineText = {
-	.CopyFromStart = CopyFromTextBasedStart,
+	.CopyFromStart = CopyFromTextStart,
 	.CopyFromOneRow = CopyFromTextOneRow,
-	.CopyFromEnd = CopyFromTextBasedEnd,
+	.CopyFromEnd = CopyFromTextEnd,
 };
 
-/*
- * CopyFromTextBased*() are shared with "text". CopyFromCSV*() are only for "csv".
- */
 static const CopyFromRoutine CopyFromRoutineCSV = {
-	.CopyFromStart = CopyFromTextBasedStart,
+	.CopyFromStart = CopyFromTextStart,
 	.CopyFromOneRow = CopyFromCSVOneRow,
-	.CopyFromEnd = CopyFromTextBasedEnd,
+	.CopyFromEnd = CopyFromTextEnd,
 };
 
 static const CopyFromRoutine CopyFromRoutineBinary = {

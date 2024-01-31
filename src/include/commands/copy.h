@@ -87,8 +87,12 @@ extern void DoCopy(ParseState *pstate, const CopyStmt *stmt,
 				   uint64 *processed);
 
 extern void ProcessCopyOptions(ParseState *pstate, CopyFormatOptions *opts_out, bool is_from, List *options);
-extern void ProcessCopyOptionFormatFrom(ParseState *pstate, CopyFormatOptions *opts_out, const char *format);
-extern void ProcessCopyOptionFormatTo(ParseState *pstate, CopyFormatOptions *opts_out, const char *format);
+extern void ProcessCopyOptionFormatFrom(ParseState *pstate,
+										CopyFormatOptions *opts_out,
+										const char *format);
+extern void ProcessCopyOptionFormatTo(ParseState *pstate,
+									  CopyFormatOptions *opts_out,
+									  const char *format);
 extern CopyFromState BeginCopyFrom(ParseState *pstate, Relation rel, Node *whereClause,
 								   const char *filename,
 								   bool is_program, copy_data_source_cb data_source_cb, List *attnamelist, List *options);
