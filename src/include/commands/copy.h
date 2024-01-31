@@ -75,9 +75,8 @@ typedef struct CopyFormatOptions
 	bool		convert_selectively;	/* do selective binary conversion? */
 	CopyOnErrorChoice on_error; /* what to do when error happened */
 	List	   *convert_select; /* list of column names (can be NIL) */
-	const		CopyFromRoutine *from_routine;	/* callback routines for COPY
-												 * FROM */
-	const		CopyToRoutine *to_routine;	/* callback routines for COPY TO */
+	const CopyFromRoutine *from_routine;	/* callback routines for COPY FROM */
+	const CopyToRoutine *to_routine;	/* callback routines for COPY TO */
 } CopyFormatOptions;
 
 typedef int (*copy_data_source_cb) (void *outbuf, int minread, int maxread);

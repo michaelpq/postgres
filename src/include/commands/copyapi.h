@@ -34,7 +34,7 @@ typedef struct CopyFromRoutine
 
 	/* Called when COPY FROM is ended. This will finalize something. */
 	void		(*CopyFromEnd) (CopyFromState cstate);
-}			CopyFromRoutine;
+} CopyFromRoutine;
 
 /* This is private in commands/copyto.c */
 typedef struct CopyToStateData *CopyToState;
@@ -50,6 +50,6 @@ typedef struct CopyToRoutine
 
 	/* Called when COPY TO is ended. This will send a trailer. */
 	void		(*CopyToEnd) (CopyToState cstate);
-}			CopyToRoutine;
+} CopyToRoutine;
 
 #endif							/* COPYAPI_H */
