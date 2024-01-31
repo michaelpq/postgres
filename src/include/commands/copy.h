@@ -75,11 +75,10 @@ typedef struct CopyFormatOptions
 	bool		convert_selectively;	/* do selective binary conversion? */
 	CopyOnErrorChoice on_error; /* what to do when error happened */
 	List	   *convert_select; /* list of column names (can be NIL) */
+	const		CopyFromRoutine *from_routine;	/* callback routines for COPY
+												 * FROM */
 	const		CopyToRoutine *to_routine;	/* callback routines for COPY TO */
 } CopyFormatOptions;
-
-/* This is private in commands/copyfrom.c */
-typedef struct CopyFromStateData *CopyFromState;
 
 typedef int (*copy_data_source_cb) (void *outbuf, int minread, int maxread);
 typedef void (*copy_data_dest_cb) (void *data, int len);
@@ -89,6 +88,7 @@ extern void DoCopy(ParseState *pstate, const CopyStmt *stmt,
 				   uint64 *processed);
 
 extern void ProcessCopyOptions(ParseState *pstate, CopyFormatOptions *opts_out, bool is_from, List *options);
+extern void ProcessCopyOptionFormatFrom(ParseState *pstate, CopyFormatOptions *opts_out, const char *format);
 extern void ProcessCopyOptionFormatTo(ParseState *pstate, CopyFormatOptions *opts_out, const char *format);
 extern CopyFromState BeginCopyFrom(ParseState *pstate, Relation rel, Node *whereClause,
 								   const char *filename,
