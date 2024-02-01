@@ -223,11 +223,7 @@ CopyToTextStart(CopyToState cstate, TupleDesc tupDesc)
 
 			colname = NameStr(TupleDescAttr(tupDesc, attnum - 1)->attname);
 
-			if (cstate->opts.csv_mode)
-				CopyAttributeOutCSV(cstate, colname, false,
-									list_length(cstate->attnumlist) == 1);
-			else
-				CopyAttributeOutText(cstate, colname);
+			CopyAttributeOutText(cstate, colname);
 		}
 
 		CopyToTextSendEndOfRow(cstate);
@@ -260,12 +256,7 @@ CopyToTextOneRow(CopyToState cstate, TupleTableSlot *slot)
 			char	   *string;
 
 			string = OutputFunctionCall(&out_functions[attnum - 1], value);
-			if (cstate->opts.csv_mode)
-				CopyAttributeOutCSV(cstate, string,
-									cstate->opts.force_quote_flags[attnum - 1],
-									list_length(cstate->attnumlist) == 1);
-			else
-				CopyAttributeOutText(cstate, string);
+			CopyAttributeOutText(cstate, string);
 		}
 	}
 
@@ -274,6 +265,99 @@ CopyToTextOneRow(CopyToState cstate, TupleTableSlot *slot)
 
 static void
 CopyToTextEnd(CopyToState cstate)
+{
+}
+
+static void
+CopyToCSVStart(CopyToState cstate, TupleDesc tupDesc)
+{
+	int			num_phys_attrs;
+	ListCell   *cur;
+
+	num_phys_attrs = tupDesc->natts;
+	/* Get info about the columns we need to process. */
+	cstate->out_functions = (FmgrInfo *) palloc(num_phys_attrs * sizeof(FmgrInfo));
+	foreach(cur, cstate->attnumlist)
+	{
+		int			attnum = lfirst_int(cur);
+		Oid			out_func_oid;
+		bool		isvarlena;
+		Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
+
+		getTypeOutputInfo(attr->atttypid, &out_func_oid, &isvarlena);
+		fmgr_info(out_func_oid, &cstate->out_functions[attnum - 1]);
+	}
+
+	/*
+	 * For non-binary copy, we need to convert null_print to file encoding,
+	 * because it will be sent directly with CopySendString.
+	 */
+	if (cstate->need_transcoding)
+		cstate->opts.null_print_client = pg_server_to_any(cstate->opts.null_print,
+														  cstate->opts.null_print_len,
+														  cstate->file_encoding);
+
+	/* if a header has been requested send the line */
+	if (cstate->opts.header_line)
+	{
+		bool		hdr_delim = false;
+
+		foreach(cur, cstate->attnumlist)
+		{
+			int			attnum = lfirst_int(cur);
+			char	   *colname;
+
+			if (hdr_delim)
+				CopySendChar(cstate, cstate->opts.delim[0]);
+			hdr_delim = true;
+
+			colname = NameStr(TupleDescAttr(tupDesc, attnum - 1)->attname);
+
+			CopyAttributeOutCSV(cstate, colname, false,
+									list_length(cstate->attnumlist) == 1);
+		}
+
+		CopyToTextSendEndOfRow(cstate);
+	}
+}
+
+static void
+CopyToCSVOneRow(CopyToState cstate, TupleTableSlot *slot)
+{
+	bool		need_delim = false;
+	FmgrInfo   *out_functions = cstate->out_functions;
+	ListCell   *cur;
+
+	foreach(cur, cstate->attnumlist)
+	{
+		int			attnum = lfirst_int(cur);
+		Datum		value = slot->tts_values[attnum - 1];
+		bool		isnull = slot->tts_isnull[attnum - 1];
+
+		if (need_delim)
+			CopySendChar(cstate, cstate->opts.delim[0]);
+		need_delim = true;
+
+		if (isnull)
+		{
+			CopySendString(cstate, cstate->opts.null_print_client);
+		}
+		else
+		{
+			char	   *string;
+
+			string = OutputFunctionCall(&out_functions[attnum - 1], value);
+			CopyAttributeOutCSV(cstate, string,
+								cstate->opts.force_quote_flags[attnum - 1],
+								list_length(cstate->attnumlist) == 1);
+		}
+	}
+
+	CopyToTextSendEndOfRow(cstate);
+}
+
+static void
+CopyToCSVEnd(CopyToState cstate)
 {
 }
 
@@ -388,9 +472,9 @@ CopyToRoutine CopyToRoutineText = {
 CopyToRoutine CopyToRoutineCSV = {
 	.CopyToProcessOption = CopyToTextProcessOption,
 	.CopyToGetFormat = CopyToTextGetFormat,
-	.CopyToStart = CopyToTextStart,
-	.CopyToOneRow = CopyToTextOneRow,
-	.CopyToEnd = CopyToTextEnd,
+	.CopyToStart = CopyToCSVStart,
+	.CopyToOneRow = CopyToCSVOneRow,
+	.CopyToEnd = CopyToCSVEnd,
 };
 
 CopyToRoutine CopyToRoutineBinary = {
