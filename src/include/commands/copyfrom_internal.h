@@ -15,6 +15,7 @@
 #define COPYFROM_INTERNAL_H
 
 #include "commands/copy.h"
+#include "commands/copyapi.h"
 #include "commands/trigger.h"
 #include "nodes/miscnodes.h"
 
@@ -65,6 +66,9 @@ typedef int (*CopyReadAttributes) (CopyFromState cstate);
  */
 typedef struct CopyFromStateData
 {
+	/* format routine */
+	const CopyFromRoutine *routine;
+
 	/* low-level state data */
 	CopySource	copy_src;		/* type of copy source */
 	FILE	   *copy_file;		/* used if copy_src == COPY_FILE */
@@ -199,5 +203,11 @@ extern void ReceiveCopyBinaryHeader(CopyFromState cstate);
 /* Callbacks for copy_read_attributes */
 extern int	CopyReadAttributesCSV(CopyFromState cstate);
 extern int	CopyReadAttributesText(CopyFromState cstate);
+
+/* Callbacks for CopyFromRoutine->CopyFromOneRow */
+extern bool CopyFromTextOneRow(CopyFromState cstate, ExprContext *econtext,
+							   Datum *values, bool *nulls);
+extern bool CopyFromBinaryOneRow(CopyFromState cstate, ExprContext *econtext,
+								 Datum *values, bool *nulls);
 
 #endif							/* COPYFROM_INTERNAL_H */
