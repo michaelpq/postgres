@@ -117,8 +117,8 @@ static const char BinarySignature[11] = "PGCOPY\n\377\r\n\0";
 static void EndCopy(CopyToState cstate);
 static void ClosePipeToProgram(CopyToState cstate);
 static void CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot);
-static void CopyAttributeOutText(CopyToState cstate, const char *string);
-static void CopyAttributeOutCSV(CopyToState cstate, const char *string,
+static inline void CopyAttributeOutText(CopyToState cstate, const char *string);
+static inline void CopyAttributeOutCSV(CopyToState cstate, const char *string,
 								bool use_quote, bool single_attr);
 
 /* Low-level communications functions */
@@ -984,7 +984,7 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 			CopySendData(cstate, start, ptr - start); \
 	} while (0)
 
-static void
+static inline void
 CopyAttributeOutText(CopyToState cstate, const char *string)
 {
 	const char *ptr;
@@ -1137,7 +1137,7 @@ CopyAttributeOutText(CopyToState cstate, const char *string)
  * Send text representation of one attribute, with conversion and
  * CSV-style escaping
  */
-static void
+static inline void
 CopyAttributeOutCSV(CopyToState cstate, const char *string,
 					bool use_quote, bool single_attr)
 {
