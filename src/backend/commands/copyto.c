@@ -109,7 +109,6 @@ typedef struct CopyToStateData
 	MemoryContext copycontext;	/* per-copy execution context */
 
 	FmgrInfo   *out_functions;	/* lookup info for output functions */
-	CopyAttributeOut copy_attribute_out;	/* output representation callback */
 	MemoryContext rowcontext;	/* per-row evaluation context */
 	uint64		bytes_processed;	/* number of bytes processed so far */
 } CopyToStateData;
@@ -131,11 +130,11 @@ static void EndCopy(CopyToState cstate);
 static void ClosePipeToProgram(CopyToState cstate);
 static void CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot);
 
-/* Callbacks for copy_attribute_out */
-static void CopyAttributeOutText(CopyToState cstate, const char *string,
-								 bool use_quote);
-static void CopyAttributeOutCSV(CopyToState cstate, const char *string,
-								bool use_quote);
+/* Callbacks for output representation */
+static inline void CopyAttributeOutText(CopyToState cstate, const char *string,
+										bool use_quote);
+static inline void CopyAttributeOutCSV(CopyToState cstate, const char *string,
+									   bool use_quote);
 
 /* Low-level communications functions */
 static void SendCopyBegin(CopyToState cstate);
@@ -191,12 +190,13 @@ static void
 CopyToTextStart(CopyToState cstate, TupleDesc tupDesc)
 {
 	ListCell   *cur;
+	CopyAttributeOut copy_attribute_out;
 
 	/* Set output representation callback */
 	if (cstate->opts.csv_mode)
-		cstate->copy_attribute_out = CopyAttributeOutCSV;
+		copy_attribute_out = CopyAttributeOutCSV;
 	else
-		cstate->copy_attribute_out = CopyAttributeOutText;
+		copy_attribute_out = CopyAttributeOutText;
 
 	/*
 	 * For non-binary copy, we need to convert null_print to file encoding,
@@ -224,7 +224,7 @@ CopyToTextStart(CopyToState cstate, TupleDesc tupDesc)
 			colname = NameStr(TupleDescAttr(tupDesc, attnum - 1)->attname);
 
 			/* Ignore quotes */
-			cstate->copy_attribute_out(cstate, colname, false);
+			copy_attribute_out(cstate, colname, false);
 		}
 
 		CopyToTextSendEndOfRow(cstate);
@@ -259,6 +259,13 @@ CopyToTextOneRow(CopyToState cstate,
 	bool		need_delim = false;
 	FmgrInfo   *out_functions = cstate->out_functions;
 	ListCell   *cur;
+	CopyAttributeOut copy_attribute_out;
+
+	/* Set output representation callback */
+	if (cstate->opts.csv_mode)
+		copy_attribute_out = CopyAttributeOutCSV;
+	else
+		copy_attribute_out = CopyAttributeOutText;
 
 	foreach(cur, cstate->attnumlist)
 	{
@@ -280,8 +287,8 @@ CopyToTextOneRow(CopyToState cstate,
 
 			string = OutputFunctionCall(&out_functions[attnum - 1], value);
 
-			cstate->copy_attribute_out(cstate, string,
-									   cstate->opts.force_quote_flags[attnum - 1]);
+			copy_attribute_out(cstate, string,
+							   cstate->opts.force_quote_flags[attnum - 1]);
 		}
 	}
 
@@ -1153,7 +1160,7 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 			CopySendData(cstate, start, ptr - start); \
 	} while (0)
 
-static void
+static inline void
 CopyAttributeOutText(CopyToState cstate, const char *string,
 					 bool use_quote)
 {
@@ -1307,7 +1314,7 @@ CopyAttributeOutText(CopyToState cstate, const char *string,
  * Send text representation of one attribute, with conversion and
  * CSV-style escaping
  */
-static void
+static inline void
 CopyAttributeOutCSV(CopyToState cstate, const char *string,
 					bool use_quote)
 {
