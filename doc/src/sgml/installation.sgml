@@ -196,8 +196,12 @@
 
     <listitem>
      <para>
-      Diff is required to run the regression tests, particularly on Windows
-      where it may not be available in default environments.
+      <indexterm>
+       <primary>Diff</primary>
+      </indexterm>
+
+      <productname>Diff</productname> is required to run the regression
+      tests. On Windows, it may not be available by default.
      </para>
     </listitem>
    </itemizedlist>
@@ -346,6 +350,12 @@
    url="https://www.gnu.org/prep/ftp"></ulink>
    for a list) or at <ulink
    url="ftp://ftp.gnu.org/gnu/"></ulink>.
+  </para>
+
+  <para>
+   On Windows, you can find packages for build dependencies using
+   <ulink url="https://www.msys2.org/">MSYS2</ulink>
+   or <ulink url="https://chocolatey.org/">Chocolatey</ulink>.
   </para>
  </sect1>
 
