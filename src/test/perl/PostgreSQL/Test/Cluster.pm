@@ -495,6 +495,10 @@ a directory that's only accessible to the current user to ensure that.
 On Windows, we use SSPI authentication to ensure the same (by pg_regress
 --config-auth).
 
+force_initdb => 1 will force to initialized the cluster by initdb. Otherwise, if
+available and if there aren't any parameters, use a previously initdb'd cluster
+as a template by copying it.
+
 WAL archiving can be enabled on this node by passing the keyword parameter
 has_archiving => 1. This is disabled by default.
 
@@ -517,6 +521,7 @@ sub init
 
 	local %ENV = $self->_get_env();
 
+	$params{force_initdb} = 0 unless defined $params{force_initdb};
 	$params{allows_streaming} = 0 unless defined $params{allows_streaming};
 	$params{has_archiving} = 0 unless defined $params{has_archiving};
 
@@ -529,14 +534,14 @@ sub init
 	mkdir $self->backup_dir;
 	mkdir $self->archive_dir;
 
-	# If available and if there aren't any parameters, use a previously
-	# initdb'd cluster as a template by copying it. For a lot of tests, that's
-	# substantially cheaper. Do so only if there aren't parameters, it doesn't
-	# seem worth figuring out whether they affect compatibility.
+	# For a lot of tests, that's substantially cheaper to copy previously
+	# initdb'd cluster as a template. Do so only if force_initdb => 0, and there
+	# aren't parameters, it doesn't seem worth figuring out whether they affect
+	# compatibility.
 	#
 	# There's very similar code in pg_regress.c, but we can't easily
 	# deduplicate it until we require perl at build time.
-	if (defined $params{extra} or !defined $ENV{INITDB_TEMPLATE})
+	if ($params{force_initdb} or defined $params{extra} or !defined $ENV{INITDB_TEMPLATE})
 	{
 		note("initializing database system by running initdb");
 		PostgreSQL::Test::Utils::system_or_bail('initdb', '-D', $pgdata, '-A',
