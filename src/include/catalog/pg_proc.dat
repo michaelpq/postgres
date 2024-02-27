@@ -3325,9 +3325,11 @@
   proargmodes => '{i,o,o,o,o,o,o,o}',
   proargnames => '{sequence_oid,start_value,minimum_value,maximum_value,increment,cycle_option,cache_size,data_type}',
   prosrc => 'pg_sequence_parameters' },
-{ oid => '4032', descr => 'sequence last value',
+{ oid => '4032', descr => 'sequence last value data',
   proname => 'pg_sequence_last_value', provolatile => 'v', proparallel => 'u',
-  prorettype => 'int8', proargtypes => 'regclass',
+  prorettype => 'record', proargtypes => 'regclass',
+  proallargtypes => '{regclass,bool,int8}', proargmodes => '{i,o,o}',
+  proargnames => '{seqid,is_called,last_value}',
   prosrc => 'pg_sequence_last_value' },
 
 { oid => '275', descr => 'return the next oid for a system table',
