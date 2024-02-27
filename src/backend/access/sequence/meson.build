@@ -3,4 +3,5 @@
 backend_sources += files(
   'local.c',
   'sequence.c',
+  'sequenceamapi.c',
 )
