@@ -1774,14 +1774,22 @@ pg_sequence_parameters(PG_FUNCTION_ARGS)
 Datum
 pg_sequence_last_value(PG_FUNCTION_ARGS)
 {
+#define PG_SEQUENCE_LAST_VALUE_COLS		2
 	Oid			relid = PG_GETARG_OID(0);
+	Datum		values[PG_SEQUENCE_LAST_VALUE_COLS] = {0};
+	bool		nulls[PG_SEQUENCE_LAST_VALUE_COLS] = {0};
 	SeqTable	elm;
 	Relation	seqrel;
+	TupleDesc	tupdesc;
 	Buffer		buf;
 	HeapTupleData seqtuple;
 	Form_pg_sequence_data seq;
 	bool		is_called;
-	int64		result;
+	int64		last_value;
+
+	/* Build a tuple descriptor for our result type */
+	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+		elog(ERROR, "return type must be a row type");
 
 	/* open and lock sequence */
 	init_sequence(relid, &elm, &seqrel);
@@ -1795,15 +1803,14 @@ pg_sequence_last_value(PG_FUNCTION_ARGS)
 	seq = read_seq_tuple(seqrel, &buf, &seqtuple);
 
 	is_called = seq->is_called;
-	result = seq->last_value;
+	last_value = seq->last_value;
 
 	UnlockReleaseBuffer(buf);
 	sequence_close(seqrel, NoLock);
 
-	if (is_called)
-		PG_RETURN_INT64(result);
-	else
-		PG_RETURN_NULL();
+	values[0] = BoolGetDatum(is_called);
+	values[1] = Int64GetDatum(last_value);
+	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(tupdesc, values, nulls)));
 }
 
 
