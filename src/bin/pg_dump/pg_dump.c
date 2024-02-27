@@ -17812,9 +17812,19 @@ dumpSequenceData(Archive *fout, const TableDataInfo *tdinfo)
 	bool		called;
 	PQExpBuffer query = createPQExpBuffer();
 
-	appendPQExpBuffer(query,
-					  "SELECT last_value, is_called FROM %s",
-					  fmtQualifiedDumpable(tbinfo));
+	/*
+	 * In versions 17 and up, pg_sequence_last_value() has been switched to
+	 * return a tuple with last_value and is_called.
+	 */
+	if (fout->remoteVersion >= 170000)
+		appendPQExpBuffer(query,
+						  "SELECT last_value, is_called "
+						  "FROM pg_sequence_last_value('%s')",
+						  fmtQualifiedDumpable(tbinfo));
+	else
+		appendPQExpBuffer(query,
+						  "SELECT last_value, is_called FROM %s",
+						  fmtQualifiedDumpable(tbinfo));
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
