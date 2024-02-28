@@ -1210,6 +1210,13 @@ retry:
 	else if (RELKIND_HAS_TABLE_AM(relation->rd_rel->relkind) ||
 			 relation->rd_rel->relkind == RELKIND_SEQUENCE)
 		RelationInitTableAccessMethod(relation);
+	else if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+	{
+		/*
+		 * Do nothing: access methods is a setting that partitions can
+		 * inherit.
+		 */
+	}
 	else
 		Assert(relation->rd_rel->relam == InvalidOid);
 

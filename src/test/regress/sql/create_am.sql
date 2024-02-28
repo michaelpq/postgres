@@ -201,11 +201,59 @@ ALTER TABLE heaptable SET ACCESS METHOD heap, SET ACCESS METHOD heap2;
 ALTER MATERIALIZED VIEW heapmv SET ACCESS METHOD heap, SET ACCESS METHOD heap2;
 DROP MATERIALIZED VIEW heapmv;
 DROP TABLE heaptable;
--- No support for partitioned tables.
-CREATE TABLE am_partitioned(x INT, y INT)
-  PARTITION BY hash (x);
+
+-- Partition hierarchies with access methods
+BEGIN;
+SET LOCAL default_table_access_method = 'heap';
+CREATE TABLE am_partitioned(x INT, y INT) PARTITION BY hash (x);
+-- pg_class.relam is 0, no dependency recorded between the AM and the
+-- partitioned table.
+SELECT relam FROM pg_class WHERE relname = 'am_partitioned';
+SELECT pg_describe_object(classid, objid, objsubid) AS obj,
+       pg_describe_object(refclassid, refobjid, refobjsubid) as refobj
+  FROM pg_depend, pg_am
+  WHERE pg_depend.refclassid = 'pg_am'::regclass
+    AND pg_am.oid = pg_depend.refobjid
+    AND pg_depend.objid = 'am_partitioned'::regclass;
+-- New default is set, with dependency added.
 ALTER TABLE am_partitioned SET ACCESS METHOD heap2;
+SELECT a.amname FROM pg_class c, pg_am a
+  WHERE c.relname = 'am_partitioned' AND a.oid = c.relam;
+SELECT pg_describe_object(classid, objid, objsubid) AS obj,
+       pg_describe_object(refclassid, refobjid, refobjsubid) as refobj
+  FROM pg_depend, pg_am
+  WHERE pg_depend.refclassid = 'pg_am'::regclass
+    AND pg_am.oid = pg_depend.refobjid
+    AND pg_depend.objid = 'am_partitioned'::regclass;
+-- Default is set, with dependency updated.
+SET LOCAL default_table_access_method = 'heap2';
+ALTER TABLE am_partitioned SET ACCESS METHOD heap;
+SELECT a.amname FROM pg_class c, pg_am a
+  WHERE c.relname = 'am_partitioned' AND a.oid = c.relam;
+-- Dependency pinned, hence removed.
+SELECT pg_describe_object(classid, objid, objsubid) AS obj,
+       pg_describe_object(refclassid, refobjid, refobjsubid) as refobj
+  FROM pg_depend, pg_am
+  WHERE pg_depend.refclassid = 'pg_am'::regclass
+    AND pg_am.oid = pg_depend.refobjid
+    AND pg_depend.objid = 'am_partitioned'::regclass;
+-- Reset to default
+ALTER TABLE am_partitioned SET ACCESS METHOD heap2;
+SELECT relam FROM pg_class WHERE relname = 'am_partitioned';
+-- Upon ALTER TABLE SET ACCESS METHOD on a partitioned table, new partitions
+-- will inherit the AM set.  Existing partitioned are unchanged
+SELECT relam FROM pg_class WHERE relname = 'am_partitioned';
+SET LOCAL default_table_access_method = 'heap';
+CREATE TABLE am_partitioned_1 PARTITION OF am_partitioned FOR VALUES WITH (MODULUS 3,REMAINDER 0);
+SET LOCAL default_table_access_method = 'heap2';
+CREATE TABLE am_partitioned_2 PARTITION OF am_partitioned FOR VALUES WITH (MODULUS 3,REMAINDER 1);
+SET LOCAL default_table_access_method = 'heap';
+ALTER TABLE am_partitioned SET ACCESS METHOD heap2;
+CREATE TABLE am_partitioned_3 PARTITION OF am_partitioned FOR VALUES WITH (MODULUS 3,REMAINDER 2);
+SELECT relname, amname FROM pg_class c, pg_am am
+  WHERE c.relam = am.oid AND c.relname LIKE 'am_partitioned%' ORDER BY 1;
 DROP TABLE am_partitioned;
+COMMIT;
 
 -- Second, create objects in the new AM by changing the default AM
 BEGIN;
