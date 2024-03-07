@@ -20,6 +20,7 @@
 
 #include "access/tableam.h"
 #include "commands/copy.h"
+#include "commands/copyapi.h"
 #include "commands/progress.h"
 #include "executor/execdesc.h"
 #include "executor/executor.h"
@@ -64,6 +65,9 @@ typedef enum CopyDest
  */
 typedef struct CopyToStateData
 {
+	/* format routine */
+	const CopyToRoutine *routine;
+
 	/* low-level state data */
 	CopyDest	copy_dest;		/* type of copy source/destination */
 	FILE	   *copy_file;		/* used if copy_dest == COPY_FILE */
@@ -770,14 +774,22 @@ DoCopyTo(CopyToState cstate)
 		Form_pg_attribute attr = TupleDescAttr(tupDesc, attnum - 1);
 
 		if (cstate->opts.binary)
+		{
 			getTypeBinaryOutputInfo(attr->atttypid,
 									&out_func_oid,
 									&isvarlena);
+			fmgr_info(out_func_oid, &cstate->out_functions[attnum - 1]);
+		}
+		else if (cstate->routine)
+			cstate->routine->CopyToOutFunc(cstate, attr->atttypid,
+										   &cstate->out_functions[attnum - 1]);
 		else
+		{
 			getTypeOutputInfo(attr->atttypid,
 							  &out_func_oid,
 							  &isvarlena);
-		fmgr_info(out_func_oid, &cstate->out_functions[attnum - 1]);
+			fmgr_info(out_func_oid, &cstate->out_functions[attnum - 1]);
+		}
 	}
 
 	/*
@@ -804,6 +816,8 @@ DoCopyTo(CopyToState cstate)
 		tmp = 0;
 		CopySendInt32(cstate, tmp);
 	}
+	else if (cstate->routine)
+		cstate->routine->CopyToStart(cstate, tupDesc);
 	else
 	{
 		/*
@@ -885,6 +899,8 @@ DoCopyTo(CopyToState cstate)
 		/* Need to flush out the trailer */
 		CopySendEndOfRow(cstate);
 	}
+	else if (cstate->routine)
+		cstate->routine->CopyToEnd(cstate);
 
 	MemoryContextDelete(cstate->rowcontext);
 
@@ -909,61 +925,66 @@ CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 	MemoryContextReset(cstate->rowcontext);
 	oldcontext = MemoryContextSwitchTo(cstate->rowcontext);
 
-	if (cstate->opts.binary)
+	if (cstate->routine)
+		cstate->routine->CopyToOneRow(cstate, slot);
+	else
 	{
-		/* Binary per-tuple header */
-		CopySendInt16(cstate, list_length(cstate->attnumlist));
-	}
-
-	/* Make sure the tuple is fully deconstructed */
-	slot_getallattrs(slot);
-
-	foreach(cur, cstate->attnumlist)
-	{
-		int			attnum = lfirst_int(cur);
-		Datum		value = slot->tts_values[attnum - 1];
-		bool		isnull = slot->tts_isnull[attnum - 1];
-
-		if (!cstate->opts.binary)
+		if (cstate->opts.binary)
 		{
-			if (need_delim)
-				CopySendChar(cstate, cstate->opts.delim[0]);
-			need_delim = true;
+			/* Binary per-tuple header */
+			CopySendInt16(cstate, list_length(cstate->attnumlist));
 		}
 
-		if (isnull)
+		/* Make sure the tuple is fully deconstructed */
+		slot_getallattrs(slot);
+
+		foreach(cur, cstate->attnumlist)
 		{
-			if (!cstate->opts.binary)
-				CopySendString(cstate, cstate->opts.null_print_client);
-			else
-				CopySendInt32(cstate, -1);
-		}
-		else
-		{
+			int			attnum = lfirst_int(cur);
+			Datum		value = slot->tts_values[attnum - 1];
+			bool		isnull = slot->tts_isnull[attnum - 1];
+
 			if (!cstate->opts.binary)
 			{
-				string = OutputFunctionCall(&out_functions[attnum - 1],
-											value);
-				if (cstate->opts.csv_mode)
-					CopyAttributeOutCSV(cstate, string,
-										cstate->opts.force_quote_flags[attnum - 1]);
+				if (need_delim)
+					CopySendChar(cstate, cstate->opts.delim[0]);
+				need_delim = true;
+			}
+
+			if (isnull)
+			{
+				if (!cstate->opts.binary)
+					CopySendString(cstate, cstate->opts.null_print_client);
 				else
-					CopyAttributeOutText(cstate, string);
+					CopySendInt32(cstate, -1);
 			}
 			else
 			{
-				bytea	   *outputbytes;
+				if (!cstate->opts.binary)
+				{
+					string = OutputFunctionCall(&out_functions[attnum - 1],
+												value);
+					if (cstate->opts.csv_mode)
+						CopyAttributeOutCSV(cstate, string,
+											cstate->opts.force_quote_flags[attnum - 1]);
+					else
+						CopyAttributeOutText(cstate, string);
+				}
+				else
+				{
+					bytea	   *outputbytes;
 
-				outputbytes = SendFunctionCall(&out_functions[attnum - 1],
-											   value);
-				CopySendInt32(cstate, VARSIZE(outputbytes) - VARHDRSZ);
-				CopySendData(cstate, VARDATA(outputbytes),
-							 VARSIZE(outputbytes) - VARHDRSZ);
+					outputbytes = SendFunctionCall(&out_functions[attnum - 1],
+												   value);
+					CopySendInt32(cstate, VARSIZE(outputbytes) - VARHDRSZ);
+					CopySendData(cstate, VARDATA(outputbytes),
+								 VARSIZE(outputbytes) - VARHDRSZ);
+				}
 			}
 		}
-	}
 
-	CopySendEndOfRow(cstate);
+		CopySendEndOfRow(cstate);
+	}
 
 	MemoryContextSwitchTo(oldcontext);
 }
