@@ -494,6 +494,8 @@ $node_subscriber->stop;
 ##################################################
 # Recovery conflict: Invalidate conflicting slots, including in-use slots
 # Scenario 1: hot_standby_feedback off and vacuum FULL
+# In passing, ensure that replication slot stats are not removed when the active
+# slot is invalidated.
 ##################################################
 
 # One way to produce recovery conflict is to create/drop a relation and
@@ -501,6 +503,15 @@ $node_subscriber->stop;
 # the standby.
 reactive_slots_change_hfs_and_wait_for_xmins('behaves_ok_', 'vacuum_full_',
 	0, 1);
+
+# Ensure replication slot stats are not empty before triggering the conflict
+$node_primary->safe_psql('testdb',
+	qq[INSERT INTO decoding_test(x,y) SELECT 100,'100';]
+);
+
+$node_standby->poll_query_until('testdb',
+	qq[SELECT total_txns > 0 FROM pg_stat_replication_slots WHERE slot_name = 'vacuum_full_activeslot']
+) or die "slot stat total_txns not > 0 for vacuum_full_activeslot";
 
 # This should trigger the conflict
 wait_until_vacuum_can_remove(
@@ -514,6 +525,13 @@ check_for_invalidation('vacuum_full_', 1, 'with vacuum FULL on pg_class');
 
 # Verify conflict_reason is 'rows_removed' in pg_replication_slots
 check_slots_conflict_reason('vacuum_full_', 'rows_removed');
+
+# Ensure replication slot stats are not removed after invalidation
+is( $node_standby->safe_psql(
+		'testdb',
+		qq[SELECT total_txns > 0 FROM pg_stat_replication_slots WHERE slot_name = 'vacuum_full_activeslot']),
+	't',
+	'replication slot stats are not removed after invalidation');
 
 $handle =
   make_slot_active($node_standby, 'vacuum_full_', 0, \$stdout, \$stderr);
