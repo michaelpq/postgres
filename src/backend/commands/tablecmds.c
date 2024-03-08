@@ -183,7 +183,9 @@ typedef struct AlteredTableInfo
 	List	   *afterStmts;		/* List of utility command parsetrees */
 	bool		verify_new_notnull; /* T if we should recheck NOT NULL */
 	int			rewrite;		/* Reason for forced rewrite, if any */
-	Oid			newAccessMethod;	/* new access method; 0 means no change */
+	bool		chgAccessMethod;	/* T if SET ACCESS METHOD is used */
+	Oid			newAccessMethod;	/* new access method; 0 means no change,
+									 * if above is true */
 	Oid			newTableSpace;	/* new tablespace; 0 means no change */
 	bool		chgPersistence; /* T if SET LOGGED/UNLOGGED is used */
 	char		newrelpersistence;	/* if above is true */
@@ -589,6 +591,7 @@ static ObjectAddress ATExecClusterOn(Relation rel, const char *indexName,
 									 LOCKMODE lockmode);
 static void ATExecDropCluster(Relation rel, LOCKMODE lockmode);
 static void ATPrepSetAccessMethod(AlteredTableInfo *tab, Relation rel, const char *amname);
+static void ATExecSetAccessMethodNoStorage(Relation rel, Oid newAccessMethod);
 static bool ATPrepChangePersistence(Relation rel, bool toLogged);
 static void ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel,
 								const char *tablespacename, LOCKMODE lockmode);
@@ -703,7 +706,6 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	Oid			ofTypeId;
 	ObjectAddress address;
 	LOCKMODE	parentLockmode;
-	const char *accessMethod = NULL;
 	Oid			accessMethodId = InvalidOid;
 
 	/*
@@ -956,20 +958,25 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 * a type of relation that needs one, use the default.
 	 */
 	if (stmt->accessMethod != NULL)
+		accessMethodId = get_table_am_oid(stmt->accessMethod, false);
+	else if (stmt->partbound)
 	{
-		accessMethod = stmt->accessMethod;
-
-		if (partitioned)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("specifying a table access method is not supported on a partitioned table")));
+		/*
+		 * For partitions, if no access method is specified, use the AM of the
+		 * parent table.
+		 */
+		Assert(list_length(inheritOids) == 1);
+		accessMethodId = get_rel_relam(linitial_oid(inheritOids));
 	}
-	else if (RELKIND_HAS_TABLE_AM(relkind))
-		accessMethod = default_table_access_method;
+	else
+		accessMethodId = InvalidOid;
 
-	/* look up the access method, verify it is for a table */
-	if (accessMethod != NULL)
-		accessMethodId = get_table_am_oid(accessMethod, false);
+	/*
+	 * Still nothing?  Use the default.  Partitioned tables default to
+	 * InvalidOid without an access method specified.
+	 */
+	if (RELKIND_HAS_TABLE_AM(relkind) && !OidIsValid(accessMethodId))
+		accessMethodId = get_table_am_oid(default_table_access_method, false);
 
 	/*
 	 * Create the relation.  Inherited defaults and constraints are passed in
@@ -5045,14 +5052,8 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 		case AT_SetAccessMethod:	/* SET ACCESS METHOD */
 			ATSimplePermissions(cmd->subtype, rel, ATT_TABLE | ATT_MATVIEW);
 
-			/* partitioned tables don't have an access method */
-			if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
-				ereport(ERROR,
-						(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-						 errmsg("cannot change access method of a partitioned table")));
-
 			/* check if another access method change was already requested */
-			if (OidIsValid(tab->newAccessMethod))
+			if (tab->chgAccessMethod)
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("cannot have multiple SET ACCESS METHOD subcommands")));
@@ -5407,6 +5408,14 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			break;
 		case AT_SetAccessMethod:	/* SET ACCESS METHOD */
 			/* handled specially in Phase 3 */
+
+			/*
+			 * Only do this for partitioned tables, for which this is just a
+			 * catalog change.  Tables with storage are handled by Phase 3.
+			 */
+			if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
+				tab->chgAccessMethod)
+				ATExecSetAccessMethodNoStorage(rel, tab->newAccessMethod);
 			break;
 		case AT_SetTableSpace:	/* SET TABLESPACE */
 
@@ -5812,7 +5821,7 @@ ATRewriteTables(AlterTableStmt *parsetree, List **wqueue, LOCKMODE lockmode,
 			 * Select destination access method (same as original unless user
 			 * requested a change)
 			 */
-			if (OidIsValid(tab->newAccessMethod))
+			if (tab->chgAccessMethod)
 				NewAccessMethod = tab->newAccessMethod;
 			else
 				NewAccessMethod = OldHeap->rd_rel->relam;
@@ -6399,6 +6408,7 @@ ATGetQueueEntry(List **wqueue, Relation rel)
 	tab->relkind = rel->rd_rel->relkind;
 	tab->oldDesc = CreateTupleDescCopyConstr(RelationGetDescr(rel));
 	tab->newAccessMethod = InvalidOid;
+	tab->chgAccessMethod = false;
 	tab->newTableSpace = InvalidOid;
 	tab->newrelpersistence = RELPERSISTENCE_PERMANENT;
 	tab->chgPersistence = false;
@@ -15201,17 +15211,32 @@ ATExecDropCluster(Relation rel, LOCKMODE lockmode)
  * Preparation phase for SET ACCESS METHOD
  *
  * Check that access method exists.  If it is the same as the table's current
- * access method, it is a no-op.  Otherwise, a table rewrite is necessary.
+ * access method, it is a no-op.  Otherwise, a table rewrite is necessary for
+ * relations with storage.
  * If amname is NULL, select default_table_access_method as access method.
+ *
+ * Partitioned tables may use InvalidOid to assign the default AM to partitions
+ * when created.  This operation is a no-op if a DEFAULT was given and the
+ * partitioned table uses InvalidOid as relam, or if the relam and the access
+ * method specified match.
  */
 static void
 ATPrepSetAccessMethod(AlteredTableInfo *tab, Relation rel, const char *amname)
 {
 	Oid			amoid;
 
-	/* Check that the table access method exists */
-	amoid = get_table_am_oid(amname ? amname : default_table_access_method,
-							 false);
+	/*
+	 * Check that the table access method exists.
+	 *
+	 * Use the access method specified, otherwise, when not specified, use
+	 * InvalidOid for partitioned tables or the configured default AM.
+	 */
+	if (amname != NULL)
+		amoid = get_table_am_oid(amname, false);
+	else if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE)
+		amoid = InvalidOid;
+	else
+		amoid = get_table_am_oid(default_table_access_method, false);
 
 	if (rel->rd_rel->relam == amoid)
 		return;
@@ -15219,6 +15244,7 @@ ATPrepSetAccessMethod(AlteredTableInfo *tab, Relation rel, const char *amname)
 	/* Save info for Phase 3 to do the real work */
 	tab->rewrite |= AT_REWRITE_ACCESS_METHOD;
 	tab->newAccessMethod = amoid;
+	tab->chgAccessMethod = true;
 }
 
 /*
@@ -15541,6 +15567,102 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 
 	/* Clean up */
 	list_free(reltoastidxids);
+}
+
+/*
+ * Special handling of ALTER TABLE SET ACCESS METHOD for relations with no
+ * storage that have an interest in preserving AM.
+ *
+ * Since these have no storage, setting the access method is a catalog only
+ * operation.
+ */
+static void
+ATExecSetAccessMethodNoStorage(Relation rel, Oid newAccessMethodId)
+{
+	Relation	pg_class;
+	Oid			oldAccessMethodId;
+	HeapTuple	tuple;
+	Form_pg_class rd_rel;
+	Oid			reloid = RelationGetRelid(rel);
+
+	/*
+	 * Shouldn't be called on relations having storage; these are processed in
+	 * phase 3.
+	 */
+	Assert(!RELKIND_HAS_STORAGE(rel->rd_rel->relkind));
+
+	/* Get a modifiable copy of the relation's pg_class row. */
+	pg_class = table_open(RelationRelationId, RowExclusiveLock);
+
+	tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(reloid));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", reloid);
+	rd_rel = (Form_pg_class) GETSTRUCT(tuple);
+
+	/* Update the pg_class row. */
+	oldAccessMethodId = rd_rel->relam;
+	rd_rel->relam = newAccessMethodId;
+
+	/* Leave if no update required */
+	if (rd_rel->relam == oldAccessMethodId)
+	{
+		heap_freetuple(tuple);
+		table_close(pg_class, RowExclusiveLock);
+		return;
+	}
+
+	CatalogTupleUpdate(pg_class, &tuple->t_self, tuple);
+
+	/*
+	 * Update the dependency on the new access method.  No dependency is added
+	 * if the new access method is InvalidOid (default case).  Be very careful
+	 * that this has to compare the previous value stored in pg_class with the
+	 * new one.
+	 */
+	if (!OidIsValid(oldAccessMethodId) && OidIsValid(rd_rel->relam))
+	{
+		ObjectAddress relobj,
+					referenced;
+
+		/*
+		 * New access method is defined and there was no dependency
+		 * previously, so record a new one.
+		 */
+		ObjectAddressSet(relobj, RelationRelationId, reloid);
+		ObjectAddressSet(referenced, AccessMethodRelationId, rd_rel->relam);
+		recordDependencyOn(&relobj, &referenced, DEPENDENCY_NORMAL);
+	}
+	else if (OidIsValid(oldAccessMethodId) &&
+			 !OidIsValid(rd_rel->relam))
+	{
+		/*
+		 * There was an access method defined, and no new one, so just remove
+		 * the existing dependency.
+		 */
+		deleteDependencyRecordsForClass(RelationRelationId, reloid,
+										AccessMethodRelationId,
+										DEPENDENCY_NORMAL);
+	}
+	else
+	{
+		Assert(OidIsValid(oldAccessMethodId) &&
+			   OidIsValid(rd_rel->relam));
+
+		/* Both are valid, so update the dependency */
+		changeDependencyFor(RelationRelationId, reloid,
+							AccessMethodRelationId,
+							oldAccessMethodId, rd_rel->relam);
+	}
+
+	CommandCounterIncrement();
+
+	InvokeObjectPostAlterHook(RelationRelationId, RelationGetRelid(rel), 0);
+
+	heap_freetuple(tuple);
+	table_close(pg_class, RowExclusiveLock);
+
+	/* Make sure the relam change is visible */
+	CommandCounterIncrement();
 }
 
 /*
