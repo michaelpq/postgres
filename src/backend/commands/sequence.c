@@ -16,10 +16,10 @@
 
 #include "access/bufmask.h"
 #include "access/htup_details.h"
-#include "access/localam.h"
 #include "access/multixact.h"
 #include "access/relation.h"
 #include "access/sequence.h"
+#include "access/sequenceam.h"
 #include "access/table.h"
 #include "access/transam.h"
 #include "access/xact.h"
@@ -152,6 +152,7 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	stmt->inhRelations = NIL;
 	stmt->constraints = NIL;
 	stmt->options = NIL;
+	stmt->accessMethod = seq->accessMethod ? pstrdup(seq->accessMethod) : NULL;
 	stmt->oncommit = ONCOMMIT_NOOP;
 	stmt->tablespacename = NULL;
 	stmt->if_not_exists = seq->if_not_exists;
@@ -173,7 +174,7 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	rel = sequence_open(seqoid, AccessExclusiveLock);
 
 	/* now initialize the sequence table structure and its data */
-	local_seq_init(rel, last_value, is_called);
+	sequence_init(rel, last_value, is_called);
 
 	/* process OWNED BY if given */
 	if (owned_by)
@@ -241,7 +242,7 @@ ResetSequence(Oid seq_relid)
 	ReleaseSysCache(pgstuple);
 
 	/* Sequence state is forcibly reset here. */
-	local_seq_reset(seq_rel, startv, false, true);
+	sequence_reset(seq_rel, startv, false, true);
 
 	/* Clear local cache so that we don't think we have cached numbers */
 	/* Note that we do not change the currval() state */
@@ -297,7 +298,7 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 	seqform = (Form_pg_sequence) GETSTRUCT(seqtuple);
 
 	/* Read sequence data */
-	local_seq_get_state(seqrel, &last_value, &is_called);
+	sequence_get_state(seqrel, &last_value, &is_called);
 
 	/* Check and set new values */
 	init_params(pstate, stmt->options, stmt->for_identity, false,
@@ -310,7 +311,7 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 		if (RelationNeedsWAL(seqrel))
 			GetTopTransactionId();
 
-		local_seq_reset(seqrel, last_value, is_called, reset_state);
+		sequence_reset(seqrel, last_value, is_called, reset_state);
 	}
 
 	/* Clear local cache so that we don't think we have cached numbers */
@@ -346,7 +347,7 @@ SequenceChangePersistence(Oid relid, char newrelpersistence)
 	if (RelationNeedsWAL(seqrel))
 		GetTopTransactionId();
 
-	local_seq_change_persistence(seqrel, newrelpersistence);
+	sequence_change_persistence(seqrel, newrelpersistence);
 
 	sequence_close(seqrel, NoLock);
 }
@@ -463,8 +464,8 @@ nextval_internal(Oid relid, bool check_permissions)
 	ReleaseSysCache(pgstuple);
 
 	/* retrieve next value from the access method */
-	result = local_seq_nextval(seqrel, incby, maxv, minv, cache, cycle,
-							   &last);
+	result = sequence_nextval(seqrel, incby, maxv, minv, cache, cycle,
+							  &last);
 
 	/* save info in local cache */
 	elm->increment = incby;
@@ -618,7 +619,7 @@ do_setval(Oid relid, int64 next, bool iscalled)
 		GetTopTransactionId();
 
 	/* Call the access method callback */
-	local_seq_setval(seqrel, next, iscalled);
+	sequence_setval(seqrel, next, iscalled);
 
 	sequence_close(seqrel, NoLock);
 }
@@ -1334,7 +1335,7 @@ pg_sequence_last_value(PG_FUNCTION_ARGS)
 				 errmsg("permission denied for sequence %s",
 						RelationGetRelationName(seqrel))));
 
-	local_seq_get_state(seqrel, &last_value, &is_called);
+	sequence_get_state(seqrel, &last_value, &is_called);
 	sequence_close(seqrel, NoLock);
 
 	values[0] = BoolGetDatum(is_called);

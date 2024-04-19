@@ -18,6 +18,7 @@
 #include "access/bufmask.h"
 #include "access/localam.h"
 #include "access/multixact.h"
+#include "access/sequenceam.h"
 #include "access/xact.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -25,6 +26,7 @@
 #include "commands/tablecmds.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
+#include "utils/builtins.h"
 
 
 /*
@@ -297,15 +299,15 @@ local_seq_redo(XLogReaderState *record)
 }
 
 /*
- * local_seq_nextval()
+ * local_nextval()
  *
  * Allocate a new value for a local sequence, based on the sequence
  * configuration.
  */
-int64
-local_seq_nextval(Relation rel, int64 incby, int64 maxv,
-				  int64 minv, int64 cache, bool cycle,
-				  int64 *last)
+static int64
+local_nextval(Relation rel, int64 incby, int64 maxv,
+			  int64 minv, int64 cache, bool cycle,
+			  int64 *last)
 {
 	int64		result;
 	int64		fetch;
@@ -485,18 +487,18 @@ local_seq_nextval(Relation rel, int64 incby, int64 maxv,
 }
 
 /*
- * local_seq_get_table_am()
+ * local_get_table_am()
  *
  * Return the table access method used by this sequence.
  */
-const char *
-local_seq_get_table_am(void)
+static const char *
+local_get_table_am(void)
 {
 	return "heap";
 }
 
 /*
- * local_seq_init()
+ * local_init()
  *
  * Add the sequence attributes to the relation created for this sequence
  * AM and insert a tuple of metadata into the sequence relation, based on
@@ -504,8 +506,8 @@ local_seq_get_table_am(void)
  * inserted after the relation has been created, filling in its heap
  * table.
  */
-void
-local_seq_init(Relation rel, int64 last_value, bool is_called)
+static void
+local_init(Relation rel, int64 last_value, bool is_called)
 {
 	Datum		value[SEQ_COL_LASTCOL];
 	bool		null[SEQ_COL_LASTCOL];
@@ -567,12 +569,12 @@ local_seq_init(Relation rel, int64 last_value, bool is_called)
 }
 
 /*
- * local_seq_setval()
+ * local_setval()
  *
  * Callback for setval().
  */
-void
-local_seq_setval(Relation rel, int64 next, bool iscalled)
+static void
+local_setval(Relation rel, int64 next, bool iscalled)
 {
 	Buffer		buf;
 	HeapTupleData seqdatatuple;
@@ -614,13 +616,13 @@ local_seq_setval(Relation rel, int64 next, bool iscalled)
 }
 
 /*
- * local_seq_reset()
+ * local_reset()
  *
  * Perform a hard reset on the local sequence, rewriting its heap data
  * entirely.
  */
-void
-local_seq_reset(Relation rel, int64 startv, bool is_called, bool reset_state)
+static void
+local_reset(Relation rel, int64 startv, bool is_called, bool reset_state)
 {
 	Form_pg_sequence_data seq;
 	Buffer		buf;
@@ -668,12 +670,12 @@ local_seq_reset(Relation rel, int64 startv, bool is_called, bool reset_state)
 }
 
 /*
- * local_seq_get_state()
+ * local_get_state()
  *
  * Retrieve the state of a local sequence.
  */
-void
-local_seq_get_state(Relation rel, int64 *last_value, bool *is_called)
+static void
+local_get_state(Relation rel, int64 *last_value, bool *is_called)
 {
 	Buffer		buf;
 	HeapTupleData seqdatatuple;
@@ -689,12 +691,12 @@ local_seq_get_state(Relation rel, int64 *last_value, bool *is_called)
 }
 
 /*
- * local_seq_change_persistence()
+ * local_change_persistence()
  *
  * Persistence change for the local sequence Relation.
  */
-void
-local_seq_change_persistence(Relation rel, char newrelpersistence)
+static void
+local_change_persistence(Relation rel, char newrelpersistence)
 {
 	Buffer		buf;
 	HeapTupleData seqdatatuple;
@@ -703,4 +705,25 @@ local_seq_change_persistence(Relation rel, char newrelpersistence)
 	RelationSetNewRelfilenumber(rel, newrelpersistence);
 	fill_seq_with_data(rel, &seqdatatuple);
 	UnlockReleaseBuffer(buf);
+}
+
+/* ------------------------------------------------------------------------
+ * Definition of the local sequence access method.
+ * ------------------------------------------------------------------------
+ */
+static const SequenceAmRoutine local_methods = {
+	.type = T_SequenceAmRoutine,
+	.get_table_am = local_get_table_am,
+	.init = local_init,
+	.nextval = local_nextval,
+	.setval = local_setval,
+	.reset = local_reset,
+	.get_state = local_get_state,
+	.change_persistence = local_change_persistence
+};
+
+Datum
+local_sequenceam_handler(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_POINTER(&local_methods);
 }
