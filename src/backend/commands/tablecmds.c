@@ -602,6 +602,7 @@ static ObjectAddress ATExecClusterOn(Relation rel, const char *indexName,
 static void ATExecDropCluster(Relation rel, LOCKMODE lockmode);
 static void ATPrepSetAccessMethod(AlteredTableInfo *tab, Relation rel, const char *amname);
 static void ATExecSetAccessMethodNoStorage(Relation rel, Oid newAccessMethod);
+static void ATExecSetPersistenceNoStorage(Relation rel, char newrelpersistence);
 static void ATPrepSetPersistence(AlteredTableInfo *tab, Relation rel,
 								 bool toLogged);
 static void ATPrepSetTableSpace(AlteredTableInfo *tab, Relation rel,
@@ -811,13 +812,39 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	}
 
 	/*
-	 * If the grammar did not specify a relpersistence, assume that the
-	 * relation is permanent.  Note that this is done before selecting
-	 * the relation's tablespace, as this change may impact the tablespace
-	 * location depending on the persistence set here.
+	 * If the grammar did not specify a relpersistence, determine which one
+	 * to use depending on the relation to create.  Note that this is done
+	 * before selecting the relation's tablespace, as this change may impact
+	 * the tablespace location depending on the persistence set here.
+	 *
+	 * If the relation is not partitioned, assume that it is permanent.
+	 *
+	 * A partition inherits the persistence of its partitioned table, it the
+	 * latter is unlogged or logged as the namespace where the relation will
+	 * be created is known.  This property cannot be enforced for temporary
+	 * partitioned tables because the namespace of the relation is locked
+	 * before it is possible to know the inheritance tree of this new
+	 * relation, when its RangeVar is locked earlier when transforming the
+	 * CreateStmt query.
 	 */
 	if (stmt->relation->relpersistence == RELPERSISTENCE_INVALID)
-		stmt->relation->relpersistence = RELPERSISTENCE_PERMANENT;
+	{
+		if (stmt->partbound)
+		{
+			Oid		parentOid = linitial_oid(inheritOids);
+			char	relpersistence = get_rel_persistence(parentOid);
+
+			Assert(list_length(inheritOids) == 1);
+			/*
+			 * The parent's persistence is logged or unlogged, so rely on
+			 * it when creating the new relation.
+			 */
+			if (relpersistence != RELPERSISTENCE_TEMP)
+				stmt->relation->relpersistence = relpersistence;
+		}
+		else
+			stmt->relation->relpersistence = RELPERSISTENCE_PERMANENT;
+	}
 
 	/*
 	 * Select tablespace to use: an explicitly indicated one, or (in the case
@@ -5426,6 +5453,14 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
 			break;
 		case AT_SetLogged:		/* SET LOGGED */
 		case AT_SetUnLogged:	/* SET UNLOGGED */
+
+			/*
+			 * Only do this for partitioned tables, for which this is just a
+			 * catalog change.  Tables with storage are handled by Phase 3.
+			 */
+			if (rel->rd_rel->relkind == RELKIND_PARTITIONED_TABLE &&
+				tab->chgPersistence)
+				ATExecSetPersistenceNoStorage(rel, tab->newrelpersistence);
 			break;
 		case AT_DropOids:		/* SET WITHOUT OIDS */
 			/* nothing to do here, oid columns don't exist anymore */
@@ -15539,6 +15574,79 @@ ATExecSetAccessMethodNoStorage(Relation rel, Oid newAccessMethodId)
 	InvokeObjectPostAlterHook(RelationRelationId, RelationGetRelid(rel), 0);
 
 	heap_freetuple(tuple);
+	table_close(pg_class, RowExclusiveLock);
+}
+
+/*
+ * Special handling of ALTER TABLE SET LOGGED/UNLOGGED for relations with no
+ * storage that have an interest in changing their persistence.
+ *
+ * Since these have no storage, setting the persistence to permanent or
+ * unlogged is a catalog-only operation.  This needs to switch the
+ * persistence of all sequences and indexes related to this relation.
+ */
+static void
+ATExecSetPersistenceNoStorage(Relation rel, char newrelpersistence)
+{
+	Relation	pg_class;
+	HeapTuple	tuple;
+	List	   *reloids;	/* for indexes and sequences */
+	ListCell   *elt;
+	Form_pg_class rd_rel;
+	Oid			reloid = RelationGetRelid(rel);
+
+	/*
+	 * Shouldn't be called on relations having storage; these are processed in
+	 * phase 3.
+	 */
+	Assert(!RELKIND_HAS_STORAGE(rel->rd_rel->relkind));
+
+	/* Get a modifiable copy of the relation's pg_class row. */
+	pg_class = table_open(RelationRelationId, RowExclusiveLock);
+
+	tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(reloid));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for relation %u", reloid);
+	rd_rel = (Form_pg_class) GETSTRUCT(tuple);
+
+	/* Leave if no update required */
+	if (rd_rel->relpersistence == newrelpersistence)
+	{
+		heap_freetuple(tuple);
+		table_close(pg_class, RowExclusiveLock);
+		return;
+	}
+
+	/* Update the pg_class row. */
+	rd_rel->relpersistence = newrelpersistence;
+	CatalogTupleUpdate(pg_class, &tuple->t_self, tuple);
+
+	InvokeObjectPostAlterHook(RelationRelationId, RelationGetRelid(rel), 0);
+
+	heap_freetuple(tuple);
+
+	/* Update the per-sequence and per-index relpersistence */
+	reloids = getOwnedSequences(reloid);
+	reloids = list_union_oid(reloids, RelationGetIndexList(rel));
+	foreach(elt, reloids)
+	{
+		Oid			classoid = lfirst_oid(elt);
+
+		tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(classoid));
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", classoid);
+		rd_rel = (Form_pg_class) GETSTRUCT(tuple);
+
+		rd_rel->relpersistence = newrelpersistence;
+		CatalogTupleUpdate(pg_class, &tuple->t_self, tuple);
+		InvokeObjectPostAlterHook(RelationRelationId, classoid, 0);
+
+		heap_freetuple(tuple);
+	}
+
+	/* Make sure the persistence changes are visible */
+	CommandCounterIncrement();
+
 	table_close(pg_class, RowExclusiveLock);
 }
 
