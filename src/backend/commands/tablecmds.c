@@ -811,6 +811,15 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	}
 
 	/*
+	 * If the grammar did not specify a relpersistence, assume that the
+	 * relation is permanent.  Note that this is done before selecting
+	 * the relation's tablespace, as this change may impact the tablespace
+	 * location depending on the persistence set here.
+	 */
+	if (stmt->relation->relpersistence == RELPERSISTENCE_INVALID)
+		stmt->relation->relpersistence = RELPERSISTENCE_PERMANENT;
+
+	/*
 	 * Select tablespace to use: an explicitly indicated one, or (in the case
 	 * of a partitioned table) the parent's, if it has one.
 	 */

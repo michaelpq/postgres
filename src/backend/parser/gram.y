@@ -3775,7 +3775,8 @@ OptTemp:	TEMPORARY					{ $$ = RELPERSISTENCE_TEMP; }
 					$$ = RELPERSISTENCE_TEMP;
 				}
 			| UNLOGGED					{ $$ = RELPERSISTENCE_UNLOGGED; }
-			| /*EMPTY*/					{ $$ = RELPERSISTENCE_PERMANENT; }
+			| LOGGED					{ $$ = RELPERSISTENCE_PERMANENT; }
+			| /*EMPTY*/					{ $$ = RELPERSISTENCE_INVALID; }
 		;
 
 OptTableElementList:
@@ -13128,6 +13129,11 @@ OptTempTableName:
 				{
 					$$ = $3;
 					$$->relpersistence = RELPERSISTENCE_UNLOGGED;
+				}
+			| LOGGED opt_table qualified_name
+				{
+					$$ = $3;
+					$$->relpersistence = RELPERSISTENCE_PERMANENT;
 				}
 			| TABLE qualified_name
 				{
