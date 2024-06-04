@@ -90,6 +90,9 @@ extern PGDLLEXPORT void injection_error(const char *name,
 										const void *private_data);
 extern PGDLLEXPORT void injection_notice(const char *name,
 										 const void *private_data);
+extern PGDLLEXPORT void injection_notice_1arg(const char *name,
+											  const void *private_data,
+											  const void *arg1);
 extern PGDLLEXPORT void injection_wait(const char *name,
 									   const void *private_data);
 
@@ -260,6 +263,19 @@ injection_wait(const char *name, const void *private_data)
 	SpinLockRelease(&inj_state->lock);
 }
 
+void
+injection_notice_1arg(const char *name, const void *private_data,
+					  const void *arg1)
+{
+	InjectionPointCondition *condition = (InjectionPointCondition *) private_data;
+	const char *str = (const char *) arg1;
+
+	if (!injection_point_allowed(condition))
+		return;
+
+	elog(NOTICE, "notice triggered for injection point %s: %s", name, str);
+}
+
 /*
  * SQL function for creating an injection point.
  */
@@ -271,6 +287,7 @@ injection_points_attach(PG_FUNCTION_ARGS)
 	char	   *action = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	char	   *function;
 	InjectionPointCondition condition = {0};
+	int			num_args = 0;
 
 	if (strcmp(action, "error") == 0)
 		function = "injection_error";
@@ -278,6 +295,11 @@ injection_points_attach(PG_FUNCTION_ARGS)
 		function = "injection_notice";
 	else if (strcmp(action, "wait") == 0)
 		function = "injection_wait";
+	else if (strcmp(action, "notice_1arg") == 0)
+	{
+		function = "injection_notice_1arg";
+		num_args = 1;
+	}
 	else
 		elog(ERROR, "incorrect action \"%s\" for injection point creation", action);
 
@@ -288,7 +310,7 @@ injection_points_attach(PG_FUNCTION_ARGS)
 	}
 
 	InjectionPointAttach(name, "injection_points", function, &condition,
-						 sizeof(InjectionPointCondition));
+						 sizeof(InjectionPointCondition), num_args);
 
 	if (injection_point_local)
 	{
@@ -391,6 +413,21 @@ injection_points_set_local(PG_FUNCTION_ARGS)
 	 * linked to this process.
 	 */
 	before_shmem_exit(injection_points_cleanup, (Datum) 0);
+
+	PG_RETURN_VOID();
+}
+
+/*
+ * SQL function for triggering an injection point, 1-argument flavor.
+ */
+PG_FUNCTION_INFO_V1(injection_points_run_1arg);
+Datum
+injection_points_run_1arg(PG_FUNCTION_ARGS)
+{
+	char	   *name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char	   *arg1 = text_to_cstring(PG_GETARG_TEXT_PP(1));
+
+	INJECTION_POINT_1ARG(name, (void *) arg1);
 
 	PG_RETURN_VOID();
 }

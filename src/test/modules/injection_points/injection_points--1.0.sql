@@ -56,6 +56,16 @@ AS 'MODULE_PATHNAME', 'injection_points_set_local'
 LANGUAGE C STRICT PARALLEL UNSAFE;
 
 --
+-- injection_points_run_1arg()
+--
+-- Executes the action attached to the injection point.
+--
+CREATE FUNCTION injection_points_run_1arg(IN point_name TEXT, IN arg1 TEXT)
+RETURNS void
+AS 'MODULE_PATHNAME', 'injection_points_run_1arg'
+LANGUAGE C STRICT PARALLEL UNSAFE;
+
+--
 -- injection_points_detach()
 --
 -- Detaches the current action, if any, from the given injection point.

@@ -122,7 +122,38 @@ NOTICE:  notice triggered for injection point TestInjectionLog2
  
 (1 row)
 
+-- 1-argument runs
+SELECT injection_points_run_1arg('TestInjectionLog2', 'blah'); -- error
+ERROR:  incorrect number of arguments for injection point "TestInjectionLog2": defined 0 but expected 1
+SELECT injection_points_attach('TestInjectionLogArg1', 'notice_1arg');
+ injection_points_attach 
+-------------------------
+ 
+(1 row)
+
+SELECT injection_points_run('TestInjectionLogArg1'); -- error
+ERROR:  incorrect number of arguments for injection point "TestInjectionLogArg1": defined 1 but expected 0
+SELECT injection_points_run_1arg('TestInjectionLogArg1', 'blah'); -- notice
+NOTICE:  notice triggered for injection point TestInjectionLogArg1: blah
+ injection_points_run_1arg 
+---------------------------
+ 
+(1 row)
+
+SELECT injection_points_run_1arg('TestInjectionLogArg1', 'foobar'); -- notice
+NOTICE:  notice triggered for injection point TestInjectionLogArg1: foobar
+ injection_points_run_1arg 
+---------------------------
+ 
+(1 row)
+
 SELECT injection_points_detach('TestInjectionLog2');
+ injection_points_detach 
+-------------------------
+ 
+(1 row)
+
+SELECT injection_points_detach('TestInjectionLogArg1');
  injection_points_detach 
 -------------------------
  
