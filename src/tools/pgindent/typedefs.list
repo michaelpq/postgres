@@ -2109,6 +2109,9 @@ PgFdwRelationInfo
 PgFdwSamplingMethod
 PgFdwScanState
 PgIfAddrCallback
+PgStatKindCounterData
+PgStatKindEntryById
+PgStatKindEntryByName
 PgStatShared_Archiver
 PgStatShared_BgWriter
 PgStatShared_Checkpointer

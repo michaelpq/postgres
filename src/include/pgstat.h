@@ -463,6 +463,8 @@ typedef struct PgStat_PendingWalStats
 /* functions called from postmaster */
 extern Size StatsShmemSize(void);
 extern void StatsShmemInit(void);
+extern Size StatsKindShmemSize(void);
+extern void StatsKindShmemInit(void);
 
 /* Functions called during server startup / shutdown */
 extern void pgstat_restore_stats(void);

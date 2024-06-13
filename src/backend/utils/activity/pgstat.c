@@ -58,6 +58,12 @@
  * PGSTAT_FETCH_CONSISTENCY_SNAPSHOT statistics are stored in
  * pgStatLocal.snapshot.
  *
+ * It is possible for out-of-core modules to define custom statistics kinds,
+ * that can use the same properties as any in-core stats kinds.  Each custom
+ * kind is assigned a unique PgStat_Kind stored in shared memory with the
+ * name of the statistics kind.  Each PgStat_KindInfo is maintained in a
+ * local array cache known to the current process.
+ *
  * To keep things manageable, stats handling is split across several
  * files. Infrastructure pieces are in:
  * - pgstat.c - this file, to tie it all together
@@ -94,13 +100,18 @@
 #include <unistd.h>
 
 #include "access/xact.h"
+#include "common/int.h"
 #include "lib/dshash.h"
 #include "pgstat.h"
 #include "port/atomics.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
+#include "storage/shmem.h"
+#include "storage/spin.h"
+#include "storage/s_lock.h"
 #include "utils/guc_hooks.h"
+#include "utils/hsearch.h"
 #include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
 #include "utils/timestamp.h"
@@ -399,6 +410,121 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 	},
 };
 
+
+/* --------
+ * Hash tables for storing custom pgstats kinds
+ *
+ * PgStatKindHashById is used to find the name from a PgStat_Kind.
+ * Any backend can search it to find custom stats kinds
+ *
+ * PgStatKindHashByName is used to find the PgStat_Kind from a name.
+ * It is used to ensure that no duplicated entries are registered.
+ *
+ * The size of the hash table is based on the assumption that
+ * PGSTAT_KIND_HASH_INIT_SIZE is enough for most cases, and it seems
+ * unlikely that the number of entries will reach
+ * PGSTAT_KIND_HASH_MAX_SIZE.
+ * --------
+ */
+
+static HTAB *PgStatKindHashById;	/* find PgStat_KindInfo from IDs */
+static HTAB *PgStatKindHashByName;	/* find PgStat_Kind from names */
+
+#define PGSTAT_KIND_HASH_INIT_SIZE 16
+#define PGSTAT_KIND_HASH_MAX_SIZE  128
+
+/* hash table entries */
+typedef struct PgStatKindEntryById
+{
+	PgStat_Kind kind;			/* hash key */
+	char		kind_name[NAMEDATALEN]; /* stats kind name */
+} PgStatKindEntryById;
+
+typedef struct PgStatKindEntryByName
+{
+	char		kind_name[NAMEDATALEN]; /* hash key */
+	PgStat_Kind kind;			/* kind ID */
+} PgStatKindEntryByName;
+
+/* dynamic allocation counter for custom pgstats kinds */
+typedef struct PgStatKindCounterData
+{
+	int			nextId;			/* next ID to assign */
+	slock_t		mutex;			/* protects the counter */
+} PgStatKindCounterData;
+
+/* pointer to the shared memory */
+static PgStatKindCounterData *PgStatKindCounter;
+
+/* first ID of custom pgstats kinds, as stored in pgstats tables */
+#define PGSTAT_KIND_INITIAL_ID (PGSTAT_KIND_LAST + 1)
+
+/*
+ * Local array cache pointing to the custom PgStat_KindInfos known to the
+ * current process, indexed by kind ID minus PGSTAT_KIND_LAST.  Any unused
+ * entries in the array will contain NULL.
+ */
+static const PgStat_KindInfo **PgStatKindCache = NULL;
+static uint32 PgStatKindCacheNum = 0;
+
+/* -----------------------------------------------------------
+ * Functions managing the shared memory for custom stats kinds
+ * -----------------------------------------------------------
+ */
+
+/*
+ * Compute shared memory space needed for custom stats kinds
+ */
+Size
+StatsKindShmemSize(void)
+{
+	Size		sz;
+
+	sz = MAXALIGN(sizeof(PgStatKindCounterData));
+	sz = add_size(sz, hash_estimate_size(PGSTAT_KIND_HASH_MAX_SIZE,
+										 sizeof(PgStatKindEntryById)));
+	sz = add_size(sz, hash_estimate_size(PGSTAT_KIND_HASH_MAX_SIZE,
+										 sizeof(PgStatKindEntryByName)));
+	return sz;
+}
+
+/*
+ * Initialize shared memory area for custom stats kinds during startup
+ */
+void
+StatsKindShmemInit(void)
+{
+	bool		found;
+	HASHCTL		info;
+
+	PgStatKindCounter = (PgStatKindCounterData *)
+		ShmemInitStruct("PgStatKindCounterData",
+						sizeof(PgStatKindCounterData), &found);
+	if (!found)
+	{
+		/* initialize the allocation counter and its spinlock. */
+		PgStatKindCounter->nextId = PGSTAT_KIND_INITIAL_ID;
+		SpinLockInit(&PgStatKindCounter->mutex);
+	}
+
+	/* initialize or attach the hash tables to store custom stats kinds */
+	info.keysize = sizeof(PgStat_Kind);
+	info.entrysize = sizeof(PgStatKindEntryById);
+	PgStatKindHashById = ShmemInitHash("PgStatKind hash by id",
+									   PGSTAT_KIND_HASH_INIT_SIZE,
+									   PGSTAT_KIND_HASH_MAX_SIZE,
+									   &info,
+									   HASH_ELEM | HASH_BLOBS);
+
+	/* key is a NULL-terminated string */
+	info.keysize = sizeof(char[NAMEDATALEN]);
+	info.entrysize = sizeof(PgStatKindEntryByName);
+	PgStatKindHashByName = ShmemInitHash("PgStatKind hash by name",
+										 PGSTAT_KIND_HASH_INIT_SIZE,
+										 PGSTAT_KIND_HASH_MAX_SIZE,
+										 &info,
+										 HASH_ELEM | HASH_STRINGS);
+}
 
 /* ------------------------------------------------------------
  * Functions managing the state of the stats system for all backends.
@@ -1254,6 +1380,18 @@ pgstat_get_kind_from_str(char *kind_str)
 			return kind;
 	}
 
+	/* Check the local cache if any */
+	if (PgStatKindCacheNum > 0)
+	{
+		for (int kind = 0; kind <= PgStatKindCacheNum; kind++)
+		{
+			if (PgStatKindCache[kind] == NULL)
+				continue;
+			if (pg_strcasecmp(kind_str, PgStatKindCache[kind]->name) == 0)
+				return kind + PGSTAT_KIND_INITIAL_ID;
+		}
+	}
+
 	ereport(ERROR,
 			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 			 errmsg("invalid statistics kind: \"%s\"", kind_str)));
@@ -1263,7 +1401,8 @@ pgstat_get_kind_from_str(char *kind_str)
 static inline bool
 pgstat_is_kind_valid(PgStat_Kind kind)
 {
-	return kind >= PGSTAT_KIND_FIRST_VALID && kind <= PGSTAT_KIND_LAST;
+	return kind >= PGSTAT_KIND_FIRST_VALID &&
+		kind <= (PGSTAT_KIND_LAST + PgStatKindCacheNum);
 }
 
 const PgStat_KindInfo *
@@ -1271,7 +1410,152 @@ pgstat_get_kind_info(PgStat_Kind kind)
 {
 	Assert(pgstat_is_kind_valid(kind));
 
-	return &pgstat_kind_infos[kind];
+	if (kind >= PGSTAT_KIND_FIRST_VALID && kind <= PGSTAT_KIND_LAST)
+		return &pgstat_kind_infos[kind];
+
+	/* Look in local cache */
+	if (kind >= PGSTAT_KIND_INITIAL_ID &&
+		kind <= PGSTAT_KIND_INITIAL_ID + PgStatKindCacheNum)
+		return PgStatKindCache[kind - PGSTAT_KIND_INITIAL_ID];
+
+	Assert(false);
+	return NULL;				/* keep compiler quiet */
+}
+
+/*
+ * Save a PgStat_KindInfo into the local cache, if not already done.
+ */
+static void
+pgstat_save_kind_info(PgStat_Kind kind, const PgStat_KindInfo *kind_info)
+{
+	/* This should only be called for user-defined stats kinds */
+	if (kind <= PGSTAT_KIND_LAST)
+		return;
+
+	/* Convert to array index */
+	kind -= PGSTAT_KIND_INITIAL_ID;
+
+	/* If necessary, create or enlarge local cache array. */
+	if (kind >= PgStatKindCacheNum)
+	{
+		uint32		newalloc;
+
+		/*
+		 * Do a simple increment, to keep an exact count of the custom stats
+		 * kinds stored rather than an upper-bound.  This is more costly each
+		 * time a new PgStat_KindInfo is added, but saves in correctness. This
+		 * overflow should not happen as this is capped by
+		 * PGSTAT_KIND_HASH_MAX_SIZE, but let's be safe.
+		 */
+		if (pg_add_u32_overflow(kind, 1, &newalloc))
+			elog(ERROR, "could not allocate memory for custom pgstats");
+
+		if (PgStatKindCache == NULL)
+			PgStatKindCache = (const PgStat_KindInfo **)
+				MemoryContextAllocZero(TopMemoryContext,
+									   newalloc * sizeof(PgStat_KindInfo *));
+		else
+			PgStatKindCache = repalloc0_array(PgStatKindCache,
+											  const PgStat_KindInfo *,
+											  PgStatKindCacheNum,
+											  newalloc);
+		PgStatKindCacheNum = newalloc;
+	}
+
+	PgStatKindCache[kind] = kind_info;
+}
+
+/*
+ * Allocate a new stats kind and return its PgStat_Kind.
+ */
+PgStat_Kind
+pgstat_add_kind(const PgStat_KindInfo *kind_info)
+{
+	PgStat_Kind kind;
+	bool		found;
+	PgStatKindEntryByName *entry_by_name;
+	PgStatKindEntryById *entry_by_id;
+
+	if (strlen(kind_info->name) >= NAMEDATALEN)
+		elog(ERROR,
+			 "cannot use custom stats kind longer than %u characters",
+			 NAMEDATALEN - 1);
+
+	/*
+	 * These are not supported for now, as these point out to fixed areas of
+	 * shared memory.
+	 */
+	if (kind_info->fixed_amount)
+		elog(ERROR,
+			 "cannot define custom stats kind with fixed amount of data");
+
+	/*
+	 * Check if kind ID associated to the name is already defined, and return
+	 * it if so.
+	 */
+	LWLockAcquire(PgStatKindLock, LW_SHARED);
+	entry_by_name = (PgStatKindEntryByName *)
+		hash_search(PgStatKindHashByName, kind_info->name,
+					HASH_FIND, &found);
+	LWLockRelease(PgStatKindLock);
+
+	if (found)
+	{
+		pgstat_save_kind_info(entry_by_name->kind, kind_info);
+		return entry_by_name->kind;
+	}
+
+	/*
+	 * Allocate and register a new stats kind.  Recheck if this kind name
+	 * exists, as it could be possible that a concurrent process has inserted
+	 * one with the same name since the LWLock acquired again here was
+	 * previously released.
+	 */
+	LWLockAcquire(PgStatKindLock, LW_EXCLUSIVE);
+	entry_by_name = (PgStatKindEntryByName *)
+		hash_search(PgStatKindHashByName, kind_info->name,
+					HASH_FIND, &found);
+	if (found)
+	{
+		LWLockRelease(PgStatKindLock);
+		pgstat_save_kind_info(entry_by_name->kind, kind_info);
+		return entry_by_name->kind;
+	}
+
+	/* Allocate a new kind ID */
+	SpinLockAcquire(&PgStatKindCounter->mutex);
+
+	if (PgStatKindCounter->nextId >= PGSTAT_KIND_HASH_MAX_SIZE - PGSTAT_KIND_INITIAL_ID)
+	{
+		SpinLockRelease(&PgStatKindCounter->mutex);
+		ereport(ERROR,
+				errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				errmsg("too many stats kinds"));
+	}
+
+	kind = PgStatKindCounter->nextId;
+	PgStatKindCounter->nextId++;
+
+	SpinLockRelease(&PgStatKindCounter->mutex);
+
+	/* Register the new stats kind */
+	entry_by_id = (PgStatKindEntryById *)
+		hash_search(PgStatKindHashById, &kind,
+					HASH_ENTER, &found);
+	Assert(!found);
+	strlcpy(entry_by_id->kind_name, kind_info->name,
+			sizeof(entry_by_id->kind_name));
+
+	entry_by_name = (PgStatKindEntryByName *)
+		hash_search(PgStatKindHashByName, kind_info->name,
+					HASH_ENTER, &found);
+	Assert(!found);
+	entry_by_name->kind = kind;
+
+	LWLockRelease(PgStatKindLock);
+
+	pgstat_save_kind_info(kind, kind_info);
+	return kind;
 }
 
 /*
@@ -1404,6 +1688,17 @@ pgstat_write_statsfile(void)
 		Assert(!ps->dropped);
 		if (ps->dropped)
 			continue;
+
+		/*
+		 * This discards data related to custom stats kinds that are unknown
+		 * to this process.
+		 */
+		if (!pgstat_is_kind_valid(ps->key.kind))
+		{
+			elog(WARNING, "found unknown stats entry %u/%u/%u",
+				 ps->key.kind, ps->key.dboid, ps->key.objoid);
+			continue;
+		}
 
 		shstats = (PgStatShared_Common *) dsa_get_address(pgStatLocal.dsa, ps->body);
 
@@ -1639,7 +1934,7 @@ pgstat_read_statsfile(void)
 					if (found)
 					{
 						dshash_release_lock(pgStatLocal.shared_hash, p);
-						elog(WARNING, "found duplicate stats entry %d/%u/%u",
+						elog(WARNING, "found duplicate stats entry %u/%u/%u",
 							 key.kind, key.dboid, key.objoid);
 						goto error;
 					}
