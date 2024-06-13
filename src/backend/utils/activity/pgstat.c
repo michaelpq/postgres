@@ -110,6 +110,7 @@
 #include "storage/shmem.h"
 #include "storage/spin.h"
 #include "storage/s_lock.h"
+#include "utils/builtins.h"
 #include "utils/guc_hooks.h"
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
@@ -142,6 +143,7 @@
  * Identifiers in stats file.
  * ---------
  */
+#define PGSTAT_FILE_CUSTOM	'C' /* custom stats kind */
 #define PGSTAT_FILE_END		'E' /* end of file */
 #define PGSTAT_FILE_NAME	'N' /* stats entry identified by name */
 #define PGSTAT_FILE_SYSTEM	'S' /* stats entry identified by PgStat_HashKey */
@@ -1372,7 +1374,7 @@ pgstat_flush_pending_entries(bool nowait)
  */
 
 PgStat_Kind
-pgstat_get_kind_from_str(char *kind_str)
+pgstat_get_kind_from_str(char *kind_str, int elevel)
 {
 	for (int kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)
 	{
@@ -1392,10 +1394,10 @@ pgstat_get_kind_from_str(char *kind_str)
 		}
 	}
 
-	ereport(ERROR,
+	ereport(elevel,
 			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 			 errmsg("invalid statistics kind: \"%s\"", kind_str)));
-	return PGSTAT_KIND_DATABASE;	/* avoid compiler warnings */
+	return PGSTAT_KIND_INVALID;	/* avoid compiler warnings */
 }
 
 static inline bool
@@ -1478,7 +1480,7 @@ pgstat_add_kind(const PgStat_KindInfo *kind_info)
 
 	if (strlen(kind_info->name) >= NAMEDATALEN)
 		elog(ERROR,
-			 "cannot use custom stats kind longer than %u characters",
+			 "cannot define custom stats kind name longer than %u characters",
 			 NAMEDATALEN - 1);
 
 	/*
@@ -1488,6 +1490,15 @@ pgstat_add_kind(const PgStat_KindInfo *kind_info)
 	if (kind_info->fixed_amount)
 		elog(ERROR,
 			 "cannot define custom stats kind with fixed amount of data");
+
+	/*
+	 * Custom stats entries are represented on disk with their kind name
+	 * and their entry name, so these are mandatory.
+	 */
+	if (kind_info->to_serialized_name == NULL ||
+		kind_info->from_serialized_name == NULL)
+		elog(ERROR,
+			 "cannot define custom stats kind without serialization callbacks");
 
 	/*
 	 * Check if kind ID associated to the name is already defined, and return
@@ -1707,7 +1718,37 @@ pgstat_write_statsfile(void)
 		/* if not dropped the valid-entry refcount should exist */
 		Assert(pg_atomic_read_u32(&ps->refcount) > 0);
 
-		if (!kind_info->to_serialized_name)
+		if (ps->key.kind > PGSTAT_KIND_LAST)
+		{
+			/*
+			 * Custom stats entry, identified by kind name and entry name on
+			 * disk.
+			 */
+			NameData	name;
+			NameData	kind_name;
+
+			fputc(PGSTAT_FILE_CUSTOM, fpout);
+
+			/* Kind name */
+			namestrcpy(&kind_name, kind_info->name);
+			write_chunk_s(fpout, &kind_name);
+
+			/*
+			 * If serialized use the on-disk format, or use the hash
+			 * key components for the database OID and object OID.
+			 */
+			if (kind_info->to_serialized_name)
+			{
+				kind_info->to_serialized_name(&ps->key, shstats, &name);
+				write_chunk_s(fpout, &name);
+			}
+			else
+			{
+				write_chunk_s(fpout, &ps->key.dboid);
+				write_chunk_s(fpout, &ps->key.objoid);
+			}
+		}
+		else if (!kind_info->to_serialized_name)
 		{
 			/* normal stats entry, identified by PgStat_HashKey */
 			fputc(PGSTAT_FILE_SYSTEM, fpout);
@@ -1874,6 +1915,7 @@ pgstat_read_statsfile(void)
 
 		switch (t)
 		{
+			case PGSTAT_FILE_CUSTOM:
 			case PGSTAT_FILE_SYSTEM:
 			case PGSTAT_FILE_NAME:
 				{
@@ -1891,6 +1933,50 @@ pgstat_read_statsfile(void)
 
 						if (!pgstat_is_kind_valid(key.kind))
 							goto error;
+					}
+					else if (t == PGSTAT_FILE_CUSTOM)
+					{
+						NameData	kind_name;
+						NameData	name;
+						PgStat_Kind	kind;
+						const PgStat_KindInfo *kind_info = NULL;
+
+						/* First comes the name of the stats */
+						if (!read_chunk_s(fpin, &kind_name))
+							goto error;
+
+						/* Check if it is a valid stats kind */
+						kind = pgstat_get_kind_from_str(NameStr(kind_name),
+														WARNING);
+						if (!pgstat_is_kind_valid(kind))
+							goto error;
+
+						kind_info = pgstat_get_kind_info(kind);
+
+						/* Then comes the entry name, if serialized */
+						if (kind_info->from_serialized_name)
+						{
+							if (!read_chunk_s(fpin, &name))
+								goto error;
+
+							/* Compile its key */
+							if (!kind_info->from_serialized_name(&name, &key))
+							{
+								/* skip over data for entry we don't care about */
+								if (fseek(fpin, pgstat_get_entry_len(kind), SEEK_CUR) != 0)
+									goto error;
+								continue;
+							}
+						}
+						else
+						{
+							/* Extract the rest of the hash key */
+							key.kind = kind;
+							if (!read_chunk_s(fpin, &key.dboid))
+								goto error;
+							if (!read_chunk_s(fpin, &key.objoid))
+								goto error;
+						}
 					}
 					else
 					{

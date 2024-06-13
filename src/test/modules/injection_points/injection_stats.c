@@ -22,9 +22,13 @@
 #include "utils/builtins.h"
 #include "utils/pgstat_internal.h"
 
+/* Maximum name length */
+#define INJ_NAME_MAXLEN 64
+
 /* Structures for statistics of injection points */
 typedef struct PgStat_StatInjEntry
 {
+	char		name[INJ_NAME_MAXLEN];	/* used for serialization */
 	PgStat_Counter numcalls;	/* number of times point has been run */
 } PgStat_StatInjEntry;
 
@@ -35,6 +39,11 @@ typedef struct PgStatShared_InjectionPoint
 } PgStatShared_InjectionPoint;
 
 static bool injection_stats_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
+static void injection_stats_to_serialized_name_cb(const PgStat_HashKey *key,
+												  const PgStatShared_Common *header,
+												  NameData *name);
+static bool injection_stats_from_serialized_name_cb(const NameData *name,
+													PgStat_HashKey *key);
 
 static const PgStat_KindInfo injection_stats = {
 	.name = "injection_points",
@@ -48,6 +57,8 @@ static const PgStat_KindInfo injection_stats = {
 	.shared_data_len = sizeof(((PgStatShared_InjectionPoint *) 0)->stats),
 	.pending_size = sizeof(PgStat_StatInjEntry),
 	.flush_pending_cb = injection_stats_flush_cb,
+	.to_serialized_name = injection_stats_to_serialized_name_cb,
+	.from_serialized_name = injection_stats_from_serialized_name_cb,
 };
 
 /*
@@ -58,7 +69,7 @@ static const PgStat_KindInfo injection_stats = {
 static PgStat_Kind inj_stats_kind = PGSTAT_KIND_INVALID;
 
 /*
- * Callback for stats handling
+ * Callbacks for stats handling
  */
 static bool
 injection_stats_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
@@ -73,6 +84,35 @@ injection_stats_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 		return false;
 
 	shfuncent->stats.numcalls += localent->numcalls;
+	return true;
+}
+
+/*
+ * Transforms a hash key into a name that is then stored on disk.
+ */
+static void
+injection_stats_to_serialized_name_cb(const PgStat_HashKey *key,
+									  const PgStatShared_Common *header,
+									  NameData *name)
+{
+	PgStatShared_InjectionPoint *shstatent =
+		(PgStatShared_InjectionPoint *) header;
+
+	namestrcpy(name, shstatent->stats.name);
+}
+
+/*
+ * Computes the hash key used for this injection point name.
+ */
+static bool
+injection_stats_from_serialized_name_cb(const NameData *name,
+										PgStat_HashKey *key)
+{
+	uint32		idx = PGSTAT_INJ_IDX(NameStr(*name));
+
+	key->kind = inj_stats_kind;
+	key->dboid = InvalidOid;
+	key->objoid = idx;
 	return true;
 }
 
@@ -96,6 +136,16 @@ pgstat_fetch_stat_injentry(const char *name)
 }
 
 /*
+ * Workhorse to do the registration work, called in _PG_init().
+ */
+void
+pgstat_register_inj(void)
+{
+	if (inj_stats_kind == PGSTAT_KIND_INVALID)
+		inj_stats_kind = pgstat_add_kind(&injection_stats);
+}
+
+/*
  * Report injection point creation.
  */
 void
@@ -113,6 +163,8 @@ pgstat_create_inj(const char *name)
 
 	/* initialize shared memory data */
 	memset(&shstatent->stats, 0, sizeof(shstatent->stats));
+	strlcpy(shstatent->stats.name, name, INJ_NAME_MAXLEN);
+
 	pgstat_unlock_entry(entry_ref);
 }
 

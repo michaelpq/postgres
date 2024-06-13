@@ -34,9 +34,11 @@
 
 PG_MODULE_MAGIC;
 
+/* Hooks */
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+
 /* Maximum number of waits usable in injection points at once */
 #define INJ_MAX_WAIT	8
-#define INJ_NAME_MAXLEN	64
 
 /*
  * Conditions related to injection points.  This tracks in shared memory the
@@ -418,4 +420,29 @@ injection_points_detach(PG_FUNCTION_ARGS)
 	pgstat_drop_inj(name);
 
 	PG_RETURN_VOID();
+}
+
+static void
+injection_points_shmem_startup(void)
+{
+	if (prev_shmem_startup_hook)
+		prev_shmem_startup_hook();
+
+	/*
+	 * Note that this does not call injection_init_shmem(), as it relies
+	 * on the DSM registry, which cannot be used in the postmaster context.
+	 */
+
+	/* Register custom statistics */
+	pgstat_register_inj();
+}
+
+void
+_PG_init(void)
+{
+	if (!process_shared_preload_libraries_in_progress)
+		return;
+
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = injection_points_shmem_startup;
 }

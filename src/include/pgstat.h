@@ -487,7 +487,7 @@ extern void pgstat_clear_snapshot(void);
 extern TimestampTz pgstat_get_stat_snapshot_timestamp(bool *have_snapshot);
 
 /* helpers */
-extern PgStat_Kind pgstat_get_kind_from_str(char *kind_str);
+extern PgStat_Kind pgstat_get_kind_from_str(char *kind_str, int elevel);
 extern bool pgstat_have_entry(PgStat_Kind kind, Oid dboid, Oid objoid);
 
 

@@ -38,4 +38,12 @@ tests += {
     # The injection points are cluster-wide, so disable installcheck
     'runningcheck': false,
   },
+  'tap': {
+    'env': {
+      'enable_injection_points': get_option('injection_points') ? 'yes' : 'no',
+    },
+    'tests': [
+      't/001_stats.pl',
+    ],
+  },
 }
