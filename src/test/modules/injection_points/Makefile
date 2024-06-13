@@ -1,7 +1,10 @@
 # src/test/modules/injection_points/Makefile
 
-MODULES = injection_points
-
+MODULE_big = injection_points
+OBJS = \
+	$(WIN32RES) \
+	injection_points.o \
+	injection_stats.o
 EXTENSION = injection_points
 DATA = injection_points--1.0.sql
 PGFILEDESC = "injection_points - facility for injection points"
