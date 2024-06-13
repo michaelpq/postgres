@@ -173,7 +173,7 @@ static void pgstat_prep_snapshot(void);
 static void pgstat_build_snapshot(void);
 static void pgstat_build_snapshot_fixed(PgStat_Kind kind);
 
-static inline bool pgstat_is_kind_valid(int ikind);
+static inline bool pgstat_is_kind_valid(PgStat_Kind kind);
 
 
 /* ----------
@@ -1254,9 +1254,9 @@ pgstat_get_kind_from_str(char *kind_str)
 }
 
 static inline bool
-pgstat_is_kind_valid(int ikind)
+pgstat_is_kind_valid(PgStat_Kind kind)
 {
-	return ikind >= PGSTAT_KIND_FIRST_VALID && ikind <= PGSTAT_KIND_LAST;
+	return kind >= PGSTAT_KIND_FIRST_VALID && kind <= PGSTAT_KIND_LAST;
 }
 
 const PgStat_KindInfo *
