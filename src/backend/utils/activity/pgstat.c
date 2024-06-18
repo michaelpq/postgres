@@ -1323,7 +1323,8 @@ pgstat_write_statsfile(XLogRecPtr redo)
 	/* we're shutting down, so it's ok to just override this */
 	pgstat_fetch_consistency = PGSTAT_FETCH_CONSISTENCY_NONE;
 
-	elog(DEBUG2, "writing stats file \"%s\"", statfile);
+	elog(DEBUG2, "writing stats file \"%s\" with redo %X/%X", statfile,
+		 LSN_FORMAT_ARGS(redo));
 
 	/*
 	 * Open the statistics temp file to write out the current values.
@@ -1499,7 +1500,8 @@ pgstat_read_statsfile(XLogRecPtr redo)
 	/* shouldn't be called from postmaster */
 	Assert(IsUnderPostmaster || !IsPostmasterEnvironment);
 
-	elog(DEBUG2, "reading stats file \"%s\"", statfile);
+	elog(DEBUG2, "reading stats file \"%s\" with redo %X/%X", statfile,
+		LSN_FORMAT_ARGS(redo));
 
 	/*
 	 * Try to open the stats file. If it doesn't exist, the backends simply
