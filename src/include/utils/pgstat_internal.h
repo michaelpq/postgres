@@ -446,7 +446,7 @@ typedef struct PgStat_Snapshot
 	/* time at which snapshot was taken */
 	TimestampTz snapshot_timestamp;
 
-	bool		fixed_valid[PGSTAT_NUM_KINDS];
+	bool		fixed_valid[PGSTAT_KIND_MAX_BUILTIN + 1];
 
 	PgStat_ArchiverStats archiver;
 
@@ -503,6 +503,8 @@ static inline void *pgstat_get_entry_data(PgStat_Kind kind, PgStatShared_Common 
  */
 
 extern const PgStat_KindInfo *pgstat_get_kind_info(PgStat_Kind kind);
+extern void pgstat_register_kind(PgStat_Kind kind,
+								 const PgStat_KindInfo *kind_info);
 
 #ifdef USE_ASSERT_CHECKING
 extern void pgstat_assert_is_up(void);

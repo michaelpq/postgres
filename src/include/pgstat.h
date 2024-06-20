@@ -52,9 +52,35 @@
 #define PGSTAT_KIND_SLRU	10
 #define PGSTAT_KIND_WAL	11
 
-#define PGSTAT_KIND_FIRST_VALID PGSTAT_KIND_DATABASE
-#define PGSTAT_KIND_LAST PGSTAT_KIND_WAL
-#define PGSTAT_NUM_KINDS (PGSTAT_KIND_LAST + 1)
+#define PGSTAT_KIND_MIN_BUILTIN PGSTAT_KIND_DATABASE
+#define PGSTAT_KIND_MAX_BUILTIN PGSTAT_KIND_WAL
+
+/* Custom stats kinds */
+#define PGSTAT_KIND_MAX	256		/* Maximum ID allowed */
+
+/* Range of IDs allowed for custom stats kinds */
+#define PGSTAT_KIND_CUSTOM_MIN	128
+#define PGSTAT_KIND_CUSTOM_MAX	PGSTAT_KIND_MAX
+#define PGSTAT_KIND_CUSTOM_SIZE	(PGSTAT_KIND_CUSTOM_MAX - PGSTAT_KIND_CUSTOM_MIN + 1)
+
+/*
+ * PgStat_Kind to use for extensions that require an ID, but are still in
+ * development and have not reserved their own unique kind ID yet. See:
+ * https://wiki.postgresql.org/wiki/CustomCumulativeStats
+ */
+#define PGSTAT_KIND_EXPERIMENTAL	128
+
+static inline bool
+pgstat_is_kind_builtin(PgStat_Kind kind)
+{
+	return kind > PGSTAT_KIND_INVALID && kind <= PGSTAT_KIND_MAX_BUILTIN;
+}
+
+static inline bool
+pgstat_is_kind_custom(PgStat_Kind kind)
+{
+	return kind >= PGSTAT_KIND_CUSTOM_MIN && kind <= PGSTAT_KIND_CUSTOM_MAX;
+}
 
 /* Values for track_functions GUC variable --- order is significant! */
 typedef enum TrackFunctionsLevel
