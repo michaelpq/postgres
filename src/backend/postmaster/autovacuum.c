@@ -1904,8 +1904,8 @@ do_autovacuum(void)
 	StartTransactionCommand();
 
 	/*
-	 * This injection point is put in a transaction block to work with a
-	 * wait that uses a condition variable.
+	 * This injection point is put in a transaction block to work with a wait
+	 * that uses a condition variable.
 	 */
 	INJECTION_POINT("autovacuum-worker-start");
 
