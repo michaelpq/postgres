@@ -78,7 +78,7 @@ ok( $terminate_with_no_pg_signal_av != 0,
 );
 like(
 	$psql_err,
-	qr/ERROR:  permission denied to terminate autovacuum worker backend\nDETAIL:  Only roles with the SUPERUSER attribute or with privileges of the "pg_signal_autovacuum_worker" role may terminate autovacuum worker backend/,
+	qr/ERROR:  permission denied to terminate process\nDETAIL:  Only roles with privileges of the "pg_signal_autovacuum_worker" role may terminate autovacuum worker processes./,
 	"Terminating autovacuum errors gracefully when role is not granted with pg_signal_autovacuum_worker"
 );
 
@@ -108,6 +108,6 @@ ok( $node->log_contains(
 
 # Release injection point.
 $node->safe_psql('postgres',
-	"SELECT injection_point_detach('autovacuum-worker-start');");
+	"SELECT injection_points_detach('autovacuum-worker-start');");
 
 done_testing();
