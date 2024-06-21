@@ -66,7 +66,7 @@ my $av_pid = $node->safe_psql(
 
 # Regular user cannot terminate autovacuum worker
 my $terminate_with_no_pg_signal_av = $node->psql(
-	'postgres', qq( 
+	'postgres', qq(
     SET ROLE regular_role;
     SELECT pg_terminate_backend($av_pid);
 ),
@@ -86,7 +86,7 @@ my $offset = -s $node->logfile;
 
 # User with pg_signal_autovacuum can terminate autovacuum worker
 my $terminate_with_pg_signal_av = $node->psql(
-	'postgres', qq( 
+	'postgres', qq(
     SET ROLE signal_autovacuum_worker_role;
     SELECT pg_terminate_backend($av_pid);
 ),
