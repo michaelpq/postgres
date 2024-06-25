@@ -23,7 +23,6 @@
 #include "miscadmin.h"
 #include "port/pg_bitutils.h"
 #include "storage/fd.h"
-#include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "utils/hsearch.h"
 #include "utils/injection_point.h"
@@ -229,13 +228,11 @@ InjectionPointAttach(const char *name,
 	 * Allocate and register a new injection point.  A new point should not
 	 * exist.  For testing purposes this should be fine.
 	 */
-	LWLockAcquire(InjectionPointLock, LW_EXCLUSIVE);
 	entry_by_name = (InjectionPointEntry *)
 		hash_search(InjectionPointHash, name,
 					HASH_ENTER, &found);
 	if (found)
 	{
-		LWLockRelease(InjectionPointLock);
 		elog(ERROR, "injection point \"%s\" already defined", name);
 	}
 
@@ -248,8 +245,6 @@ InjectionPointAttach(const char *name,
 	entry_by_name->function[INJ_FUNC_MAXLEN - 1] = '\0';
 	if (private_data != NULL)
 		memcpy(entry_by_name->private_data, private_data, private_data_size);
-
-	LWLockRelease(InjectionPointLock);
 
 #else
 	elog(ERROR, "injection points are not supported by this build");
@@ -267,9 +262,7 @@ InjectionPointDetach(const char *name)
 #ifdef USE_INJECTION_POINTS
 	bool		found;
 
-	LWLockAcquire(InjectionPointLock, LW_EXCLUSIVE);
 	hash_search(InjectionPointHash, name, HASH_REMOVE, &found);
-	LWLockRelease(InjectionPointLock);
 
 	if (!found)
 		return false;
@@ -296,11 +289,9 @@ InjectionPointRun(const char *name)
 	InjectionPointCallback injection_callback;
 	const void *private_data;
 
-	LWLockAcquire(InjectionPointLock, LW_SHARED);
 	entry_by_name = (InjectionPointEntry *)
 		hash_search(InjectionPointHash, name,
 					HASH_FIND, &found);
-	LWLockRelease(InjectionPointLock);
 
 	/*
 	 * If not found, do nothing and remove it from the local cache if it
