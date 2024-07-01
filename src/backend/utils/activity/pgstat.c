@@ -1543,13 +1543,11 @@ pgstat_read_statsfile(void)
 		format_id != PGSTAT_FILE_FORMAT_ID)
 		goto error;
 
-	/* Read various stats structs */
-	for (PgStat_Kind kind = PGSTAT_KIND_FIRST_VALID; kind < PGSTAT_NUM_KINDS; ++kind)
+	/* Read various stats structs with fixed number of objects */
+	for (PgStat_Kind kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)
 	{
 		char	   *ptr;
-		const PgStat_KindInfo *info;
-
-		info = pgstat_kind_infos + kind;
+		const PgStat_KindInfo *info = pgstat_get_kind_info(kind);
 
 		if (!info->fixed_amount)
 			continue;
