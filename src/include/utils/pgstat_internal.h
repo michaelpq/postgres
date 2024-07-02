@@ -195,15 +195,10 @@ typedef struct PgStat_KindInfo
 
 	/*
 	 * The size of an entry in the shared stats hash table (pointed to by
-	 * PgStatShared_HashEntry->body).
+	 * PgStatShared_HashEntry->body).  For fixed-number statistics, this is
+	 * the size of an entry in PgStat_ShmemControl->fixed_data.
 	 */
 	uint32		shared_size;
-
-	/*
-	 * The offset of the statistics struct in the containing shared memory
-	 * control structure PgStat_ShmemControl, for fixed-numbered statistics.
-	 */
-	uint32		shared_ctl_off;
 
 	/*
 	 * The offset/size of statistics inside the shared stats entry. Used when
@@ -244,6 +239,11 @@ typedef struct PgStat_KindInfo
 	void		(*to_serialized_name) (const PgStat_HashKey *key,
 									   const PgStatShared_Common *header, NameData *name);
 	bool		(*from_serialized_name) (const NameData *name, PgStat_HashKey *key);
+
+	/*
+	 * For fixed-numbered statistics: Initialize shared memory state.
+	 */
+	void		(*init_shmem_cb) (void);
 
 	/*
 	 * For fixed-numbered statistics: Reset All.
@@ -426,13 +426,20 @@ typedef struct PgStat_ShmemControl
 
 	/*
 	 * Stats data for fixed-numbered objects.
+	 *
+	 * All the fixed-numbered objects are saved into a single area of shared
+	 * memory, with fixed_data_offsets storing offset locations to each one of
+	 * them.  This data is compiled based on the PgStat_KindInfo of each stats
+	 * kind.
+	 *
+	 * The size of fixed_data is the sum of all the shared_data_len for all
+	 * the fixed-numbered stats kinds, with offsets computed once, when
+	 * initializing PgStat_ShmemControl.
 	 */
-	PgStatShared_Archiver archiver;
-	PgStatShared_BgWriter bgwriter;
-	PgStatShared_Checkpointer checkpointer;
-	PgStatShared_IO io;
-	PgStatShared_SLRU slru;
-	PgStatShared_Wal wal;
+	uint32		fixed_data_offsets[PGSTAT_NUM_KINDS];
+	Size		fixed_data_size;	/* Size of fixed_data */
+	void	   *fixed_data;
+
 } PgStat_ShmemControl;
 
 
@@ -448,17 +455,17 @@ typedef struct PgStat_Snapshot
 
 	bool		fixed_valid[PGSTAT_NUM_KINDS];
 
-	PgStat_ArchiverStats archiver;
-
-	PgStat_BgWriterStats bgwriter;
-
-	PgStat_CheckpointerStats checkpointer;
-
-	PgStat_IO	io;
-
-	PgStat_SLRUStats slru[SLRU_NUM_ELEMENTS];
-
-	PgStat_WalStats wal;
+	/*
+	 * Data in snapshot for fixed-numbered statistics, stored in
+	 * TopMemoryContext in fixed_data.  fixed_data_offsets is an array of
+	 * offsets pointing to the area of *fixed_data for each stats kind,
+	 * with data of a size of shared_data_len, indexed by PgStat_Kind.
+	 *
+	 * fixed_data_offsets and fixed_data_size are computed once per backend.
+	 */
+	uint32		fixed_data_offsets[PGSTAT_NUM_KINDS];
+	Size		fixed_data_size;	/* Size of fixed_data */
+	void	   *fixed_data;
 
 	/* to free snapshot in bulk */
 	MemoryContext context;
@@ -515,13 +522,16 @@ extern PgStat_EntryRef *pgstat_prep_pending_entry(PgStat_Kind kind, Oid dboid, O
 extern PgStat_EntryRef *pgstat_fetch_pending_entry(PgStat_Kind kind, Oid dboid, Oid objoid);
 
 extern void *pgstat_fetch_entry(PgStat_Kind kind, Oid dboid, Oid objoid);
-extern void pgstat_snapshot_fixed(PgStat_Kind kind);
+extern void *pgstat_fetch_fixed(PgStat_Kind kind);
+extern void *pgstat_snapshot_fixed(PgStat_Kind kind);
+extern void *pgstat_snapshot_fetch_fixed(PgStat_Kind kind);
 
 
 /*
  * Functions in pgstat_archiver.c
  */
 
+extern void pgstat_archiver_init_shmem_cb(void);
 extern void pgstat_archiver_reset_all_cb(TimestampTz ts);
 extern void pgstat_archiver_snapshot_cb(void);
 
@@ -530,6 +540,7 @@ extern void pgstat_archiver_snapshot_cb(void);
  * Functions in pgstat_bgwriter.c
  */
 
+extern void pgstat_bgwriter_init_shmem_cb(void);
 extern void pgstat_bgwriter_reset_all_cb(TimestampTz ts);
 extern void pgstat_bgwriter_snapshot_cb(void);
 
@@ -538,6 +549,7 @@ extern void pgstat_bgwriter_snapshot_cb(void);
  * Functions in pgstat_checkpointer.c
  */
 
+extern void pgstat_checkpointer_init_shmem_cb(void);
 extern void pgstat_checkpointer_reset_all_cb(TimestampTz ts);
 extern void pgstat_checkpointer_snapshot_cb(void);
 
@@ -568,6 +580,7 @@ extern bool pgstat_function_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
  */
 
 extern bool pgstat_flush_io(bool nowait);
+extern void pgstat_io_init_shmem_cb(void);
 extern void pgstat_io_reset_all_cb(TimestampTz ts);
 extern void pgstat_io_snapshot_cb(void);
 
@@ -626,6 +639,7 @@ extern PgStatShared_Common *pgstat_init_entry(PgStat_Kind kind,
  */
 
 extern bool pgstat_slru_flush(bool nowait);
+extern void pgstat_slru_init_shmem_cb(void);
 extern void pgstat_slru_reset_all_cb(TimestampTz ts);
 extern void pgstat_slru_snapshot_cb(void);
 
@@ -638,6 +652,7 @@ extern bool pgstat_flush_wal(bool nowait);
 extern void pgstat_init_wal(void);
 extern bool pgstat_have_pending_wal(void);
 
+extern void pgstat_wal_init_shmem_cb(void);
 extern void pgstat_wal_reset_all_cb(TimestampTz ts);
 extern void pgstat_wal_snapshot_cb(void);
 

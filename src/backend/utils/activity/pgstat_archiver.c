@@ -27,7 +27,7 @@
 void
 pgstat_report_archiver(const char *xlog, bool failed)
 {
-	PgStatShared_Archiver *stats_shmem = &pgStatLocal.shmem->archiver;
+	PgStatShared_Archiver *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_ARCHIVER);
 	TimestampTz now = GetCurrentTimestamp();
 
 	pgstat_begin_changecount_write(&stats_shmem->changecount);
@@ -57,15 +57,21 @@ pgstat_report_archiver(const char *xlog, bool failed)
 PgStat_ArchiverStats *
 pgstat_fetch_stat_archiver(void)
 {
-	pgstat_snapshot_fixed(PGSTAT_KIND_ARCHIVER);
+	return (PgStat_ArchiverStats *) pgstat_snapshot_fixed(PGSTAT_KIND_ARCHIVER);
+}
 
-	return &pgStatLocal.snapshot.archiver;
+void
+pgstat_archiver_init_shmem_cb(void)
+{
+	PgStatShared_Archiver *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_ARCHIVER);
+
+	LWLockInitialize(&stats_shmem->lock, LWTRANCHE_PGSTATS_DATA);
 }
 
 void
 pgstat_archiver_reset_all_cb(TimestampTz ts)
 {
-	PgStatShared_Archiver *stats_shmem = &pgStatLocal.shmem->archiver;
+	PgStatShared_Archiver *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_ARCHIVER);
 
 	/* see explanation above PgStatShared_Archiver for the reset protocol */
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
@@ -80,8 +86,9 @@ pgstat_archiver_reset_all_cb(TimestampTz ts)
 void
 pgstat_archiver_snapshot_cb(void)
 {
-	PgStatShared_Archiver *stats_shmem = &pgStatLocal.shmem->archiver;
-	PgStat_ArchiverStats *stat_snap = &pgStatLocal.snapshot.archiver;
+	PgStatShared_Archiver *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_ARCHIVER);
+	//snapshot area is not initialized yet..
+	PgStat_ArchiverStats *stat_snap = pgstat_snapshot_fetch_fixed(PGSTAT_KIND_ARCHIVER);
 	PgStat_ArchiverStats *reset_offset = &stats_shmem->reset_offset;
 	PgStat_ArchiverStats reset;
 

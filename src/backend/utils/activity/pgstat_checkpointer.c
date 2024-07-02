@@ -31,7 +31,7 @@ pgstat_report_checkpointer(void)
 {
 	/* We assume this initializes to zeroes */
 	static const PgStat_CheckpointerStats all_zeroes;
-	PgStatShared_Checkpointer *stats_shmem = &pgStatLocal.shmem->checkpointer;
+	PgStatShared_Checkpointer *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_CHECKPOINTER);
 
 	Assert(!pgStatLocal.shmem->is_shutdown);
 	pgstat_assert_is_up();
@@ -79,15 +79,21 @@ pgstat_report_checkpointer(void)
 PgStat_CheckpointerStats *
 pgstat_fetch_stat_checkpointer(void)
 {
-	pgstat_snapshot_fixed(PGSTAT_KIND_CHECKPOINTER);
+	return (PgStat_CheckpointerStats *) pgstat_snapshot_fixed(PGSTAT_KIND_CHECKPOINTER);
+}
 
-	return &pgStatLocal.snapshot.checkpointer;
+void
+pgstat_checkpointer_init_shmem_cb(void)
+{
+	PgStatShared_Checkpointer *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_CHECKPOINTER);
+
+	LWLockInitialize(&stats_shmem->lock, LWTRANCHE_PGSTATS_DATA);
 }
 
 void
 pgstat_checkpointer_reset_all_cb(TimestampTz ts)
 {
-	PgStatShared_Checkpointer *stats_shmem = &pgStatLocal.shmem->checkpointer;
+	PgStatShared_Checkpointer *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_CHECKPOINTER);
 
 	/* see explanation above PgStatShared_Checkpointer for the reset protocol */
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
@@ -102,11 +108,12 @@ pgstat_checkpointer_reset_all_cb(TimestampTz ts)
 void
 pgstat_checkpointer_snapshot_cb(void)
 {
-	PgStatShared_Checkpointer *stats_shmem = &pgStatLocal.shmem->checkpointer;
+	PgStatShared_Checkpointer *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_CHECKPOINTER);
+	PgStat_CheckpointerStats *stat_snap = pgstat_snapshot_fetch_fixed(PGSTAT_KIND_CHECKPOINTER);
 	PgStat_CheckpointerStats *reset_offset = &stats_shmem->reset_offset;
 	PgStat_CheckpointerStats reset;
 
-	pgstat_copy_changecounted_stats(&pgStatLocal.snapshot.checkpointer,
+	pgstat_copy_changecounted_stats(stat_snap,
 									&stats_shmem->stats,
 									sizeof(stats_shmem->stats),
 									&stats_shmem->changecount);
@@ -116,7 +123,7 @@ pgstat_checkpointer_snapshot_cb(void)
 	LWLockRelease(&stats_shmem->lock);
 
 	/* compensate by reset offsets */
-#define CHECKPOINTER_COMP(fld) pgStatLocal.snapshot.checkpointer.fld -= reset.fld;
+#define CHECKPOINTER_COMP(fld) stat_snap->fld -= reset.fld;
 	CHECKPOINTER_COMP(num_timed);
 	CHECKPOINTER_COMP(num_requested);
 	CHECKPOINTER_COMP(restartpoints_timed);

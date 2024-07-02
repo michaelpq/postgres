@@ -153,6 +153,7 @@ StatsShmemInit(void)
 		dshash_table *dsh;
 		PgStat_ShmemControl *ctl = pgStatLocal.shmem;
 		char	   *p = (char *) ctl;
+		Size		fixed_data_size = 0;
 
 		Assert(!found);
 
@@ -196,17 +197,31 @@ StatsShmemInit(void)
 
 		pg_atomic_init_u64(&ctl->gc_request_count, 1);
 
+		/* initialize fixed-numbered stats and offsets */
+		for (int kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)
+		{
+			const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
 
-		/* initialize fixed-numbered stats */
-		LWLockInitialize(&ctl->archiver.lock, LWTRANCHE_PGSTATS_DATA);
-		LWLockInitialize(&ctl->bgwriter.lock, LWTRANCHE_PGSTATS_DATA);
-		LWLockInitialize(&ctl->checkpointer.lock, LWTRANCHE_PGSTATS_DATA);
-		LWLockInitialize(&ctl->slru.lock, LWTRANCHE_PGSTATS_DATA);
-		LWLockInitialize(&ctl->wal.lock, LWTRANCHE_PGSTATS_DATA);
+			if (!kind_info->fixed_amount)
+				continue;
 
-		for (int i = 0; i < BACKEND_NUM_TYPES; i++)
-			LWLockInitialize(&ctl->io.locks[i],
-							 LWTRANCHE_PGSTATS_DATA);
+			ctl->fixed_data_offsets[kind] = fixed_data_size;
+			fixed_data_size += kind_info->shared_size;
+		}
+
+		ctl->fixed_data = ShmemAlloc(fixed_data_size * sizeof(char));
+		ctl->fixed_data_size = fixed_data_size;
+
+		/* Now that areas are set, call the shmem initialization callbacks */
+		for (int kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)
+		{
+			const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+
+			if (!kind_info->fixed_amount)
+				continue;
+
+			kind_info->init_shmem_cb();
+		}
 	}
 	else
 	{

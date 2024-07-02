@@ -66,9 +66,7 @@ pgstat_report_wal(bool force)
 PgStat_WalStats *
 pgstat_fetch_stat_wal(void)
 {
-	pgstat_snapshot_fixed(PGSTAT_KIND_WAL);
-
-	return &pgStatLocal.snapshot.wal;
+	return (PgStat_WalStats *) pgstat_snapshot_fixed(PGSTAT_KIND_WAL);
 }
 
 /*
@@ -81,7 +79,7 @@ pgstat_fetch_stat_wal(void)
 bool
 pgstat_flush_wal(bool nowait)
 {
-	PgStatShared_Wal *stats_shmem = &pgStatLocal.shmem->wal;
+	PgStatShared_Wal *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_WAL);
 	WalUsage	wal_usage_diff = {0};
 
 	Assert(IsUnderPostmaster || !IsPostmasterEnvironment);
@@ -164,9 +162,18 @@ pgstat_have_pending_wal(void)
 }
 
 void
+pgstat_wal_init_shmem_cb(void)
+{
+	PgStatShared_Wal *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_WAL);
+
+	LWLockInitialize(&stats_shmem->lock, LWTRANCHE_PGSTATS_DATA);
+}
+
+
+void
 pgstat_wal_reset_all_cb(TimestampTz ts)
 {
-	PgStatShared_Wal *stats_shmem = &pgStatLocal.shmem->wal;
+	PgStatShared_Wal *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_WAL);
 
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
 	memset(&stats_shmem->stats, 0, sizeof(stats_shmem->stats));
@@ -177,10 +184,10 @@ pgstat_wal_reset_all_cb(TimestampTz ts)
 void
 pgstat_wal_snapshot_cb(void)
 {
-	PgStatShared_Wal *stats_shmem = &pgStatLocal.shmem->wal;
+	PgStatShared_Wal *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_WAL);
+	PgStat_WalStats *stat_snap = pgstat_snapshot_fetch_fixed(PGSTAT_KIND_WAL);
 
 	LWLockAcquire(&stats_shmem->lock, LW_SHARED);
-	memcpy(&pgStatLocal.snapshot.wal, &stats_shmem->stats,
-		   sizeof(pgStatLocal.snapshot.wal));
+	memcpy(stat_snap, &stats_shmem->stats, sizeof(PgStat_WalStats));
 	LWLockRelease(&stats_shmem->lock);
 }

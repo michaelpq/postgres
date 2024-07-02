@@ -104,9 +104,7 @@ pgstat_count_slru_truncate(int slru_idx)
 PgStat_SLRUStats *
 pgstat_fetch_slru(void)
 {
-	pgstat_snapshot_fixed(PGSTAT_KIND_SLRU);
-
-	return pgStatLocal.snapshot.slru;
+	return (PgStat_SLRUStats *) pgstat_snapshot_fixed(PGSTAT_KIND_SLRU);
 }
 
 /*
@@ -155,7 +153,7 @@ pgstat_get_slru_index(const char *name)
 bool
 pgstat_slru_flush(bool nowait)
 {
-	PgStatShared_SLRU *stats_shmem = &pgStatLocal.shmem->slru;
+	PgStatShared_SLRU *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_SLRU);
 	int			i;
 
 	if (!have_slrustats)
@@ -193,6 +191,14 @@ pgstat_slru_flush(bool nowait)
 }
 
 void
+pgstat_slru_init_shmem_cb(void)
+{
+	PgStatShared_SLRU *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_SLRU);
+
+	LWLockInitialize(&stats_shmem->lock, LWTRANCHE_PGSTATS_DATA);
+}
+
+void
 pgstat_slru_reset_all_cb(TimestampTz ts)
 {
 	for (int i = 0; i < SLRU_NUM_ELEMENTS; i++)
@@ -202,11 +208,12 @@ pgstat_slru_reset_all_cb(TimestampTz ts)
 void
 pgstat_slru_snapshot_cb(void)
 {
-	PgStatShared_SLRU *stats_shmem = &pgStatLocal.shmem->slru;
+	PgStatShared_SLRU *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_SLRU);
+	PgStat_SLRUStats *stat_snap = pgstat_snapshot_fetch_fixed(PGSTAT_KIND_SLRU);
 
 	LWLockAcquire(&stats_shmem->lock, LW_SHARED);
 
-	memcpy(pgStatLocal.snapshot.slru, &stats_shmem->stats,
+	memcpy(stat_snap, &stats_shmem->stats,
 		   sizeof(stats_shmem->stats));
 
 	LWLockRelease(&stats_shmem->lock);
@@ -237,7 +244,7 @@ get_slru_entry(int slru_idx)
 static void
 pgstat_reset_slru_counter_internal(int index, TimestampTz ts)
 {
-	PgStatShared_SLRU *stats_shmem = &pgStatLocal.shmem->slru;
+	PgStatShared_SLRU *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_SLRU);
 
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
 

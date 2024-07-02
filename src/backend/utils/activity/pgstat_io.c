@@ -156,9 +156,7 @@ pgstat_count_io_op_time(IOObject io_object, IOContext io_context, IOOp io_op,
 PgStat_IO *
 pgstat_fetch_stat_io(void)
 {
-	pgstat_snapshot_fixed(PGSTAT_KIND_IO);
-
-	return &pgStatLocal.snapshot.io;
+	return (PgStat_IO *) pgstat_snapshot_fixed(PGSTAT_KIND_IO);
 }
 
 /*
@@ -174,13 +172,15 @@ pgstat_flush_io(bool nowait)
 {
 	LWLock	   *bktype_lock;
 	PgStat_BktypeIO *bktype_shstats;
+	PgStatShared_IO *stat_shmem;
 
 	if (!have_iostats)
 		return false;
 
-	bktype_lock = &pgStatLocal.shmem->io.locks[MyBackendType];
-	bktype_shstats =
-		&pgStatLocal.shmem->io.stats.stats[MyBackendType];
+	stat_shmem = pgstat_fetch_fixed(PGSTAT_KIND_IO);
+
+	bktype_lock = &stat_shmem->locks[MyBackendType];
+	bktype_shstats = &stat_shmem->stats.stats[MyBackendType];
 
 	if (!nowait)
 		LWLockAcquire(bktype_lock, LW_EXCLUSIVE);
@@ -252,12 +252,23 @@ pgstat_get_io_object_name(IOObject io_object)
 }
 
 void
+pgstat_io_init_shmem_cb(void)
+{
+	PgStatShared_IO *stat_shmem = pgstat_fetch_fixed(PGSTAT_KIND_IO);
+
+	for (int i = 0; i < BACKEND_NUM_TYPES; i++)
+		LWLockInitialize(&stat_shmem->locks[i], LWTRANCHE_PGSTATS_DATA);
+}
+
+void
 pgstat_io_reset_all_cb(TimestampTz ts)
 {
+	PgStatShared_IO *stat_shmem = pgstat_fetch_fixed(PGSTAT_KIND_IO);
+
 	for (int i = 0; i < BACKEND_NUM_TYPES; i++)
 	{
-		LWLock	   *bktype_lock = &pgStatLocal.shmem->io.locks[i];
-		PgStat_BktypeIO *bktype_shstats = &pgStatLocal.shmem->io.stats.stats[i];
+		LWLock	   *bktype_lock = &stat_shmem->locks[i];
+		PgStat_BktypeIO *bktype_shstats = &stat_shmem->stats.stats[i];
 
 		LWLockAcquire(bktype_lock, LW_EXCLUSIVE);
 
@@ -266,7 +277,7 @@ pgstat_io_reset_all_cb(TimestampTz ts)
 		 * the reset timestamp as well.
 		 */
 		if (i == 0)
-			pgStatLocal.shmem->io.stats.stat_reset_timestamp = ts;
+			stat_shmem->stats.stat_reset_timestamp = ts;
 
 		memset(bktype_shstats, 0, sizeof(*bktype_shstats));
 		LWLockRelease(bktype_lock);
@@ -276,11 +287,14 @@ pgstat_io_reset_all_cb(TimestampTz ts)
 void
 pgstat_io_snapshot_cb(void)
 {
+	PgStatShared_IO *stat_shmem = pgstat_fetch_fixed(PGSTAT_KIND_IO);
+	PgStat_IO *stat_snap = pgstat_snapshot_fetch_fixed(PGSTAT_KIND_IO);
+
 	for (int i = 0; i < BACKEND_NUM_TYPES; i++)
 	{
-		LWLock	   *bktype_lock = &pgStatLocal.shmem->io.locks[i];
-		PgStat_BktypeIO *bktype_shstats = &pgStatLocal.shmem->io.stats.stats[i];
-		PgStat_BktypeIO *bktype_snap = &pgStatLocal.snapshot.io.stats[i];
+		LWLock	   *bktype_lock = &stat_shmem->locks[i];
+		PgStat_BktypeIO *bktype_shstats = &stat_shmem->stats.stats[i];
+		PgStat_BktypeIO *bktype_snap = &stat_snap->stats[i];
 
 		LWLockAcquire(bktype_lock, LW_SHARED);
 
@@ -289,8 +303,7 @@ pgstat_io_snapshot_cb(void)
 		 * the reset timestamp as well.
 		 */
 		if (i == 0)
-			pgStatLocal.snapshot.io.stat_reset_timestamp =
-				pgStatLocal.shmem->io.stats.stat_reset_timestamp;
+			stat_snap->stat_reset_timestamp = stat_shmem->stats.stat_reset_timestamp;
 
 		/* using struct assignment due to better type safety */
 		*bktype_snap = *bktype_shstats;

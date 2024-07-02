@@ -165,6 +165,8 @@ typedef struct PgStat_SnapshotEntry
 static void pgstat_write_statsfile(void);
 static void pgstat_read_statsfile(void);
 
+static void pgstat_init_snapshot(void);
+
 static void pgstat_reset_after_failure(void);
 
 static bool pgstat_flush_pending_entries(bool nowait);
@@ -341,10 +343,11 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 
 		.fixed_amount = true,
 
-		.shared_ctl_off = offsetof(PgStat_ShmemControl, archiver),
+		.shared_size = sizeof(PgStatShared_Archiver),
 		.shared_data_off = offsetof(PgStatShared_Archiver, stats),
 		.shared_data_len = sizeof(((PgStatShared_Archiver *) 0)->stats),
 
+		.init_shmem_cb = pgstat_archiver_init_shmem_cb,
 		.reset_all_cb = pgstat_archiver_reset_all_cb,
 		.snapshot_cb = pgstat_archiver_snapshot_cb,
 	},
@@ -354,10 +357,11 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 
 		.fixed_amount = true,
 
-		.shared_ctl_off = offsetof(PgStat_ShmemControl, bgwriter),
+		.shared_size = sizeof(PgStatShared_BgWriter),
 		.shared_data_off = offsetof(PgStatShared_BgWriter, stats),
 		.shared_data_len = sizeof(((PgStatShared_BgWriter *) 0)->stats),
 
+		.init_shmem_cb = pgstat_bgwriter_init_shmem_cb,
 		.reset_all_cb = pgstat_bgwriter_reset_all_cb,
 		.snapshot_cb = pgstat_bgwriter_snapshot_cb,
 	},
@@ -367,10 +371,11 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 
 		.fixed_amount = true,
 
-		.shared_ctl_off = offsetof(PgStat_ShmemControl, checkpointer),
+		.shared_size = sizeof(PgStatShared_Checkpointer),
 		.shared_data_off = offsetof(PgStatShared_Checkpointer, stats),
 		.shared_data_len = sizeof(((PgStatShared_Checkpointer *) 0)->stats),
 
+		.init_shmem_cb = pgstat_checkpointer_init_shmem_cb,
 		.reset_all_cb = pgstat_checkpointer_reset_all_cb,
 		.snapshot_cb = pgstat_checkpointer_snapshot_cb,
 	},
@@ -380,10 +385,11 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 
 		.fixed_amount = true,
 
-		.shared_ctl_off = offsetof(PgStat_ShmemControl, io),
+		.shared_size = sizeof(PgStatShared_IO),
 		.shared_data_off = offsetof(PgStatShared_IO, stats),
 		.shared_data_len = sizeof(((PgStatShared_IO *) 0)->stats),
 
+		.init_shmem_cb = pgstat_io_init_shmem_cb,
 		.reset_all_cb = pgstat_io_reset_all_cb,
 		.snapshot_cb = pgstat_io_snapshot_cb,
 	},
@@ -393,10 +399,11 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 
 		.fixed_amount = true,
 
-		.shared_ctl_off = offsetof(PgStat_ShmemControl, slru),
+		.shared_size = sizeof(PgStatShared_SLRU),
 		.shared_data_off = offsetof(PgStatShared_SLRU, stats),
 		.shared_data_len = sizeof(((PgStatShared_SLRU *) 0)->stats),
 
+		.init_shmem_cb = pgstat_slru_init_shmem_cb,
 		.reset_all_cb = pgstat_slru_reset_all_cb,
 		.snapshot_cb = pgstat_slru_snapshot_cb,
 	},
@@ -406,10 +413,11 @@ static const PgStat_KindInfo pgstat_kind_infos[PGSTAT_NUM_KINDS] = {
 
 		.fixed_amount = true,
 
-		.shared_ctl_off = offsetof(PgStat_ShmemControl, wal),
+		.shared_size = sizeof(PgStatShared_Wal),
 		.shared_data_off = offsetof(PgStatShared_Wal, stats),
 		.shared_data_len = sizeof(((PgStatShared_Wal *) 0)->stats),
 
+		.init_shmem_cb = pgstat_wal_init_shmem_cb,
 		.reset_all_cb = pgstat_wal_reset_all_cb,
 		.snapshot_cb = pgstat_wal_snapshot_cb,
 	},
@@ -562,6 +570,8 @@ pgstat_initialize(void)
 	Assert(!pgstat_is_initialized);
 
 	pgstat_attach_shmem();
+
+	pgstat_init_snapshot();
 
 	pgstat_init_wal();
 
@@ -952,12 +962,12 @@ pgstat_have_entry(PgStat_Kind kind, Oid dboid, Oid objoid)
 }
 
 /*
- * Ensure snapshot for fixed-numbered 'kind' exists.
+ * Fetch snapshot data for fixed-numbered stats, ensuring its build.
  *
  * Typically used by the pgstat_fetch_* functions for a kind of stats, before
  * massaging the data into the desired format.
  */
-void
+void *
 pgstat_snapshot_fixed(PgStat_Kind kind)
 {
 	Assert(pgstat_is_kind_valid(kind));
@@ -972,6 +982,54 @@ pgstat_snapshot_fixed(PgStat_Kind kind)
 		pgstat_build_snapshot_fixed(kind);
 
 	Assert(pgStatLocal.snapshot.fixed_valid[kind]);
+
+	return pgstat_snapshot_fetch_fixed(kind);
+}
+
+/*
+ * Fetch data for fixed-numbered stats directly from shared memory.
+ */
+void *
+pgstat_fetch_fixed(PgStat_Kind kind)
+{
+	PgStat_ShmemControl *shmem = pgStatLocal.shmem;
+
+	Assert(pgstat_is_kind_valid(kind));
+	Assert(pgstat_get_kind_info(kind)->fixed_amount);
+
+	return ((char *) shmem->fixed_data) + shmem->fixed_data_offsets[kind];
+}
+
+/*
+ * Fetch data area for fixed-numbered stats from snapshot
+ */
+void *
+pgstat_snapshot_fetch_fixed(PgStat_Kind kind)
+{
+	return ((char *) &pgStatLocal.snapshot.fixed_data) +
+		pgStatLocal.snapshot.fixed_data_offsets[kind];
+}
+
+static void
+pgstat_init_snapshot(void)
+{
+	Size		fixed_data_size = 0;
+
+	/* Compute offsets and area size */
+	for (int kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)
+	{
+		const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+
+		if (!kind_info->fixed_amount)
+			continue;
+
+		pgStatLocal.snapshot.fixed_data_offsets[kind] = fixed_data_size;
+		fixed_data_size += kind_info->shared_data_len;
+	}
+
+	pgStatLocal.snapshot.fixed_data_size = fixed_data_size;
+	pgStatLocal.snapshot.fixed_data = MemoryContextAlloc(TopMemoryContext,
+														 fixed_data_size);
 }
 
 static void
@@ -1363,47 +1421,32 @@ pgstat_write_statsfile(void)
 	format_id = PGSTAT_FILE_FORMAT_ID;
 	write_chunk_s(fpout, &format_id);
 
-	/*
-	 * XXX: The following could now be generalized to just iterate over
-	 * pgstat_kind_infos instead of knowing about the different kinds of
-	 * stats.
-	 */
+	/* Write various stats structs with fixed number of objects */
+	for (int kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)
+	{
+		char	   *ptr;
+		const PgStat_KindInfo *info = pgstat_get_kind_info(kind);
+		char	   *fixed_data = pgStatLocal.snapshot.fixed_data;
 
-	/*
-	 * Write archiver stats struct
-	 */
-	pgstat_build_snapshot_fixed(PGSTAT_KIND_ARCHIVER);
-	write_chunk_s(fpout, &pgStatLocal.snapshot.archiver);
+		if (!info->fixed_amount)
+			continue;
 
-	/*
-	 * Write bgwriter stats struct
-	 */
-	pgstat_build_snapshot_fixed(PGSTAT_KIND_BGWRITER);
-	write_chunk_s(fpout, &pgStatLocal.snapshot.bgwriter);
+		Assert(info->shared_size != 0 && info->shared_data_len != 0);
 
-	/*
-	 * Write checkpointer stats struct
-	 */
-	pgstat_build_snapshot_fixed(PGSTAT_KIND_CHECKPOINTER);
-	write_chunk_s(fpout, &pgStatLocal.snapshot.checkpointer);
+		/* If no snapshot data is available, just write down zeros */
+		if (fixed_data)
+			ptr = fixed_data + pgStatLocal.snapshot.fixed_data_offsets[kind];
+		else
+			ptr = palloc0(info->shared_data_len * sizeof(char));
 
-	/*
-	 * Write IO stats struct
-	 */
-	pgstat_build_snapshot_fixed(PGSTAT_KIND_IO);
-	write_chunk_s(fpout, &pgStatLocal.snapshot.io);
+		/* Fixed-numbered entry */
+		fputc('F', fpout);
+		write_chunk_s(fpout, &kind);
+		write_chunk(fpout, ptr, info->shared_data_len);
 
-	/*
-	 * Write SLRU stats struct
-	 */
-	pgstat_build_snapshot_fixed(PGSTAT_KIND_SLRU);
-	write_chunk_s(fpout, &pgStatLocal.snapshot.slru);
-
-	/*
-	 * Write WAL stats struct
-	 */
-	pgstat_build_snapshot_fixed(PGSTAT_KIND_WAL);
-	write_chunk_s(fpout, &pgStatLocal.snapshot.wal);
+		if (!fixed_data)
+			pfree(ptr);
+	}
 
 	/*
 	 * Walk through the stats entries
@@ -1509,7 +1552,6 @@ pgstat_read_statsfile(void)
 	int32		format_id;
 	bool		found;
 	const char *statfile = PGSTAT_STAT_PERMANENT_FILENAME;
-	PgStat_ShmemControl *shmem = pgStatLocal.shmem;
 
 	/* shouldn't be called from postmaster */
 	Assert(IsUnderPostmaster || !IsPostmasterEnvironment);
@@ -1543,22 +1585,6 @@ pgstat_read_statsfile(void)
 		format_id != PGSTAT_FILE_FORMAT_ID)
 		goto error;
 
-	/* Read various stats structs with fixed number of objects */
-	for (int kind = PGSTAT_KIND_FIRST_VALID; kind <= PGSTAT_KIND_LAST; kind++)
-	{
-		char	   *ptr;
-		const PgStat_KindInfo *info = pgstat_get_kind_info(kind);
-
-		if (!info->fixed_amount)
-			continue;
-
-		Assert(info->shared_ctl_off != 0);
-
-		ptr = ((char *) shmem) + info->shared_ctl_off + info->shared_data_off;
-		if (!read_chunk(fpin, ptr, info->shared_data_len))
-			goto error;
-	}
-
 	/*
 	 * We found an existing statistics file. Read it and put all the hash
 	 * table entries into place.
@@ -1569,6 +1595,28 @@ pgstat_read_statsfile(void)
 
 		switch (t)
 		{
+			case 'F':
+				{
+					PgStat_Kind		kind;
+					const PgStat_KindInfo *info;
+
+					if (!read_chunk_s(fpin, &kind))
+						goto error;
+
+					if (!pgstat_is_kind_valid(kind))
+						goto error;
+
+					info = pgstat_get_kind_info(kind);
+					Assert(info->fixed_amount);
+
+					/* Load back into shared memory */
+					if (!read_chunk(fpin,
+									pgstat_fetch_fixed(kind),
+									info->shared_data_len))
+						goto error;
+
+					break;
+				}
 			case 'S':
 			case 'N':
 				{

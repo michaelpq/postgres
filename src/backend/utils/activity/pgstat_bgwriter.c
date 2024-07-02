@@ -29,7 +29,7 @@ PgStat_BgWriterStats PendingBgWriterStats = {0};
 void
 pgstat_report_bgwriter(void)
 {
-	PgStatShared_BgWriter *stats_shmem = &pgStatLocal.shmem->bgwriter;
+	PgStatShared_BgWriter *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_BGWRITER);
 	static const PgStat_BgWriterStats all_zeroes;
 
 	Assert(!pgStatLocal.shmem->is_shutdown);
@@ -70,15 +70,21 @@ pgstat_report_bgwriter(void)
 PgStat_BgWriterStats *
 pgstat_fetch_stat_bgwriter(void)
 {
-	pgstat_snapshot_fixed(PGSTAT_KIND_BGWRITER);
+	return (PgStat_BgWriterStats *) pgstat_snapshot_fixed(PGSTAT_KIND_BGWRITER);
+}
 
-	return &pgStatLocal.snapshot.bgwriter;
+void
+pgstat_bgwriter_init_shmem_cb(void)
+{
+	PgStatShared_BgWriter *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_BGWRITER);
+
+	LWLockInitialize(&stats_shmem->lock, LWTRANCHE_PGSTATS_DATA);
 }
 
 void
 pgstat_bgwriter_reset_all_cb(TimestampTz ts)
 {
-	PgStatShared_BgWriter *stats_shmem = &pgStatLocal.shmem->bgwriter;
+	PgStatShared_BgWriter *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_BGWRITER);
 
 	/* see explanation above PgStatShared_BgWriter for the reset protocol */
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
@@ -93,11 +99,12 @@ pgstat_bgwriter_reset_all_cb(TimestampTz ts)
 void
 pgstat_bgwriter_snapshot_cb(void)
 {
-	PgStatShared_BgWriter *stats_shmem = &pgStatLocal.shmem->bgwriter;
+	PgStatShared_BgWriter *stats_shmem = pgstat_fetch_fixed(PGSTAT_KIND_BGWRITER);
+	PgStat_BgWriterStats *stat_snap = pgstat_snapshot_fetch_fixed(PGSTAT_KIND_BGWRITER);
 	PgStat_BgWriterStats *reset_offset = &stats_shmem->reset_offset;
 	PgStat_BgWriterStats reset;
 
-	pgstat_copy_changecounted_stats(&pgStatLocal.snapshot.bgwriter,
+	pgstat_copy_changecounted_stats(stat_snap,
 									&stats_shmem->stats,
 									sizeof(stats_shmem->stats),
 									&stats_shmem->changecount);
@@ -107,7 +114,7 @@ pgstat_bgwriter_snapshot_cb(void)
 	LWLockRelease(&stats_shmem->lock);
 
 	/* compensate by reset offsets */
-#define BGWRITER_COMP(fld) pgStatLocal.snapshot.bgwriter.fld -= reset.fld;
+#define BGWRITER_COMP(fld) stat_snap->fld -= reset.fld;
 	BGWRITER_COMP(buf_written_clean);
 	BGWRITER_COMP(maxwritten_clean);
 	BGWRITER_COMP(buf_alloc);
