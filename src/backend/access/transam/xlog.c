@@ -5402,7 +5402,6 @@ StartupXLOG(void)
 	XLogCtlInsert *Insert;
 	CheckPoint	checkPoint;
 	bool		wasShutdown;
-	bool		didCrash;
 	bool		haveTblspcMap;
 	bool		haveBackupLabel;
 	XLogRecPtr	EndOfLog;
@@ -5522,10 +5521,7 @@ StartupXLOG(void)
 	{
 		RemoveTempXlogFiles();
 		SyncDataDirectory();
-		didCrash = true;
 	}
-	else
-		didCrash = false;
 
 	/*
 	 * Prepare for WAL recovery if needed.
@@ -5646,14 +5642,8 @@ StartupXLOG(void)
 	 *
 	 * NB: Restoring replication slot stats relies on slot state to have
 	 * already been restored from disk.
-	 *
-	 * TODO: With a bit of extra work we could just start with a pgstat file
-	 * associated with the checkpoint redo location we're starting from.
 	 */
-	if (didCrash)
-		pgstat_discard_stats();
-	else
-		pgstat_restore_stats(checkPoint.redo);
+	pgstat_restore_stats(checkPoint.redo);
 
 	lastFullPageWrites = checkPoint.fullPageWrites;
 
@@ -7252,6 +7242,15 @@ CreateCheckPoint(int flags)
 	END_CRIT_SECTION();
 
 	/*
+	 * The control file update is done, hence it is time to write some fresh
+	 * statistics.  Stats are flushed at shutdown by the checkpointer in a
+	 * dedicated before_shmem_exit callback, combined with sanity checks
+	 * related to the shutdown of pgstats.
+	 */
+	if (!shutdown)
+		pgstat_flush_stats(RedoRecPtr);
+
+	/*
 	 * WAL summaries end when the next XLOG_CHECKPOINT_REDO or
 	 * XLOG_CHECKPOINT_SHUTDOWN record is reached. This is the first point
 	 * where (a) we're not inside of a critical section and (b) we can be
@@ -7719,6 +7718,15 @@ CreateRestartPoint(int flags)
 		UpdateControlFile();
 	}
 	LWLockRelease(ControlFileLock);
+
+	/*
+	 * The control file update is done, hence it is time to write some fresh
+	 * statistics.  Stats are flushed at shutdown by the checkpointer in a
+	 * dedicated before_shmem_exit callback, combined with sanity checks
+	 * related to the shutdown of pgstats.
+	 */
+	if ((flags & CHECKPOINT_IS_SHUTDOWN) == 0)
+		pgstat_flush_stats(RedoRecPtr);
 
 	/*
 	 * Update the average distance between checkpoints/restartpoints if the
