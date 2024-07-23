@@ -344,7 +344,7 @@ static SlruCtlData SerialSlruCtlData;
 
 typedef struct SerialControlData
 {
-	int			headPage;		/* newest initialized page */
+	int64		headPage;		/* newest initialized page */
 	TransactionId headXid;		/* newest valid Xid in the SLRU */
 	TransactionId tailXid;		/* oldest xmin we might be interested in */
 }			SerialControlData;
@@ -906,7 +906,7 @@ SerialAdd(TransactionId xid, SerCommitSeqNo minConflictCommitSeqNo)
 		|| TransactionIdFollows(xid, serialControl->headXid))
 		serialControl->headXid = xid;
 	if (isNewPage)
-		serialControl->headPage = targetPage;
+		serialControl->headPage = targetPage; //issue here?
 
 	if (isNewPage)
 	{
@@ -1035,7 +1035,7 @@ SerialSetActiveSerXmin(TransactionId xid)
 void
 CheckPointPredicate(void)
 {
-	int			truncateCutoffPage;
+	int64		truncateCutoffPage;
 
 	LWLockAcquire(SerialControlLock, LW_EXCLUSIVE);
 
@@ -1048,7 +1048,7 @@ CheckPointPredicate(void)
 
 	if (TransactionIdIsValid(serialControl->tailXid))
 	{
-		int			tailPage;
+		int64		tailPage;
 
 		tailPage = SerialPage(serialControl->tailXid);
 
