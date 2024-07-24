@@ -1274,33 +1274,28 @@ sendquery_cleanup:
 		pset.gsavepopt = NULL;
 	}
 
-	/* clean up after \bind or \bindx */
-	if (pset.bind_flag)
+	/* clean up after extended protocol queries */
+	switch (pset.send_mode)
 	{
-		for (i = 0; i < pset.bind_nparams; i++)
-			free(pset.bind_params[i]);
-		free(pset.bind_params);
-		free(pset.stmtName);
-		pset.bind_params = NULL;
-		pset.stmtName = NULL;
-		pset.bind_flag = false;
+		case PSQL_SEND_EXTENDED_CLOSE:	/* \close */
+			free(pset.stmtName);
+			break;
+		case PSQL_SEND_EXTENDED_PARSE:	/* \parse */
+			free(pset.stmtName);
+			break;
+		case PSQL_SEND_EXTENDED_QUERY_PARAMS:	/* \bind */
+		case PSQL_SEND_EXTENDED_QUERY_PREPARED:	/* \bindx */
+			for (i = 0; i < pset.bind_nparams; i++)
+				free(pset.bind_params[i]);
+			free(pset.bind_params);
+			free(pset.stmtName);
+			pset.bind_params = NULL;
+			break;
+		case PSQL_SEND_QUERY:
+			break;
 	}
-
-	/* clean up after \parse */
-	if (pset.parse_flag)
-	{
-		free(pset.stmtName);
-		pset.stmtName = NULL;
-		pset.parse_flag = false;
-	}
-
-	/* clean up after \close */
-	if (pset.close_flag)
-	{
-		free(pset.stmtName);
-		pset.stmtName = NULL;
-		pset.close_flag = false;
-	}
+	pset.stmtName = NULL;
+	pset.send_mode = PSQL_SEND_QUERY;
 
 	/* reset \gset trigger */
 	if (pset.gset_prefix)
@@ -1487,22 +1482,32 @@ ExecQueryAndProcessResults(const char *query,
 	else
 		INSTR_TIME_SET_ZERO(before);
 
-	if (pset.bind_flag && pset.stmtName == NULL)	/* \bind */
-		success = PQsendQueryParams(pset.db, query,
-									pset.bind_nparams, NULL,
-									(const char *const *) pset.bind_params,
-									NULL, NULL, 0);
-	else if (pset.bind_flag && pset.stmtName != NULL)	/* \bindx */
-		success = PQsendQueryPrepared(pset.db, pset.stmtName,
-									  pset.bind_nparams,
-									  (const char *const *) pset.bind_params,
-									  NULL, NULL, 0);
-	else if (pset.close_flag)	/* \close */
-		success = PQsendClosePrepared(pset.db, pset.stmtName);
-	else if (pset.parse_flag)	/* \parse */
-		success = PQsendPrepare(pset.db, pset.stmtName, query, 0, NULL);
-	else
-		success = PQsendQuery(pset.db, query);
+	switch (pset.send_mode)
+	{
+		case PSQL_SEND_EXTENDED_CLOSE:
+			success = PQsendClosePrepared(pset.db, pset.stmtName);
+			break;
+		case PSQL_SEND_EXTENDED_PARSE:
+			success = PQsendPrepare(pset.db, pset.stmtName, query, 0, NULL);
+			break;
+		case PSQL_SEND_EXTENDED_QUERY_PARAMS:
+			Assert(pset.stmtName == NULL);
+			success = PQsendQueryParams(pset.db, query,
+										pset.bind_nparams, NULL,
+										(const char *const *) pset.bind_params,
+										NULL, NULL, 0);
+			break;
+		case PSQL_SEND_EXTENDED_QUERY_PREPARED:
+			Assert(pset.stmtName != NULL);
+			success = PQsendQueryPrepared(pset.db, pset.stmtName,
+										  pset.bind_nparams,
+										  (const char *const *) pset.bind_params,
+										  NULL, NULL, 0);
+			break;
+		case PSQL_SEND_QUERY:
+			success = PQsendQuery(pset.db, query);
+			break;
+	}
 
 	if (!success)
 	{
