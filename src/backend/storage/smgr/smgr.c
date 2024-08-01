@@ -482,13 +482,11 @@ smgrdounlinkall(SMgrRelation *rels, int nrels, bool isRedo)
 	for (i = 0; i < nrels; i++)
 	{
 		RelFileLocatorBackend rlocator = rels[i]->smgr_rlocator;
-		int			which = rels[i]->smgr_which;
 
 		rlocators[i] = rlocator;
 
 		/* Close the forks at smgr level */
-		for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
-			smgrsw[which].smgr_close(rels[i], forknum);
+		smgrclose(rels[i]);
 	}
 
 	/*
