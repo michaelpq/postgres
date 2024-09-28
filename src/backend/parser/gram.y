@@ -151,6 +151,14 @@ typedef struct KeyActions
 	KeyAction *deleteAction;
 } KeyActions;
 
+/* Private struct for the result of cast error behavior production */
+typedef struct CastErrorBehavior
+{
+	CastErrorBehaviorType	action;			/* Action to take on conversion error */
+	Node				   *defaultExpr;	/* if errorBehavior is expression, else NULL */
+} CastErrorBehavior;
+
+
 /* ConstraintAttributeSpec yields an integer bitmask of these flags: */
 #define CAS_NOT_DEFERRABLE			0x01
 #define CAS_DEFERRABLE				0x02
@@ -169,7 +177,11 @@ static RawStmt *makeRawStmt(Node *stmt, int stmt_location);
 static void updateRawStmtEnd(RawStmt *rs, int end_location);
 static Node *makeColumnRef(char *colname, List *indirection,
 						   int location, core_yyscan_t yyscanner);
-static Node *makeTypeCast(Node *arg, TypeName *typename, int location);
+static Node *makeTypeCast(Node *arg, TypeName *typename,
+						  char *format, CastErrorBehavior *errorBehavior,
+						  int location);
+static Node *makeCastableExpr(Node *arg, TypeName *typename,
+							  char *castFormat, int location);
 static Node *makeStringConstCast(char *str, int location, TypeName *typename);
 static Node *makeIntConst(int val, int location);
 static Node *makeFloatConst(char *str, int location);
@@ -676,6 +688,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <boolean>	json_key_uniqueness_constraint_opt
 				json_object_constructor_null_clause_opt
 				json_array_constructor_null_clause_opt
+%type <str>		cast_format
+
+%type <node>	on_conversion_error
+%type <node>	cast_error_behavior
 
 
 /*
@@ -710,7 +726,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	BACKWARD BEFORE BEGIN_P BETWEEN BIGINT BINARY BIT
 	BOOLEAN_P BOTH BREADTH BY
 
-	CACHE CALL CALLED CASCADE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
+	CACHE CALL CALLED CASCADE CASTABLE CASCADED CASE CAST CATALOG_P CHAIN CHAR_P
 	CHARACTER CHARACTERISTICS CHECK CHECKPOINT CLASS CLOSE
 	CLUSTER COALESCE COLLATE COLLATION COLUMN COLUMNS COMMENT COMMENTS COMMIT
 	COMMITTED COMPRESSION CONCURRENTLY CONDITIONAL CONFIGURATION CONFLICT
@@ -14782,7 +14798,7 @@ JsonType:
  */
 a_expr:		c_expr									{ $$ = $1; }
 			| a_expr TYPECAST Typename
-					{ $$ = makeTypeCast($1, $3, @2); }
+					{ $$ = makeTypeCast($1, $3, NULL, NULL, @2); }
 			| a_expr COLLATE any_name
 				{
 					CollateClause *n = makeNode(CollateClause);
@@ -15076,6 +15092,16 @@ a_expr:		c_expr									{ $$ = $1; }
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_NOT_DISTINCT, "=", $1, $6, @2);
 				}
+				/*
+			| a_expr IS CASTABLE AS Typename cast_format
+				{
+					$$ = (Node *) makeCastableExpr($1, $5, $6, true);
+				}
+			| a_expr IS NOT CASTABLE AS Typename cast_format
+				{
+					$$ = (Node *) makeCastableExpr($1, $5, $6, false);
+				}
+				*/
 			| a_expr BETWEEN opt_asymmetric b_expr AND a_expr		%prec BETWEEN
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_BETWEEN,
@@ -15293,7 +15319,7 @@ a_expr:		c_expr									{ $$ = $1; }
 b_expr:		c_expr
 				{ $$ = $1; }
 			| b_expr TYPECAST Typename
-				{ $$ = makeTypeCast($1, $3, @2); }
+				{ $$ = makeTypeCast($1, $3, NULL, NULL, @2); }
 			| '+' b_expr					%prec UMINUS
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "+", NULL, $2, @1); }
 			| '-' b_expr					%prec UMINUS
@@ -15721,8 +15747,12 @@ func_expr_common_subexpr:
 				{
 					$$ = makeSQLValueFunction(SVFOP_CURRENT_SCHEMA, -1, @1);
 				}
-			| CAST '(' a_expr AS Typename ')'
-				{ $$ = makeTypeCast($3, $5, @1); }
+			| CAST '(' a_expr AS Typename cast_format on_conversion_error ')'
+				{
+					$$ = makeTypeCast($3, $5, $6,
+									  (CastErrorBehavior *) $7,
+									  @1);
+				}
 			| EXTRACT '(' extract_list ')'
 				{
 					$$ = (Node *) makeFuncCall(SystemFuncName("extract"),
@@ -16702,7 +16732,8 @@ substr_list:
 					 */
 					$$ = list_make3($1, makeIntConst(1, -1),
 									makeTypeCast($3,
-												 SystemTypeName("int4"), -1));
+												 SystemTypeName("int4"),
+												 NULL, NULL, -1));
 				}
 			| a_expr SIMILAR a_expr ESCAPE a_expr
 				{
@@ -18112,6 +18143,7 @@ bare_label_keyword:
 			| CASCADED
 			| CASE
 			| CAST
+			| CASTABLE
 			| CATALOG_P
 			| CHAIN
 			| CHARACTERISTICS
@@ -18521,6 +18553,47 @@ bare_label_keyword:
 			| ZONE
 		;
 
+/*
+ * CAST / CASTABLE support
+ */
+cast_format:
+			FORMAT_LA Sconst { $$ = $2; }
+			| /* EMPTY */ { $$ = NULL; }
+		;
+
+cast_error_behavior:
+			ERROR_P
+			{
+				CastErrorBehavior  *n = (CastErrorBehavior *) palloc(sizeof(CastErrorBehavior));
+
+				n->action = CAST_ERROR_ERROR;
+				n->defaultExpr = NULL;
+				$$ = (Node *) n;
+			}
+			| NULL_P
+			{
+				CastErrorBehavior  *n = palloc(sizeof(CastErrorBehavior));
+
+				n->action = CAST_ERROR_NULL;
+				n->defaultExpr = NULL;
+				$$ = (Node *) n;
+			}
+			| DEFAULT a_expr
+			{
+				CastErrorBehavior  *n = palloc(sizeof(CastErrorBehavior));
+
+				n->action = CAST_ERROR_DEFAULT_EXPR;
+				n->defaultExpr = $2;
+				$$ = (Node *) n;
+			}
+			| /* EMPTY */ { $$ = NULL; }
+		;
+
+on_conversion_error:
+			cast_error_behavior ON CONVERSION_P ERROR_P { $$ = $1; }
+			| /* EMPTY */ { $$ = NULL; }
+		;
+
 %%
 
 /*
@@ -18614,12 +18687,37 @@ makeColumnRef(char *colname, List *indirection,
 }
 
 static Node *
-makeTypeCast(Node *arg, TypeName *typename, int location)
+makeTypeCast(Node *arg, TypeName *typename, char *castFormat,
+			 CastErrorBehavior *errorBehavior, int location)
 {
 	TypeCast   *n = makeNode(TypeCast);
 
 	n->arg = arg;
 	n->typeName = typename;
+	n->castFormat = castFormat;
+	if (errorBehavior == NULL)
+	{
+		n->errorAction = CAST_ERROR_ERROR;
+		n->defaultExpr = NULL;
+	}
+	else
+	{
+		n->errorAction = errorBehavior->action;
+		n->defaultExpr = errorBehavior->defaultExpr;
+	}
+	n->location = location;
+	return (Node *) n;
+}
+
+static Node *
+makeCastableExpr(Node *arg, TypeName *typename, char *castFormat,
+				 int location)
+{
+	Castable   *n = makeNode(Castable);
+
+	n->arg = arg;
+	n->typeName = typename;
+	n->castFormat = castFormat;
 	n->location = location;
 	return (Node *) n;
 }
@@ -18629,7 +18727,7 @@ makeStringConstCast(char *str, int location, TypeName *typename)
 {
 	Node	   *s = makeStringConst(str, location);
 
-	return makeTypeCast(s, typename, -1);
+	return makeTypeCast(s, typename, NULL, NULL, -1);
 }
 
 static Node *

@@ -64,6 +64,14 @@ typedef enum SetQuantifier
 	SET_QUANTIFIER_DISTINCT,
 } SetQuantifier;
 
+/* Options for ON CONVERSION ERROR */
+typedef enum CastErrorBehaviorType
+{
+	CAST_ERROR_ERROR,
+	CAST_ERROR_NULL,
+	CAST_ERROR_DEFAULT_EXPR
+} CastErrorBehaviorType;
+
 /*
  * Grantable rights are encoded so that we can OR them together in a bitmask.
  * The present representation of AclItem limits us to 32 distinct rights,
@@ -371,11 +379,26 @@ typedef struct A_Const
  */
 typedef struct TypeCast
 {
+	NodeTag						type;
+	Node					   *arg;			/* the expression being casted */
+	TypeName				   *typeName;		/* the target type */
+	char					   *castFormat;		/* cast format, NULL if none */
+	CastErrorBehaviorType		errorAction;	/* Action to take on conversion error */
+	Node					   *defaultExpr;	/* expression if errorAction requires it, else NULL */
+	ParseLoc					location;		/* token location, or -1 if unknown */
+} TypeCast;
+
+/*
+ * Castable - a CASTABLE expression
+ */
+typedef struct Castable
+{
 	NodeTag		type;
 	Node	   *arg;			/* the expression being casted */
 	TypeName   *typeName;		/* the target type */
+	char	   *castFormat;		/* cast format string, NULL if none */
 	ParseLoc	location;		/* token location, or -1 if unknown */
-} TypeCast;
+} Castable;
 
 /*
  * CollateClause - a COLLATE expression
