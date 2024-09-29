@@ -15092,16 +15092,6 @@ a_expr:		c_expr									{ $$ = $1; }
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_NOT_DISTINCT, "=", $1, $6, @2);
 				}
-				/*
-			| a_expr IS CASTABLE AS Typename cast_format
-				{
-					$$ = (Node *) makeCastableExpr($1, $5, $6, true);
-				}
-			| a_expr IS NOT CASTABLE AS Typename cast_format
-				{
-					$$ = (Node *) makeCastableExpr($1, $5, $6, false);
-				}
-				*/
 			| a_expr BETWEEN opt_asymmetric b_expr AND a_expr		%prec BETWEEN
 				{
 					$$ = (Node *) makeSimpleA_Expr(AEXPR_BETWEEN,
@@ -15290,6 +15280,14 @@ a_expr:		c_expr									{ $$ = $1; }
 					$$ = makeNotExpr(makeJsonIsPredicate($1, $2, $5, $6, @1), @1);
 				}
 			*/
+			| a_expr IS CASTABLE AS Typename cast_format		%prec IS
+				{
+					$$ = (Node *) makeCastableExpr($1, $5, $6, true);
+				}
+			| a_expr IS NOT_LA CASTABLE AS Typename cast_format		%prec NOT_LA
+				{
+					$$ = (Node *) makeCastableExpr($1, $5, $6, false);
+				}
 			| DEFAULT
 				{
 					/*
@@ -18557,14 +18555,14 @@ bare_label_keyword:
  * CAST / CASTABLE support
  */
 cast_format:
-			FORMAT_LA Sconst { $$ = $2; }
+			FORMAT Sconst { $$ = $2; }
 			| /* EMPTY */ { $$ = NULL; }
 		;
 
 cast_error_behavior:
 			ERROR_P
 			{
-				CastErrorBehavior  *n = (CastErrorBehavior *) palloc(sizeof(CastErrorBehavior));
+				CastErrorBehavior  *n = palloc(sizeof(CastErrorBehavior));
 
 				n->action = CAST_ERROR_ERROR;
 				n->defaultExpr = NULL;
