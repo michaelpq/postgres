@@ -31,5 +31,5 @@ permutation wait1 wakeup2 detach2
 # Detach before wake.  s1 waits until wakeup, ignores the detach.
 permutation wait1 detach2 wakeup2
 
-# Detach before wait does not cause a wait.
+# Detach before wait does not cause a wait, wakeup produces an error.
 permutation detach2 wait1 wakeup2
