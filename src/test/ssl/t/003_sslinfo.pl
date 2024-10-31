@@ -191,4 +191,23 @@ foreach my $c (@cases)
 		"ssl_client_cert_present() for $c->{'opts'}");
 }
 
+# Make sure the following functions are callable and don't crash.
+# Unlike SQL tests this TAP test uses TCP connections. This makes it
+# a good place for testing named functions due to better code coverage.
+my @inet_funcs = qw(
+    inet_client_addr
+    inet_client_port
+    inet_server_addr
+    inet_server_port
+);
+
+for my $f (@inet_funcs)
+{
+	$result = $node->safe_psql(
+		"certdb",
+		"SELECT $f() IS NULL;",
+		connstr => $common_connstr);
+	is($result, 'f', "$f() returned non-NULL value");
+}
+
 done_testing();
