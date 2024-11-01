@@ -192,17 +192,62 @@ extern MemoryContext BumpContextCreate(MemoryContext parent,
 /*
  * Test if a memory region starting at "ptr" and of size "len" is full of
  * zeroes.
+ *
+ * The test is divided into four phases for efficiency:
+ *  - Initial alignment (byte per byte comparison)
+ *  - Compare 8 size_t chunks at once using bitwise OR
+ *  - Compare remaining size_t aligned chunks
+ *  - Compare remaining bytes (byte per byte comparison)
+ *
+ * Caller must ensure that "ptr" is non-null.
  */
 static inline bool
 pg_memory_is_all_zeros(const void *ptr, size_t len)
 {
-	const char *p = (const char *) ptr;
+	const unsigned char *p = (const unsigned char *) ptr;
+	const unsigned char *end = &p[len];
+	const unsigned char *aligned_end = (const unsigned char *) ((uintptr_t) end & (~(sizeof(size_t) - 1)));
 
-	for (size_t i = 0; i < len; i++)
+	/* Compare bytes, byte by byte, until the pointer "p" is aligned */
+	while (((uintptr_t) p & (sizeof(size_t) - 1)) != 0)
 	{
-		if (p[i] != 0)
+		if (p == end)
+			return true;
+
+		if (*p++ != 0)
 			return false;
 	}
+
+	/*
+	 * Compare 8 size_t chunks at once.
+	 *
+	 * The logic here is that all comparisons can be done in parallel and
+	 * combined with a single OR operation, making it a good candidate for
+	 * SIMD optimization.
+	 */
+	for (; p < aligned_end - (sizeof(size_t) * 7); p += sizeof(size_t) * 8)
+	{
+		if ((((size_t *) p)[0] != 0) | (((size_t *) p)[1] != 0) |
+			(((size_t *) p)[2] != 0) | (((size_t *) p)[3] != 0) |
+			(((size_t *) p)[4] != 0) | (((size_t *) p)[5] != 0) |
+			(((size_t *) p)[6] != 0) | (((size_t *) p)[7] != 0))
+			return false;
+	}
+
+	/* Compare remaining size_t aligned chunks */
+	for (; p < aligned_end; p += sizeof(size_t))
+	{
+		if (*(size_t *)p != 0)
+			return false;
+	}
+
+	/* Compare remaining bytes, byte by byte */
+	while (p < end)
+	{
+		if (*p++ != 0)
+			return false;
+	}
+
 	return true;
 }
 
