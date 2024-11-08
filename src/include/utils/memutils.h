@@ -212,7 +212,8 @@ pg_memory_is_all_zeros(const void *ptr, size_t len)
 {
 	const unsigned char *p = (const unsigned char *) ptr;
 	const unsigned char *end = &p[len];
-	const unsigned char *aligned_end = (const unsigned char *) ((uintptr_t) end & (~(sizeof(size_t) - 1)));
+	const unsigned char *aligned_end = (const unsigned char *)
+		((uintptr_t) end & (~(sizeof(size_t) - 1)));
 
 	/* Compare bytes until the pointer "p" is aligned */
 	while (((uintptr_t) p & (sizeof(size_t) - 1)) != 0)
