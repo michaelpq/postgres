@@ -190,16 +190,22 @@ extern MemoryContext BumpContextCreate(MemoryContext parent,
 #define SLAB_LARGE_BLOCK_SIZE		(8 * 1024 * 1024)
 
 /*
+ * pg_memory_is_all_zeros
+ *
  * Test if a memory region starting at "ptr" and of size "len" is full of
  * zeroes.
  *
- * The test is divided into four phases for efficiency:
- *  - Initial alignment (byte per byte comparison)
- *  - Compare 8 size_t chunks at once using bitwise OR
- *  - Compare remaining size_t aligned chunks
- *  - Compare remaining bytes (byte per byte comparison)
+ * The test is divided into multiple phases, to be efficient for various
+ * length values:
+ * - Byte comparison, until the pointer is aligned.
+ * - 8 * sizeof(size_t) comparisons using bitwise OR, to encourage compilers
+ *   to use SIMD intrinsics if available, up to the last aligned location
+ *   possible.
+ * - size_t comparisons, with aligned pointers, up to the last location
+ *   possible.
+ * - Byte comparison, until the end location.
  *
- * Caller must ensure that "ptr" is non-null.
+ * Caller must ensure that "ptr" is not NULL.
  */
 static inline bool
 pg_memory_is_all_zeros(const void *ptr, size_t len)
@@ -208,7 +214,7 @@ pg_memory_is_all_zeros(const void *ptr, size_t len)
 	const unsigned char *end = &p[len];
 	const unsigned char *aligned_end = (const unsigned char *) ((uintptr_t) end & (~(sizeof(size_t) - 1)));
 
-	/* Compare bytes, byte by byte, until the pointer "p" is aligned */
+	/* Compare bytes until the pointer "p" is aligned */
 	while (((uintptr_t) p & (sizeof(size_t) - 1)) != 0)
 	{
 		if (p == end)
@@ -219,11 +225,10 @@ pg_memory_is_all_zeros(const void *ptr, size_t len)
 	}
 
 	/*
-	 * Compare 8 size_t chunks at once.
+	 * Compare 8 * sizeof(size_t) chunks at once.
 	 *
-	 * The logic here is that all comparisons can be done in parallel and
-	 * combined with a single OR operation, making it a good candidate for
-	 * SIMD optimization.
+	 * All comparisons are combined with a single OR operation, making it a
+	 * good candidate for SIMD intrinsics, if available.
 	 */
 	for (; p < aligned_end - (sizeof(size_t) * 7); p += sizeof(size_t) * 8)
 	{
@@ -234,14 +239,14 @@ pg_memory_is_all_zeros(const void *ptr, size_t len)
 			return false;
 	}
 
-	/* Compare remaining size_t aligned chunks */
+	/* Compare remaining size_t-aligned chunks */
 	for (; p < aligned_end; p += sizeof(size_t))
 	{
 		if (*(size_t *) p != 0)
 			return false;
 	}
 
-	/* Compare remaining bytes, byte by byte */
+	/* Compare remaining bytes until the end */
 	while (p < end)
 	{
 		if (*p++ != 0)
