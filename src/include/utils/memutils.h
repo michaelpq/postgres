@@ -237,7 +237,7 @@ pg_memory_is_all_zeros(const void *ptr, size_t len)
 	/* Compare remaining size_t aligned chunks */
 	for (; p < aligned_end; p += sizeof(size_t))
 	{
-		if (*(size_t *)p != 0)
+		if (*(size_t *) p != 0)
 			return false;
 	}
 
