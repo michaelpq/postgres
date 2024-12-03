@@ -1481,9 +1481,13 @@ heap_create_with_catalog(const char *relname,
 		 * No need to add an explicit dependency for the toast table, as the
 		 * main table depends on it.  Partitioned tables may not have an
 		 * access method set.
+		 *
+		 * Sequences and tables are created with their access method ID
+		 * given by the caller of this function.
 		 */
 		if ((RELKIND_HAS_TABLE_AM(relkind) && relkind != RELKIND_TOASTVALUE) ||
-			(relkind == RELKIND_PARTITIONED_TABLE && OidIsValid(accessmtd)))
+			(relkind == RELKIND_PARTITIONED_TABLE && OidIsValid(accessmtd)) ||
+			RELKIND_HAS_SEQUENCE_AM(relkind))
 		{
 			ObjectAddressSet(referenced, AccessMethodRelationId, accessmtd);
 			add_exact_object_address(&referenced, addrs);
