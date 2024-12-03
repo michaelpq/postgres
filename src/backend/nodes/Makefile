@@ -48,6 +48,7 @@ node_headers = \
 	access/amapi.h \
 	access/cmptype.h \
 	access/sdir.h \
+	access/sequenceam.h \
 	access/tableam.h \
 	access/tsmapi.h \
 	commands/event_trigger.h \
