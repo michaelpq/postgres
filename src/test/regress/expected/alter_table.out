@@ -3416,10 +3416,16 @@ ALTER TABLE comment_test ALTER COLUMN positive_col SET DATA TYPE bigint;
 -- Some error cases.
 ALTER TABLE comment_test ALTER COLUMN xmin SET DATA TYPE x;
 ERROR:  cannot alter system column "xmin"
+LINE 1: ALTER TABLE comment_test ALTER COLUMN xmin SET DATA TYPE x;
+                                              ^
 ALTER TABLE comment_test ALTER COLUMN id SET DATA TYPE x;
 ERROR:  type "x" does not exist
+LINE 1: ALTER TABLE comment_test ALTER COLUMN id SET DATA TYPE x;
+                                                               ^
 ALTER TABLE comment_test ALTER COLUMN id SET DATA TYPE int COLLATE "C";
 ERROR:  collations are not supported by type integer
+LINE 1: ...LE comment_test ALTER COLUMN id SET DATA TYPE int COLLATE "C...
+                                                             ^
 -- Check that the comments are intact.
 SELECT col_description('comment_test'::regclass, 1) as comment;
            comment           
