@@ -15,8 +15,9 @@
 #ifndef INJECTION_STATS
 #define INJECTION_STATS
 
-/* GUC variable */
+/* GUC variables */
 extern bool inj_stats_enabled;
+extern bool inj_stats_wal_enabled;
 
 /* injection_stats.c */
 extern void pgstat_register_inj(void);

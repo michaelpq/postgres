@@ -104,13 +104,19 @@ extern PGDLLEXPORT void injection_wait(const char *name,
 static bool injection_point_local = false;
 
 /*
- * GUC variable
+ * GUC variables
  *
  * This GUC is useful to control if statistics should be enabled or not
  * during a test with injection points, like for example if a test relies
  * on a callback run in a critical section where no allocation should happen.
  */
 bool		inj_stats_enabled = false;
+
+/*
+ * This GUC controls if statistics of injection points should be logged
+ * into WAL or not.
+ */
+bool		inj_stats_wal_enabled = false;
 
 /* Shared memory init callbacks */
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
@@ -527,6 +533,17 @@ _PG_init(void)
 							 "Enables statistics for injection points.",
 							 NULL,
 							 &inj_stats_enabled,
+							 false,
+							 PGC_POSTMASTER,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	DefineCustomBoolVariable("injection_points.log_stats",
+							 "Enables WAL-logging for injection points statistics.",
+							 NULL,
+							 &inj_stats_wal_enabled,
 							 false,
 							 PGC_POSTMASTER,
 							 0,

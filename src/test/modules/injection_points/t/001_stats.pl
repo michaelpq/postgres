@@ -75,4 +75,26 @@ $node->stop;
 $node->adjust_conf('postgresql.conf', 'shared_preload_libraries', "''");
 $node->start;
 
+# Stop the server and enable WAL, the stats are preserved after recovery.
+$node->stop;
+$node->append_conf(
+	'postgresql.conf', qq(
+shared_preload_libraries = 'injection_points'
+injection_points.log_stats = true
+));
+$node->start;
+
+# Two calls, both WAL-logged.
+$node->safe_psql('postgres',
+	"SELECT injection_points_attach('stats-wal-notice', 'notice');");
+$node->safe_psql('postgres',
+	"SELECT injection_points_run('stats-wal-notice');");
+$node->safe_psql('postgres',
+	"SELECT injection_points_run('stats-wal-notice');");
+$node->stop('immediate');
+$node->start;
+$numcalls = $node->safe_psql('postgres',
+	"SELECT injection_points_stats_numcalls('stats-wal-notice');");
+is($numcalls, '2', 'number of stats after crash with WAL-logging enabled');
+
 done_testing();

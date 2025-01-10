@@ -21,6 +21,7 @@
 #include "pgstat.h"
 #include "utils/builtins.h"
 #include "utils/pgstat_internal.h"
+#include "utils/pgstat_xlog.h"
 
 /* Structures for statistics of injection points */
 typedef struct PgStat_StatInjEntry
@@ -34,6 +35,14 @@ typedef struct PgStatShared_InjectionPoint
 	PgStat_StatInjEntry stats;
 } PgStatShared_InjectionPoint;
 
+/* Structure for data of injection points logged in WAL */
+typedef struct PgStat_StatInjRecord
+{
+	uint64		objid;			/* hash of the point name */
+	PgStat_StatInjEntry entry;	/* stats data */
+} PgStat_StatInjRecord;
+
+static void injection_stats_redo_cb(void *data, size_t data_size);
 static bool injection_stats_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
 
 static const PgStat_KindInfo injection_stats = {
@@ -48,6 +57,7 @@ static const PgStat_KindInfo injection_stats = {
 	.shared_data_off = offsetof(PgStatShared_InjectionPoint, stats),
 	.shared_data_len = sizeof(((PgStatShared_InjectionPoint *) 0)->stats),
 	.pending_size = sizeof(PgStat_StatInjEntry),
+	.redo_cb = injection_stats_redo_cb,
 	.flush_pending_cb = injection_stats_flush_cb,
 };
 
@@ -65,6 +75,31 @@ static const PgStat_KindInfo injection_stats = {
 static bool inj_stats_loaded = false;
 
 /*
+ * REDO callback for injection point stats.
+ */
+static void
+injection_stats_redo_cb(void *data, size_t data_size)
+{
+	PgStat_StatInjRecord *record_data = (PgStat_StatInjRecord *) data;
+	PgStat_StatInjEntry record_entry = record_data->entry;
+	PgStat_StatInjEntry *stat_entry;
+	PgStatShared_InjectionPoint *shstatent;
+	PgStat_EntryRef *entry_ref;
+
+	Assert(data_size == sizeof(PgStat_StatInjRecord));
+
+	/* create or fetch existing entry */
+	entry_ref = pgstat_prep_pending_entry(PGSTAT_KIND_INJECTION, InvalidOid,
+										  record_data->objid, NULL);
+
+	shstatent = (PgStatShared_InjectionPoint *) entry_ref->shared_stats;
+	stat_entry = &shstatent->stats;
+
+	/* Update the injection point statistics, overwriting any existing data */
+	*stat_entry = record_entry;
+}
+
+/*
  * Callback for stats handling
  */
 static bool
@@ -72,6 +107,9 @@ injection_stats_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 {
 	PgStat_StatInjEntry *localent;
 	PgStatShared_InjectionPoint *shfuncent;
+	PgStat_StatInjRecord record_data;
+
+	memset(&record_data, 0, sizeof(PgStat_StatInjRecord));
 
 	localent = (PgStat_StatInjEntry *) entry_ref->pending;
 	shfuncent = (PgStatShared_InjectionPoint *) entry_ref->shared_stats;
@@ -81,8 +119,24 @@ injection_stats_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 
 	shfuncent->stats.numcalls += localent->numcalls;
 
+	record_data.objid = entry_ref->shared_entry->key.objid;
+	record_data.entry = shfuncent->stats;
+
 	pgstat_unlock_entry(entry_ref);
 
+	/*
+	 * Store the data in WAL, if not in recovery and if the option is enabled.
+	 */
+	if (!RecoveryInProgress() && inj_stats_wal_enabled)
+	{
+		XLogRecPtr	lsn;
+
+		lsn = pgstat_xlog_data(PGSTAT_KIND_INJECTION, &record_data,
+							   sizeof(PgStat_StatInjRecord));
+
+		/* Force a flush, to ensure persistency */
+		XLogFlush(lsn);
+	}
 	return true;
 }
 
