@@ -33,6 +33,7 @@ OBJS = \
 	pgstat_subscription.o \
 	pgstat_wal.o \
 	pgstat_xact.o \
+	pgstat_xlog.o \
 	wait_event.o \
 	wait_event_funcs.o
 

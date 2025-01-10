@@ -259,6 +259,14 @@ typedef struct PgStat_KindInfo
 	void		(*init_backend_cb) (void);
 
 	/*
+	 * Perform custom actions when replaying WAL related to a statistics kind.
+	 *
+	 * "data" is a pointer to the stats information that can be used by the
+	 * stats kind at redo.
+	 */
+	void		(*redo_cb) (void *data, size_t data_size);
+
+	/*
 	 * For variable-numbered stats: flush pending stats. Required if pending
 	 * data is used.  See flush_fixed_cb for fixed-numbered stats.
 	 */

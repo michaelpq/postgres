@@ -21,6 +21,7 @@ OBJS = \
 	logicalmsgdesc.o \
 	mxactdesc.o \
 	nbtdesc.o \
+	pgstatdesc.o \
 	relmapdesc.o \
 	replorigindesc.o \
 	rmgrdesc_utils.o \

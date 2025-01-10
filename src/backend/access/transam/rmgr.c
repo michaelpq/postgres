@@ -39,6 +39,7 @@
 #include "replication/message.h"
 #include "replication/origin.h"
 #include "storage/standby.h"
+#include "utils/pgstat_xlog.h"
 #include "utils/relmapper.h"
 /* IWYU pragma: end_keep */
 
