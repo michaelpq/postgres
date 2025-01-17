@@ -826,5 +826,17 @@ extern PGDLLIMPORT SessionEndType pgStatSessionEndCause;
 /* updated directly by backends and background processes */
 extern PGDLLIMPORT PgStat_PendingWalStats PendingWalStats;
 
+/*
+ * Variables in pgstat_backend.c
+ */
+
+/* updated directly by backends */
+
+/*
+ * Some pending statistics are not well suited to memory allocation and have
+ * to be outside of critical sections. For those, let's rely on this variable
+ * instead.
+ */
+extern PGDLLIMPORT PgStat_BackendPending PendingBackendStats;
 
 #endif							/* PGSTAT_H */

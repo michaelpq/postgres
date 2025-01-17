@@ -22,7 +22,10 @@
 
 #include "postgres.h"
 
+#include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
+
+PgStat_BackendPending PendingBackendStats = {0};
 
 /*
  * Returns statistics of a backend by proc number.
@@ -46,14 +49,20 @@ static void
 pgstat_flush_backend_entry_io(PgStat_EntryRef *entry_ref)
 {
 	PgStatShared_Backend *shbackendent;
-	PgStat_BackendPending *pendingent;
 	PgStat_BktypeIO *bktype_shstats;
-	PgStat_PendingIO *pending_io;
+	PgStat_PendingIO pending_io;
+
+	/*
+	 * This function can be called even if nothing at all has happened. In
+	 * this case, avoid unnecessarily modifying the stats entry.
+	 */
+	if (pg_memory_is_all_zeros(&PendingBackendStats.pending_io,
+							   sizeof(struct PgStat_PendingIO)))
+		return;
 
 	shbackendent = (PgStatShared_Backend *) entry_ref->shared_stats;
-	pendingent = (PgStat_BackendPending *) entry_ref->pending;
 	bktype_shstats = &shbackendent->stats.io_stats;
-	pending_io = &pendingent->pending_io;
+	pending_io = PendingBackendStats.pending_io;
 
 	for (int io_object = 0; io_object < IOOBJECT_NUM_TYPES; io_object++)
 	{
@@ -64,17 +73,21 @@ pgstat_flush_backend_entry_io(PgStat_EntryRef *entry_ref)
 				instr_time	time;
 
 				bktype_shstats->counts[io_object][io_context][io_op] +=
-					pending_io->counts[io_object][io_context][io_op];
+					pending_io.counts[io_object][io_context][io_op];
 				bktype_shstats->bytes[io_object][io_context][io_op] +=
-					pending_io->bytes[io_object][io_context][io_op];
-
-				time = pending_io->pending_times[io_object][io_context][io_op];
+					pending_io.bytes[io_object][io_context][io_op];
+				time = pending_io.pending_times[io_object][io_context][io_op];
 
 				bktype_shstats->times[io_object][io_context][io_op] +=
 					INSTR_TIME_GET_MICROSEC(time);
 			}
 		}
 	}
+
+	/*
+	 * Clear out the statistics buffer, so it can be re-used.
+	 */
+	MemSet(&PendingBackendStats.pending_io, 0, sizeof(PgStat_PendingIO));
 }
 
 /*

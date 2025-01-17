@@ -1369,6 +1369,7 @@ static bool
 pgstat_flush_pending_entries(bool nowait)
 {
 	bool		have_pending = false;
+	bool		backend_have_pending = false;
 	dlist_node *cur = NULL;
 
 	/*
@@ -1416,9 +1417,33 @@ pgstat_flush_pending_entries(bool nowait)
 		cur = next;
 	}
 
+	/*
+	 * There is a special case for some pending stats that are tracked in
+	 * PendingBackendStats. It's possible that those have not been flushed
+	 * above, hence the extra check here.
+	 */
+	if (!pg_memory_is_all_zeros(&PendingBackendStats,
+								sizeof(struct PgStat_BackendPending)))
+	{
+		PgStat_EntryRef *entry_ref;
+
+		entry_ref = pgstat_get_entry_ref(PGSTAT_KIND_BACKEND, InvalidOid,
+										 MyProcNumber, false, NULL);
+
+		if (entry_ref)
+		{
+			PgStat_HashKey key = entry_ref->shared_entry->key;
+			PgStat_Kind kind = key.kind;
+			const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
+
+			if (!kind_info->flush_pending_cb(entry_ref, nowait))
+				backend_have_pending = true;
+		}
+	}
+
 	Assert(dlist_is_empty(&pgStatPending) == !have_pending);
 
-	return have_pending;
+	return (have_pending || backend_have_pending);
 }
 
 
