@@ -259,8 +259,8 @@ typedef struct PgStat_KindInfo
 	void		(*init_backend_cb) (void);
 
 	/*
-	 * For variable-numbered stats: flush pending stats. Required if pending
-	 * data is used.  See flush_fixed_cb for fixed-numbered stats.
+	 * For variable-numbered stats: flush pending stats within the dshash.
+	 * Required if pending data interacts with the pgstats dshash.
 	 */
 	bool		(*flush_pending_cb) (PgStat_EntryRef *sr, bool nowait);
 
@@ -289,17 +289,19 @@ typedef struct PgStat_KindInfo
 	void		(*init_shmem_cb) (void *stats);
 
 	/*
-	 * For fixed-numbered statistics: Flush pending stats. Returns true if
-	 * some of the stats could not be flushed, due to lock contention for
-	 * example. Optional.
+	 * For fixed-numbered or variable-numbered statistics: Check for pending
+	 * stats in need of flush, when these do not use the pgstats dshash.
+	 * Returns true if there are any stats pending for flush, triggering
+	 * flush_cb. Optional.
 	 */
-	bool		(*flush_fixed_cb) (bool nowait);
+	bool		(*have_pending_cb) (void);
 
 	/*
-	 * For fixed-numbered statistics: Check for pending stats in need of
-	 * flush. Returns true if there are any stats pending for flush. Optional.
+	 * For fixed-numbered or variable-numbered statistics: Flush pending
+	 * stats. Returns true if some of the stats could not be flushed, due
+	 * to lock contention for example. Optional.
 	 */
-	bool		(*have_fixed_pending_cb) (void);
+	bool		(*flush_cb) (bool nowait);
 
 	/*
 	 * For fixed-numbered statistics: Reset All.
@@ -617,10 +619,11 @@ extern void pgstat_archiver_snapshot_cb(void);
 #define PGSTAT_BACKEND_FLUSH_IO		(1 << 0)	/* Flush I/O statistics */
 #define PGSTAT_BACKEND_FLUSH_ALL	(PGSTAT_BACKEND_FLUSH_IO)
 
-extern void pgstat_flush_backend(bool nowait, bits32 flags);
-extern PgStat_BackendPending *pgstat_prep_backend_pending(ProcNumber procnum);
-extern bool pgstat_backend_flush_cb(PgStat_EntryRef *entry_ref, bool nowait);
-extern void pgstat_backend_reset_timestamp_cb(PgStatShared_Common *header, TimestampTz ts);
+extern bool pgstat_flush_backend(bool nowait, bits32 flags);
+extern bool pgstat_backend_flush_cb(bool nowait);
+extern bool pgstat_backend_have_pending_cb(void);
+extern void pgstat_backend_reset_timestamp_cb(PgStatShared_Common *header,
+											  TimestampTz ts);
 
 /*
  * Functions in pgstat_bgwriter.c
