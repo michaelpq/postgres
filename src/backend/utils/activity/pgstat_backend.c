@@ -24,6 +24,7 @@
 
 #include "postgres.h"
 
+#include "access/xlog.h"
 #include "storage/bufmgr.h"
 #include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
@@ -43,7 +44,7 @@ void
 pgstat_count_backend_io_op_time(IOObject io_object, IOContext io_context,
 								IOOp io_op, instr_time io_time)
 {
-	Assert(track_io_timing);
+	Assert(track_io_timing || track_wal_io_timing);
 
 	if (!pgstat_tracks_backend_bktype(MyBackendType))
 		return;
@@ -236,9 +237,6 @@ pgstat_tracks_backend_bktype(BackendType bktype)
 		case B_DEAD_END_BACKEND:
 		case B_ARCHIVER:
 		case B_LOGGER:
-		case B_WAL_RECEIVER:
-		case B_WAL_WRITER:
-		case B_WAL_SUMMARIZER:
 		case B_BG_WRITER:
 		case B_CHECKPOINTER:
 		case B_STARTUP:
@@ -249,7 +247,10 @@ pgstat_tracks_backend_bktype(BackendType bktype)
 		case B_BG_WORKER:
 		case B_STANDALONE_BACKEND:
 		case B_SLOTSYNC_WORKER:
+		case B_WAL_RECEIVER:
 		case B_WAL_SENDER:
+		case B_WAL_SUMMARIZER:
+		case B_WAL_WRITER:
 			return true;
 	}
 
