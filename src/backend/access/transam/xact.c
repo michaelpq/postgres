@@ -2512,7 +2512,7 @@ static void
 PrepareTransaction(void)
 {
 	TransactionState s = CurrentTransactionState;
-	TransactionId xid = GetCurrentTransactionId();
+	FullTransactionId fxid = GetCurrentFullTransactionId();
 	GlobalTransaction gxact;
 	TimestampTz prepared_at;
 
@@ -2641,7 +2641,7 @@ PrepareTransaction(void)
 	 * Reserve the GID for this transaction. This could fail if the requested
 	 * GID is invalid or already in use.
 	 */
-	gxact = MarkAsPreparing(xid, prepareGID, prepared_at,
+	gxact = MarkAsPreparing(fxid, prepareGID, prepared_at,
 							GetUserId(), MyDatabaseId);
 	prepareGID = NULL;
 
@@ -2691,7 +2691,7 @@ PrepareTransaction(void)
 	 * ProcArrayClearTransaction().  Otherwise, a GetLockConflicts() would
 	 * conclude "xact already committed or aborted" for our locks.
 	 */
-	PostPrepare_Locks(xid);
+	PostPrepare_Locks(fxid);
 
 	/*
 	 * Let others know about no transaction in progress by me.  This has to be
@@ -2733,9 +2733,9 @@ PrepareTransaction(void)
 
 	PostPrepare_smgr();
 
-	PostPrepare_MultiXact(xid);
+	PostPrepare_MultiXact(fxid);
 
-	PostPrepare_PredicateLocks(xid);
+	PostPrepare_PredicateLocks(fxid);
 
 	ResourceOwnerRelease(TopTransactionResourceOwner,
 						 RESOURCE_RELEASE_LOCKS,
@@ -6408,7 +6408,8 @@ xact_redo(XLogReaderState *record)
 		 * gxact entry.
 		 */
 		LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
-		PrepareRedoAdd(XLogRecGetData(record),
+		PrepareRedoAdd(InvalidFullTransactionId,
+					   XLogRecGetData(record),
 					   record->ReadRecPtr,
 					   record->EndRecPtr,
 					   XLogRecGetOrigin(record));
