@@ -1894,13 +1894,16 @@ CheckPointTwoPhase(XLogRecPtr redo_horizon)
  * Scan pg_twophase and fill TwoPhaseState depending on the on-disk data.
  * This is called once at the beginning of recovery, saving any extra
  * lookups in the future.  Two-phase files that are newer than the
- * minimum XID horizon are discarded on the way.
+ * minimum XID horizon are discarded on the way, as much as files that
+ * are older than the oldest XID horizon.
  */
 void
 restoreTwoPhaseData(void)
 {
 	DIR		   *cldir;
 	struct dirent *clde;
+	FullTransactionId nextXid = TransamVariables->nextXid;
+	FullTransactionId oldestXid = AdjustToFullTransactionId(TransamVariables->oldestXid);
 
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 	cldir = AllocateDir(TWOPHASE_DIR);
@@ -1914,10 +1917,26 @@ restoreTwoPhaseData(void)
 
 			fxid = FullTransactionIdFromU64(strtou64(clde->d_name, NULL, 16));
 
+			/* Reject XID if too new or too old */
+			if (FullTransactionIdFollowsOrEquals(fxid, nextXid) ||
+				FullTransactionIdPrecedes(fxid, oldestXid))
+			{
+				if (FullTransactionIdFollowsOrEquals(fxid, nextXid))
+					ereport(WARNING,
+							(errmsg("removing future two-phase state file for transaction %u of epoch %u",
+									XidFromFullTransactionId(fxid),
+									EpochFromFullTransactionId(fxid))));
+				else
+					ereport(WARNING,
+							(errmsg("removing past two-phase state file for transaction %u of epoch %u",
+									XidFromFullTransactionId(fxid),
+									EpochFromFullTransactionId(fxid))));
+				RemoveTwoPhaseFile(fxid, true);
+				continue;
+			}
+
 			buf = ProcessTwoPhaseBuffer(fxid, InvalidXLogRecPtr,
 										true, false, false);
-			if (buf == NULL)
-				continue;
 
 			PrepareRedoAdd(fxid, buf, InvalidXLogRecPtr,
 						   InvalidXLogRecPtr, InvalidRepOriginId);
@@ -1982,9 +2001,6 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 		buf = ProcessTwoPhaseBuffer(gxact->fxid,
 									gxact->prepare_start_lsn,
 									gxact->ondisk, false, true);
-
-		if (buf == NULL)
-			continue;
 
 		/*
 		 * OK, we think this file is valid.  Incorporate xid into the
@@ -2053,8 +2069,7 @@ StandbyRecoverPreparedTransactions(void)
 		buf = ProcessTwoPhaseBuffer(gxact->fxid,
 									gxact->prepare_start_lsn,
 									gxact->ondisk, true, false);
-		if (buf != NULL)
-			pfree(buf);
+		pfree(buf);
 	}
 	LWLockRelease(TwoPhaseStateLock);
 }
@@ -2079,8 +2094,21 @@ void
 RecoverPreparedTransactions(void)
 {
 	int			i;
+	FullTransactionId *remove_fxids;
+	int			remove_fxids_cnt;
 
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
+	/*
+	 * Track XIDs candidate for removal if found as already committed or
+	 * aborted, once the first scan through TwoPhaseState is done.  This
+	 * cannot happen while going through the entries in TwoPhaseState as
+	 * PrepareRedoRemove() manipulates it.
+	 */
+	remove_fxids_cnt = 0;
+	remove_fxids = (FullTransactionId *) palloc(TwoPhaseState->numPrepXacts *
+												sizeof(FullTransactionId));
+
 	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
 		char	   *buf;
@@ -2090,6 +2118,27 @@ RecoverPreparedTransactions(void)
 		TwoPhaseFileHeader *hdr;
 		TransactionId *subxids;
 		const char *gid;
+
+		/*
+		 * Is this transaction already aborted or committed?  If yes, mark it
+		 * for removal.
+		 *
+		 * Checking CLOGs if these transactions have been already aborted or
+		 * committed is safe at this stage; we are at the end of recovery and
+		 * all WAL has been replayed, all 2PC transactions are reinstated and
+		 * should be tracked in TwoPhaseState.
+		 */
+		if (TransactionIdDidCommit(XidFromFullTransactionId(fxid)) ||
+			TransactionIdDidAbort(XidFromFullTransactionId(fxid)))
+		{
+			/*
+			 * Track this transaction ID for its removal from the shared
+			 * memory state at the end.
+			 */
+			remove_fxids[remove_fxids_cnt] = fxid;
+			remove_fxids_cnt++;
+			continue;
+		}
 
 		/*
 		 * Reconstruct subtrans state for the transaction --- needed because
@@ -2103,8 +2152,6 @@ RecoverPreparedTransactions(void)
 		buf = ProcessTwoPhaseBuffer(gxact->fxid,
 									gxact->prepare_start_lsn,
 									gxact->ondisk, true, false);
-		if (buf == NULL)
-			continue;
 
 		ereport(LOG,
 				(errmsg("recovering prepared transaction %u of epoch %u from shared memory",
@@ -2165,6 +2212,18 @@ RecoverPreparedTransactions(void)
 		LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 	}
 
+	for (i = 0; i < remove_fxids_cnt; i++)
+	{
+		FullTransactionId fxid = remove_fxids[i];
+
+		ereport(WARNING,
+				(errmsg("removing stale two-phase state from memory for transaction %u of epoch %u",
+						XidFromFullTransactionId(fxid),
+						EpochFromFullTransactionId(fxid))));
+
+		PrepareRedoRemoveFull(fxid, true);
+	}
+
 	LWLockRelease(TwoPhaseStateLock);
 }
 
@@ -2185,7 +2244,6 @@ ProcessTwoPhaseBuffer(FullTransactionId fxid,
 					  bool fromdisk,
 					  bool setParent, bool setNextXid)
 {
-	FullTransactionId nextXid = TransamVariables->nextXid;
 	TransactionId *subxids;
 	char	   *buf;
 	TwoPhaseFileHeader *hdr;
@@ -2195,51 +2253,6 @@ ProcessTwoPhaseBuffer(FullTransactionId fxid,
 
 	if (!fromdisk)
 		Assert(prepare_start_lsn != InvalidXLogRecPtr);
-
-	/* Already processed? */
-	if (TransactionIdDidCommit(XidFromFullTransactionId(fxid)) ||
-		TransactionIdDidAbort(XidFromFullTransactionId(fxid)))
-	{
-		if (fromdisk)
-		{
-			ereport(WARNING,
-					(errmsg("removing stale two-phase state file for transaction %u of epoch %u",
-							XidFromFullTransactionId(fxid),
-							EpochFromFullTransactionId(fxid))));
-			RemoveTwoPhaseFile(fxid, true);
-		}
-		else
-		{
-			ereport(WARNING,
-					(errmsg("removing stale two-phase state from memory for transaction %u of epoch %u",
-							XidFromFullTransactionId(fxid),
-							EpochFromFullTransactionId(fxid))));
-			PrepareRedoRemoveFull(fxid, true);
-		}
-		return NULL;
-	}
-
-	/* Reject XID if too new */
-	if (FullTransactionIdFollowsOrEquals(fxid, nextXid))
-	{
-		if (fromdisk)
-		{
-			ereport(WARNING,
-					(errmsg("removing future two-phase state file for transaction %u of epoch %u",
-							XidFromFullTransactionId(fxid),
-							EpochFromFullTransactionId(fxid))));
-			RemoveTwoPhaseFile(fxid, true);
-		}
-		else
-		{
-			ereport(WARNING,
-					(errmsg("removing future two-phase state from memory for transaction %u of epoch %u",
-							XidFromFullTransactionId(fxid),
-							EpochFromFullTransactionId(fxid))));
-			PrepareRedoRemoveFull(fxid, true);
-		}
-		return NULL;
-	}
 
 	if (fromdisk)
 	{
