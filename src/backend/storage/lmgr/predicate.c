@@ -191,7 +191,7 @@
  *		AtPrepare_PredicateLocks(void);
  *		PostPrepare_PredicateLocks(TransactionId xid);
  *		PredicateLockTwoPhaseFinish(TransactionId xid, bool isCommit);
- *		predicatelock_twophase_recover(TransactionId xid, uint16 info,
+ *		predicatelock_twophase_recover(FullTransactionId fxid, uint16 info,
  *									   void *recdata, uint32 len);
  */
 
@@ -4846,7 +4846,7 @@ AtPrepare_PredicateLocks(void)
  *		anyway. We only need to clean up our local state.
  */
 void
-PostPrepare_PredicateLocks(TransactionId xid)
+PostPrepare_PredicateLocks(FullTransactionId fxid)
 {
 	if (MySerializableXact == InvalidSerializableXact)
 		return;
@@ -4869,12 +4869,12 @@ PostPrepare_PredicateLocks(TransactionId xid)
  *		commits or aborts.
  */
 void
-PredicateLockTwoPhaseFinish(TransactionId xid, bool isCommit)
+PredicateLockTwoPhaseFinish(FullTransactionId fxid, bool isCommit)
 {
 	SERIALIZABLEXID *sxid;
 	SERIALIZABLEXIDTAG sxidtag;
 
-	sxidtag.xid = xid;
+	sxidtag.xid = XidFromFullTransactionId(fxid);
 
 	LWLockAcquire(SerializableXactHashLock, LW_SHARED);
 	sxid = (SERIALIZABLEXID *)
@@ -4896,10 +4896,11 @@ PredicateLockTwoPhaseFinish(TransactionId xid, bool isCommit)
  * Re-acquire a predicate lock belonging to a transaction that was prepared.
  */
 void
-predicatelock_twophase_recover(TransactionId xid, uint16 info,
+predicatelock_twophase_recover(FullTransactionId fxid, uint16 info,
 							   void *recdata, uint32 len)
 {
 	TwoPhasePredicateRecord *record;
+	TransactionId xid = XidFromFullTransactionId(fxid);
 
 	Assert(len == sizeof(TwoPhasePredicateRecord));
 

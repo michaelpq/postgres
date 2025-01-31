@@ -11,6 +11,7 @@
 #ifndef PGSTAT_H
 #define PGSTAT_H
 
+#include "access/transam.h"
 #include "datatype/timestamp.h"
 #include "portability/instr_time.h"
 #include "postmaster/pgarch.h"	/* for MAX_XFN_CHARS */
@@ -649,9 +650,9 @@ extern void pgstat_count_heap_delete(Relation rel);
 extern void pgstat_count_truncate(Relation rel);
 extern void pgstat_update_heap_dead_tuples(Relation rel, int delta);
 
-extern void pgstat_twophase_postcommit(TransactionId xid, uint16 info,
+extern void pgstat_twophase_postcommit(FullTransactionId fxid, uint16 info,
 									   void *recdata, uint32 len);
-extern void pgstat_twophase_postabort(TransactionId xid, uint16 info,
+extern void pgstat_twophase_postabort(FullTransactionId fxid, uint16 info,
 									  void *recdata, uint32 len);
 
 extern PgStat_StatTabEntry *pgstat_fetch_stat_tabentry(Oid relid);
