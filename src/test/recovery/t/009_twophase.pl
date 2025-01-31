@@ -5,9 +5,10 @@
 use strict;
 use warnings;
 
+use File::Copy;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 27;
+use Test::More tests => 33;
 
 my $psql_out = '';
 my $psql_rc  = '';
@@ -26,6 +27,14 @@ sub configure_and_reload
 	$node->psql('postgres', "SELECT pg_reload_conf()", stdout => \$psql_out);
 	is($psql_out, 't', "reload node $name with $parameter");
 	return;
+}
+
+sub twophase_file_name
+{
+	local $Test::Builder::Level = $Test::Builder::Level + 1;
+
+	my $xid = shift;
+	return sprintf("%08X", $xid);
 }
 
 # Set up two nodes, which will alternately be primary and replication standby.
@@ -527,3 +536,125 @@ $cur_standby->psql(
 is( $psql_out,
 	qq{27|issued to paris},
 	"Check expected t_009_tbl2 data on standby");
+
+###############################################################################
+# Check handling of already committed or aborted 2PC files at recovery.
+# This test does a manual copy of 2PC files created in a running server,
+# to cheaply emulate situations that could be found in base backups.
+###############################################################################
+
+# Issue a set of transactions that will be used for this portion of the test:
+# - One transaction to hold on the minimum xid horizon at bay.
+# - One transaction that will be found as already committed at recovery.
+# - One transaction that will be fonnd as already rollbacked at recovery.
+$cur_primary->psql(
+	'postgres', "
+	BEGIN;
+	INSERT INTO t_009_tbl VALUES (40, 'transaction: xid horizon');
+	PREPARE TRANSACTION 'xact_009_40';
+	BEGIN;
+	INSERT INTO t_009_tbl VALUES (41, 'transaction: commit-prepared');
+	PREPARE TRANSACTION 'xact_009_41';
+	BEGIN;
+	INSERT INTO t_009_tbl VALUES (42, 'transaction: rollback-prepared');
+	PREPARE TRANSACTION 'xact_009_42';");
+
+# Issue a checkpoint, fixing the XID horizon based on the first transaction,
+# flushing to disk the two files to use.
+$cur_primary->psql('postgres', "CHECKPOINT");
+
+# Get the transaction IDs of the ones to 2PC files to manipulate.
+my $commit_prepared_xid = int(
+	$cur_primary->safe_psql(
+		'postgres',
+		"SELECT transaction FROM pg_prepared_xacts WHERE gid = 'xact_009_41'")
+);
+my $abort_prepared_xid = int(
+	$cur_primary->safe_psql(
+		'postgres',
+		"SELECT transaction FROM pg_prepared_xacts WHERE gid = 'xact_009_42'")
+);
+
+# Copy the two-phase files that will be put back later.
+my $commit_prepared_name = twophase_file_name($commit_prepared_xid);
+my $abort_prepared_name = twophase_file_name($abort_prepared_xid);
+
+my $twophase_tmpdir = $PostgreSQL::Test::Utils::tmp_check . '/' . "2pc_files";
+mkdir($twophase_tmpdir);
+my $primary_twophase_folder = $cur_primary->data_dir . '/pg_twophase/';
+copy("$primary_twophase_folder/$commit_prepared_name", $twophase_tmpdir);
+copy("$primary_twophase_folder/$abort_prepared_name", $twophase_tmpdir);
+
+# Issue abort/commit prepared.
+$cur_primary->psql('postgres', "COMMIT PREPARED 'xact_009_41'");
+$cur_primary->psql('postgres', "ROLLBACK PREPARED 'xact_009_42'");
+
+# Again checkpoint, to advance the LSN past the point where the two previous
+# transaction records would be replayed.
+$cur_primary->psql('postgres', "CHECKPOINT");
+
+# Take down node.
+$cur_primary->teardown_node;
+
+# Move back the two twophase files.
+copy("$twophase_tmpdir/$commit_prepared_name", $primary_twophase_folder);
+copy("$twophase_tmpdir/$abort_prepared_name", $primary_twophase_folder);
+
+# Grab location in logs of primary
+my $log_offset = -s $cur_primary->logfile;
+
+# Start node and check that the two previous files are removed by checking the
+# server logs, following the CLOG lookup done at the end of recovery.
+$cur_primary->start;
+
+$cur_primary->log_check(
+	"two-phase files of committed transactions removed at recovery",
+	$log_offset,
+	log_like => [
+		qr/removing stale two-phase state from memory for transaction $commit_prepared_xid/,
+		qr/removing stale two-phase state from memory for transaction $abort_prepared_xid/
+	]);
+
+# Commit the first transaction.
+$cur_primary->psql('postgres', "COMMIT PREPARED 'xact_009_40'");
+# After replay, there should be no 2PC transactions.
+$cur_primary->psql(
+	'postgres',
+	"SELECT * FROM pg_prepared_xact",
+	stdout => \$psql_out);
+is($psql_out, qq{}, "Check expected pg_prepared_xact data on primary");
+# Data from transactions should be around.
+$cur_primary->psql(
+	'postgres',
+	"SELECT * FROM t_009_tbl WHERE id IN (40, 41, 42);",
+	stdout => \$psql_out);
+is( $psql_out, qq{40|transaction: xid horizon
+41|transaction: commit-prepared},
+	"Check expected table data on primary");
+
+###############################################################################
+# Check handling of orphaned 2PC files at recovery.
+###############################################################################
+
+$cur_primary->teardown_node;
+
+# Grab location in logs of primary
+$log_offset = -s $cur_primary->logfile;
+
+# Create fake files with a transaction ID large or low enough to be in the
+# future or the past, then check that the primary is able to start and remove
+# these files at recovery.
+
+my $future_2pc_file = $cur_primary->data_dir . '/pg_twophase/00FFFFFF';
+append_to_file $future_2pc_file, "";
+my $past_2pc_file = $cur_primary->data_dir . '/pg_twophase/000000FF';
+append_to_file $past_2pc_file, "";
+
+$cur_primary->start;
+$cur_primary->log_check(
+	"fake two-phase files removed at recovery",
+	$log_offset,
+	log_like => [
+		qr/removing future two-phase state file for transaction 16777215/,
+		qr/removing past two-phase state file for transaction 255/
+	]);
