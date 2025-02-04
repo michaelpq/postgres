@@ -2436,10 +2436,10 @@ XLogWrite(XLogwrtRqst WriteRqst, TimeLineID tli, bool flexible)
 				errno = 0;
 
 				/*
-				 * Measure I/O timing to write WAL data, for pg_stat_wal
-				 * and/or pg_stat_io.
+				 * Measure I/O timing to write WAL data, for pg_stat_io
+				 * and/or pg_stat_wal.
 				 */
-				start = pgstat_prepare_io_time(track_wal_io_timing || track_io_timing);
+				start = pgstat_prepare_io_time(track_io_timing || track_wal_io_timing);
 
 				pgstat_report_wait_start(WAIT_EVENT_WAL_WRITE);
 				written = pg_pwrite(openLogFile, from, nleft, startoffset);
@@ -3301,8 +3301,13 @@ XLogFileInitInternal(XLogSegNo logsegno, TimeLineID logtli,
 	}
 	pgstat_report_wait_end();
 
+	/*
+	 * A full segment worth of data is written when using wal_init_zero.
+	 * One byte is written when not using it.
+	 */
 	pgstat_count_io_op_time(IOOBJECT_WAL, IOCONTEXT_INIT, IOOP_WRITE,
-							io_start, 1, wal_segment_size);
+							io_start, 1,
+							wal_init_zero ? wal_segment_size : 1);
 
 	if (save_errno)
 	{
@@ -8713,8 +8718,8 @@ issue_xlog_fsync(int fd, XLogSegNo segno, TimeLineID tli)
 		return;
 
 	/*
-	 * Measure I/O timing to sync the WAL file for pg_stat_wal and/or
-	 * pg_stat_io.
+	 * Measure I/O timing to sync the WAL file for pg_stat_io and/or
+	 * pg_stat_wal.
 	 */
 	start = pgstat_prepare_io_time(track_io_timing || track_wal_io_timing);
 
