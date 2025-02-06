@@ -63,6 +63,26 @@ $node_standby_1->append_conf('postgresql.conf',
 	'max_standby_streaming_delay = 600s');
 $node_standby_1->start;
 
+# Check some WAL statistics.  The standby should have done WAL reads in
+# the startup process when starting, and the primary WAL some writes with
+# its checkpointer.
+my $result = $node_primary->safe_psql(
+	'postgres',
+	qq{SELECT object, context, writes > 0 AS writes_done
+  FROM pg_stat_io
+  WHERE context = 'init' AND
+    object = 'wal' AND
+    backend_type = 'checkpointer'});
+is($result, qq(wal|init|t), 'check contents of WAL stats on primary');
+$result = $node_standby_1->safe_psql(
+	'postgres',
+	qq{SELECT object, context, reads > 0 AS reads_done
+  FROM pg_stat_io
+  WHERE context = 'normal' AND
+    object = 'wal' AND
+    backend_type = 'startup'});
+is($result, qq(wal|normal|t), 'check contents of WAL stats on standby');
+
 my $dlpath = dirname($ENV{REGRESS_SHLIB});
 my $outputdir = $PostgreSQL::Test::Utils::tmp_check;
 
@@ -163,7 +183,7 @@ $node_primary->safe_psql('postgres', 'CREATE EXTENSION pg_stat_statements');
 # This gathers data based on the first characters for some common query types,
 # checking that reports are generated for SELECT, DMLs, and DDL queries with
 # CREATE.
-my $result = $node_primary->safe_psql(
+$result = $node_primary->safe_psql(
 	'postgres',
 	qq{WITH select_stats AS
   (SELECT upper(substr(query, 1, 6)) AS select_query
