@@ -225,3 +225,37 @@ DROP SEQUENCE ctlseq1;
 DROP TYPE ctlty1;
 DROP VIEW ctlv1;
 DROP TABLE IF EXISTS ctlt4, ctlt10, ctlt11, ctlt11a, ctlt12;
+
+--
+-- CREATE FOREIGN TABLE LIKE
+--
+CREATE FOREIGN DATA WRAPPER ctl_dummy;
+CREATE SERVER ctl_s0 FOREIGN DATA WRAPPER ctl_dummy;
+
+CREATE TABLE ctl_table(a int primary key, b varchar COMPRESSION pglz,
+  c int GENERATED ALWAYS AS (a * 2) STORED,
+  d bigint GENERATED ALWAYS AS IDENTITY,
+  e int default 1);
+
+CREATE INDEX ctl_table_a_key ON ctl_table(a);
+COMMENT ON COLUMN ctl_table.b IS 'Column b';
+CREATE STATISTICS ctl_table_stat ON a,b FROM ctl_table;
+ALTER TABLE ctl_table add constraint foo CHECK (b = 'text');
+
+\d+ ctl_table
+
+-- Test EXCLUDING ALL
+CREATE FOREIGN TABLE ctl_foreign_table1(LIKE ctl_table EXCLUDING ALL) SERVER ctl_s0;
+\d+ ctl_foreign_table1
+
+\set HIDE_TOAST_COMPRESSION false
+-- Test INCLUDING ALL
+-- INDEXES, IDENTITY, COMPRESSION, STORAGE are not copied.
+CREATE FOREIGN TABLE ctl_foreign_table2(LIKE ctl_table INCLUDING ALL) SERVER ctl_s0;
+\d+ ctl_foreign_table2
+\set HIDE_TOAST_COMPRESSION true
+
+DROP TABLE ctl_table;
+DROP FOREIGN TABLE ctl_foreign_table1;
+DROP FOREIGN TABLE ctl_foreign_table2;
+DROP FOREIGN DATA WRAPPER ctl_dummy CASCADE;
