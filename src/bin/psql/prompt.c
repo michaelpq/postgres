@@ -31,6 +31,9 @@
  *		sockets, "[local:/dir/name]" if not default
  * %m - like %M, but hostname only (before first dot), or always "[local]"
  * %p - backend pid
+ * %P - pipeline status: no pipeline: empty
+ * 		ongoing pipeline: |piped_syncs,piped_commands,pending_results|
+ * 		aborted pipeline: +piped_syncs,piped_commands,pending_results+
  * %> - database server port number
  * %n - database user name
  * %s - service
@@ -181,7 +184,16 @@ get_prompt(promptStatus_t status, ConditionalStack cstack)
 							snprintf(buf, sizeof(buf), "%d", pid);
 					}
 					break;
+				case 'P':
+					{
+						PGpipelineStatus status = PQpipelineStatus(pset.db);
 
+						if (status == PQ_PIPELINE_ON)
+							snprintf(buf, sizeof(buf), "|%d,%d,%d|", pset.piped_syncs, pset.piped_commands, pset.available_results);
+						else if (status == PQ_PIPELINE_ABORTED)
+							snprintf(buf, sizeof(buf), "+%d,%d,%d+", pset.piped_syncs, pset.piped_commands, pset.available_results);
+						break;
+					}
 				case '0':
 				case '1':
 				case '2':
