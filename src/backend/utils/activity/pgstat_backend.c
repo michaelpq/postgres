@@ -26,6 +26,8 @@
 
 #include "access/xlog.h"
 #include "storage/bufmgr.h"
+#include "storage/proc.h"
+#include "storage/procarray.h"
 #include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
 
@@ -80,6 +82,56 @@ pgstat_fetch_stat_backend(ProcNumber procNumber)
 														  InvalidOid, procNumber);
 
 	return backend_entry;
+}
+
+/*
+ * Returns statistics of a backend by pid.
+ *
+ * It adds extra checks as compared to pgstat_fetch_stat_backend() to ensure
+ * that the backend is not gone. Also, if not NULL, bktype is populated as
+ * pg_stat_get_backend_io() needs it.
+ */
+PgStat_Backend *
+pg_stat_get_backend_stats(int pid, BackendType *bktype)
+{
+
+	PGPROC	   *proc;
+	PgBackendStatus *beentry;
+	ProcNumber	procNumber;
+	PgStat_Backend *backend_stats;
+
+	proc = BackendPidGetProc(pid);
+
+	/*
+	 * This could be an auxiliary process but these do not report backend
+	 * statistics due to pgstat_tracks_backend_bktype(), so there is no need
+	 * for an extra call to AuxiliaryPidGetProc().
+	 */
+	if (!proc)
+		return NULL;
+
+	procNumber = GetNumberFromPGProc(proc);
+
+	beentry = pgstat_get_beentry_by_proc_number(procNumber);
+	if (!beentry)
+		return NULL;
+
+	backend_stats = pgstat_fetch_stat_backend(procNumber);
+	if (!backend_stats)
+		return NULL;
+
+	/* if PID does not match, leave */
+	if (beentry->st_procpid != pid)
+		return NULL;
+
+	/* backend may be gone, so recheck in case */
+	if (beentry->st_backendType == B_INVALID)
+		return NULL;
+
+	if (bktype)
+		*bktype = beentry->st_backendType;
+
+	return backend_stats;
 }
 
 /*
