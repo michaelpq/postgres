@@ -90,6 +90,7 @@
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/pg_lsn.h"
+#include "utils/pgstat_internal.h"
 #include "utils/ps_status.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
@@ -2828,6 +2829,12 @@ WalSndLoop(WalSndSendDataCallback send_data)
 
 		/* Send keepalive if the time has come */
 		WalSndKeepaliveIfNecessary();
+
+		/*
+		 * Report IO statistics
+		 */
+		pgstat_flush_io(false);
+		(void) pgstat_flush_backend(false, PGSTAT_BACKEND_FLUSH_IO);
 
 		/*
 		 * Block if we have unsent data.  XXX For logical replication, let

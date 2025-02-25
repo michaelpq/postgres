@@ -42,6 +42,9 @@ $node_standby_2->init_from_backup($node_standby_1, $backup_name,
 	has_streaming => 1);
 $node_standby_2->start;
 
+# To check that an active walsender updates its IO statistics below.
+$node_primary->safe_psql('postgres', "SELECT pg_stat_reset_shared('io')");
+
 # Create some content on primary and check its presence in standby nodes
 $node_primary->safe_psql('postgres',
 	"CREATE TABLE tab_int AS SELECT generate_series(1,1002) AS a");
@@ -68,6 +71,17 @@ ALTER EVENT TRIGGER on_login_trigger ENABLE ALWAYS;
 # Wait for standbys to catch up
 $node_primary->wait_for_replay_catchup($node_standby_1);
 $node_standby_1->wait_for_replay_catchup($node_standby_2, $node_primary);
+
+# Ensure an active walsender updates its IO statistics.
+is( $node_primary->safe_psql(
+		'postgres',
+		qq(SELECT sum(reads) > 0
+       FROM pg_catalog.pg_stat_io
+       WHERE backend_type = 'walsender'
+       AND object = 'wal')
+	),
+	qq(t),
+	"Check that the walsender updates its IO statistics");
 
 my $result =
   $node_standby_1->safe_psql('postgres', "SELECT count(*) FROM tab_int");
