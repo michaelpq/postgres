@@ -87,9 +87,9 @@ pgstat_fetch_stat_backend(ProcNumber procNumber)
 /*
  * Returns statistics of a backend by pid.
  *
- * It adds extra checks as compared to pgstat_fetch_stat_backend() to ensure
- * that the backend is not gone. Also, if not NULL, bktype is populated as
- * pg_stat_get_backend_io() needs it.
+ * This routine includes sanity checks to ensire that the backend exists and
+ * is running.  "bktype" can be optionally defined to return the BackendType
+ * of the backend whose statistics are returned.
  */
 PgStat_Backend *
 pg_stat_get_backend_stats(int pid, BackendType *bktype)
@@ -101,6 +101,8 @@ pg_stat_get_backend_stats(int pid, BackendType *bktype)
 	PgStat_Backend *backend_stats;
 
 	proc = BackendPidGetProc(pid);
+	if (bktype)
+		*bgtype = B_INVALID;
 
 	/*
 	 * This could be an auxiliary process but these do not report backend
