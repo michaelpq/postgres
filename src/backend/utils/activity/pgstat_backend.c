@@ -102,7 +102,7 @@ pg_stat_get_backend_stats(int pid, BackendType *bktype)
 
 	proc = BackendPidGetProc(pid);
 	if (bktype)
-		*bgtype = B_INVALID;
+		*bktype = B_INVALID;
 
 	/*
 	 * This could be an auxiliary process but these do not report backend
