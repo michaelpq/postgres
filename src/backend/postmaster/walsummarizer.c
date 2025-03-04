@@ -33,6 +33,7 @@
 #include "common/blkreftable.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
+#include "pgstat.h"
 #include "postmaster/auxprocess.h"
 #include "postmaster/interrupt.h"
 #include "postmaster/walsummarizer.h"
@@ -1542,6 +1543,9 @@ summarizer_read_local_xlog_page(XLogReaderState *state,
 				 */
 				HandleWalSummarizerInterrupts();
 				summarizer_wait_for_wal();
+
+				/* report pending statistics to the cumulative stats system */
+				pgstat_report_wal(false);
 
 				/* Recheck end-of-WAL. */
 				latest_lsn = GetLatestLSN(&latest_tli);
