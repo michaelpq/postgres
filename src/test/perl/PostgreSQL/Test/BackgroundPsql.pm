@@ -61,6 +61,7 @@ use Config;
 use IPC::Run;
 use PostgreSQL::Test::Utils qw(pump_until);
 use Test::More;
+use Time::HiRes				qw(usleep);
 
 =pod
 
