@@ -172,6 +172,49 @@ sub wait_connect
 	die "psql startup timed out" if $self->{timeout}->is_expired;
 }
 
+
+=pod
+
+=item $session->poll_query_until($query [, $expected ])
+
+Run B<$query> repeatedly, until it returns the B<$expected> result
+('t', or SQL boolean true, by default).
+Continues polling if B<query> returns an error result.
+
+Times out after $PostgreSQL::Test::Utils::timeout_default seconds.
+
+Returns 1 if successful, 0 if timed out.
+
+=cut
+
+sub poll_query_until
+{
+	my ($self, $query, $expected) = @_;
+
+	$expected = 't' unless defined($expected);    # default value
+
+	my $max_attempts = 10 * $PostgreSQL::Test::Utils::timeout_default;
+	my $attempts = 0;
+
+	while ($attempts < $max_attempts)
+	{
+		my $ret = $self->query($query);
+
+		if ($ret eq $expected)
+		{
+			return 1;
+		}
+
+		# Wait 0.1 second before retrying.
+		usleep(100_000);
+		$attempts++;
+	}
+
+	# Give up.  The output of the last attempt is logged by query(),
+	# so no need to do anything here.
+	return 0;
+}
+
 =pod
 
 =item $session->quit

@@ -45,36 +45,23 @@ my $conn = $node->background_psql('postgres', wait => 0);
 
 # Wait for the connection to show up in pg_stat_activity, with the wait_event
 # of the injection point.
-my $pid;
-while (1)
-{
-	$pid = $psql->query(
-		qq{SELECT pid FROM pg_stat_activity
+my $res = $psql->poll_query_until(
+	qq{SELECT count(pid) > 0 FROM pg_stat_activity
   WHERE state = 'starting' and wait_event = 'init-pre-auth';});
-	last if $pid ne "";
+ok($res, 'authenticating connections are recorded in pg_stat_activity');
 
-	usleep(100_000);
-}
-
-note "backend $pid is authenticating";
-ok(1, 'authenticating connections are recorded in pg_stat_activity');
+# Get the PID of the backend waiting, for the next checks.
+my $pid = $psql->query(qq{SELECT pid FROM pg_stat_activity
+  WHERE state = 'starting' and wait_event = 'init-pre-auth';});
 
 # Detach the waitpoint and wait for the connection to complete.
 $psql->query_safe("SELECT injection_points_wakeup('init-pre-auth');");
 $conn->wait_connect();
 
 # Make sure the pgstat entry is updated eventually.
-while (1)
-{
-	my $state =
-	  $psql->query("SELECT state FROM pg_stat_activity WHERE pid = $pid;");
-	last if $state eq "idle";
-
-	note "state for backend $pid is '$state'; waiting for 'idle'...";
-	usleep(100_000);
-}
-
-ok(1, 'authenticated connections reach idle state in pg_stat_activity');
+$res = $psql->poll_query_until(
+qq{SELECT state FROM pg_stat_activity WHERE pid = $pid;}, 'idle');
+ok($res, 'authenticated connections reach idle state in pg_stat_activity');
 
 $psql->query_safe("SELECT injection_points_detach('init-pre-auth');");
 $psql->quit();
