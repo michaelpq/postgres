@@ -263,9 +263,10 @@ pgstat_flush_backend(bool nowait, bits32 flags)
 		!pg_memory_is_all_zeros(&PendingBackendStats.pending_io,
 								sizeof(struct PgStat_PendingIO)))
 		has_pending_data = true;
+
 	/* Some WAL data pending? */
-	else if ((flags & PGSTAT_BACKEND_FLUSH_WAL) &&
-			 pgstat_backend_wal_have_pending())
+	if ((flags & PGSTAT_BACKEND_FLUSH_WAL) &&
+		 pgstat_backend_wal_have_pending())
 		has_pending_data = true;
 
 	if (!has_pending_data)
