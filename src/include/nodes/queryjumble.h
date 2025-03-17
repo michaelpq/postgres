@@ -37,6 +37,13 @@ typedef struct JumbleState
 	/* Number of bytes used in jumble[] */
 	Size		jumble_len;
 
+	/*
+	 * Number of Nodes included in the computation.  This counter is
+	 * incremented each time a node is added to the jumbling computation,
+	 * and is added to the jumbling to increase its entropy.
+	 */
+	int			node_count;
+
 	/* Array of locations of constants that should be removed */
 	LocationLen *clocations;
 

@@ -120,6 +120,7 @@ JumbleQuery(Query *query)
 	/* Set up workspace for query jumbling */
 	jstate->jumble = (unsigned char *) palloc(JUMBLE_SIZE);
 	jstate->jumble_len = 0;
+	jstate->node_count = 0;
 	jstate->clocations_buf_size = 32;
 	jstate->clocations = (LocationLen *)
 		palloc(jstate->clocations_buf_size * sizeof(LocationLen));
@@ -243,6 +244,15 @@ static void
 _jumbleNode(JumbleState *jstate, Node *node)
 {
 	Node	   *expr = node;
+
+	/*
+	 * Increment the node count, and add it to the jumbling.  This operation
+	 * is done before checking if a Node is NULL, so as even a NULL node is
+	 * counted in the computation, without depending on its data, with some
+	 * data that we know to be unique for each computation.
+	 */
+	jstate->node_count++;
+	JUMBLE_FIELD_SINGLE(jstate->node_count);
 
 	if (expr == NULL)
 		return;
