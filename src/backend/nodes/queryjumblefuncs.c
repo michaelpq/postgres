@@ -333,6 +333,12 @@ do { \
 	if (expr->str) \
 		AppendJumble(jstate, (const unsigned char *) (expr->str), strlen(expr->str) + 1); \
 } while(0)
+/*
+ * Note that the argument types are enforced for the per-field custom
+ * functions.
+ */
+#define JUMBLE_CUSTOM(nodetype, item) \
+	_jumble##nodetype##_##item(jstate, expr, expr->item)
 
 #include "queryjumblefuncs.funcs.c"
 
