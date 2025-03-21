@@ -6,6 +6,18 @@
 SET pg_stat_statements.track_utility = TRUE;
 SELECT pg_stat_statements_reset() IS NOT NULL AS t;
 
+-- Temporary tables, grouped together.
+BEGIN;
+  CREATE TEMP TABLE temp_t (id int) ON COMMIT DROP;
+  SELECT * FROM temp_t;
+COMMIT;
+BEGIN;
+  CREATE TEMP TABLE temp_t (id int) ON COMMIT DROP;
+  SELECT * FROM temp_t;
+COMMIT;
+SELECT calls, query FROM pg_stat_statements ORDER BY query COLLATE "C";
+SELECT pg_stat_statements_reset() IS NOT NULL AS t;
+
 -- Tables, indexes, triggers
 CREATE TEMP TABLE tab_stats (a int, b char(20));
 CREATE INDEX index_stats ON tab_stats(b, (b || 'data1'), (b || 'data2')) WHERE a > 0;

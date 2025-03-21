@@ -1093,8 +1093,13 @@ typedef struct RangeTblEntry
 	 * relation.  This allows plans referencing AFTER trigger transition
 	 * tables to be invalidated if the underlying table is altered.
 	 */
-	/* OID of the relation */
-	Oid			relid;
+
+	/*
+	 * OID of the relation.  A custom query jumble function is used here for
+	 * temporary tables, where the computation uses the relation name instead
+	 * of the OID.
+	 */
+	Oid			relid pg_node_attr(custom_query_jumble);
 	/* inheritance requested? */
 	bool		inh;
 	/* relation kind (see pg_class.relkind) */

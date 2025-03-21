@@ -33,6 +33,7 @@
 #include "postgres.h"
 
 #include "access/transam.h"
+#include "catalog/namespace.h"
 #include "catalog/pg_proc.h"
 #include "common/hashfn.h"
 #include "miscadmin.h"
@@ -67,6 +68,9 @@ static void _jumbleElements(JumbleState *jstate, List *elements);
 static void _jumbleA_Const(JumbleState *jstate, Node *node);
 static void _jumbleList(JumbleState *jstate, Node *node);
 static void _jumbleVariableSetStmt(JumbleState *jstate, Node *node);
+static void _jumbleRangeTblEntry_relid(JumbleState *jstate,
+									   RangeTblEntry *expr,
+									   Oid relid);
 
 /*
  * Given a possibly multi-statement source string, confine our attention to the
@@ -518,4 +522,27 @@ _jumbleVariableSetStmt(JumbleState *jstate, Node *node)
 		JUMBLE_NODE(args);
 	JUMBLE_FIELD(is_local);
 	JUMBLE_LOCATION(location);
+}
+
+/*
+ * Custom query jumble function for RangeTblEntry.relid.
+ */
+static void
+_jumbleRangeTblEntry_relid(JumbleState *jstate,
+						   RangeTblEntry *expr,
+						   Oid relid)
+{
+	/*
+	 * If this is a temporary table, jumble its name instead of the table OID.
+	 */
+	if (expr->rtekind == RTE_RELATION &&
+		isAnyTempNamespace(get_rel_namespace(relid)))
+	{
+		char	   *relname = get_rel_name(relid);
+
+		AppendJumble(jstate, (const unsigned char *) "pg_temp", sizeof("pg_temp"));
+		AppendJumble(jstate, (const unsigned char *) relname, strlen(relname));
+	}
+	else
+		JUMBLE_FIELD(relid);
 }
