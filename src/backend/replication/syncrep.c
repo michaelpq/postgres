@@ -217,8 +217,8 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 		/*
 		 * The LSN is older than what we are waiting for in the queue.  The
 		 * sync standby data has not been initialized yet, but we are OK to
-		 * not wait because we know that there is no point in doing so if
-		 * based on the LSN.
+		 * not wait because we know that there is no point in doing so based
+		 * on the LSN.
 		 */
 		LWLockRelease(SyncRepLock);
 		return;
