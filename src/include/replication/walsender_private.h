@@ -119,8 +119,8 @@ typedef struct
 /* Flags for WalSndCtlData->sync_standbys_status */
 
 /*
- * Is the synchronous standby data initialized from the GUC?  This is flipped
- * the first time synchronous_standby_names is processed by the checkpointer.
+ * Is the synchronous standby data initialized from the GUC?  This is set the
+ * first time synchronous_standby_names is processed by the checkpointer.
  */
 #define SYNC_STANDBY_INIT			(1 << 0)
 

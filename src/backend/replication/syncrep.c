@@ -216,10 +216,10 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 	else if (lsn <= WalSndCtl->lsn[mode])
 	{
 		/*
-		 * The LSN is older than what we are waiting for in the queue.  The
-		 * sync standby data has not been initialized yet, but we are OK to
-		 * not wait because we know that there is no point in doing so based
-		 * on the LSN.
+		 * The LSN is older than what we need to wait for.  The sync standby
+		 * data has not been initialized yet, but we are OK to not wait
+		 * because we know that there is no point in doing so based on the
+		 * LSN.
 		 */
 		LWLockRelease(SyncRepLock);
 		return;
@@ -228,13 +228,13 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 	{
 		/*
 		 * If we are here, the sync standby data has not been initialized yet,
-		 * and the lsn is newer than what is in the queue, so we have fallen
+		 * and the LSN is newer than what need to wait for, so we have fallen
 		 * back to the best thing we could do in this case: a check on
 		 * SyncStandbysDefined() to see if the GUC is set or not.
 		 *
-		 * If the GUC has a value, we wait until the checkpointer updates the
+		 * When the GUC has a value, we wait until the checkpointer updates the
 		 * status data because we cannot be sure yet if we should wait or not.
-		 * If the GUC has *no* value, we are sure that there is no point to
+		 * Here, the GUC has *no* value, we are sure that there is no point to
 		 * wait; this matters for example when initializing a cluster, where
 		 * we should never wait, and no sync standbys is the default behavior.
 		 */
