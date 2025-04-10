@@ -201,7 +201,8 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 	 * to be a low cost check.
 	 *
 	 * If the sync standby data has not been initialized yet
-	 * (SYNC_STANDBY_INIT is not set), then fall back to a direct GUC check.
+	 * (SYNC_STANDBY_INIT is not set), fall back to a check based on the LSN,
+	 * then do a direct GUC check.
 	 */
 	if (WalSndCtl->sync_standbys_status & SYNC_STANDBY_INIT)
 	{
@@ -227,8 +228,8 @@ SyncRepWaitForLSN(XLogRecPtr lsn, bool commit)
 	{
 		/*
 		 * If we are here, the sync standby data has not been initialized yet,
-		 * and the lsn is newer than what is in the queue, so we have falled
-		 * back to the best thing we can do in this case: a check on
+		 * and the lsn is newer than what is in the queue, so we have fallen
+		 * back to the best thing we could do in this case: a check on
 		 * SyncStandbysDefined() to see if the GUC is set or not.
 		 *
 		 * If the GUC has a value, we wait until the checkpointer updates the
@@ -966,8 +967,6 @@ SyncRepUpdateSyncStandbysDefined(void)
 	if (sync_standbys_defined !=
 		((WalSndCtl->sync_standbys_status & SYNC_STANDBY_DEFINED) != 0))
 	{
-		pg_usleep(20 * 1000 * 1000L);	/* 20s */
-
 		LWLockAcquire(SyncRepLock, LW_EXCLUSIVE);
 
 		/*
