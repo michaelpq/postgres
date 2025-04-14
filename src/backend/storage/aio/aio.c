@@ -46,12 +46,9 @@
 #include "storage/aio_subsys.h"
 #include "utils/guc.h"
 #include "utils/guc_hooks.h"
+#include "utils/injection_point.h"
 #include "utils/resowner.h"
 #include "utils/wait_event_types.h"
-
-#ifdef USE_INJECTION_POINTS
-#include "utils/injection_point.h"
-#endif
 
 
 static inline void pgaio_io_update_state(PgAioHandle *ioh, PgAioHandleState new_state);

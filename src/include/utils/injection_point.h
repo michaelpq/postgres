@@ -21,8 +21,8 @@
 #define IS_INJECTION_POINT_ATTACHED(name) IsInjectionPointAttached(name)
 #else
 #define INJECTION_POINT_LOAD(name) ((void) name)
-#define INJECTION_POINT(name, arg) ((void) name; (void) arg)
-#define INJECTION_POINT_CACHED(name, arg) ((void) name; (void) arg)
+#define INJECTION_POINT(name, arg) ((void) name)
+#define INJECTION_POINT_CACHED(name, arg) ((void) name)
 #define IS_INJECTION_POINT_ATTACHED(name) (false)
 #endif
 
