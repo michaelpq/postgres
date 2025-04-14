@@ -405,7 +405,7 @@ injection_points_run(PG_FUNCTION_ARGS)
 	char	   *name = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	pgstat_report_inj_fixed(0, 0, 1, 0, 0);
-	INJECTION_POINT(name);
+	INJECTION_POINT(name, NULL);
 
 	PG_RETURN_VOID();
 }
@@ -420,7 +420,7 @@ injection_points_cached(PG_FUNCTION_ARGS)
 	char	   *name = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	pgstat_report_inj_fixed(0, 0, 0, 1, 0);
-	INJECTION_POINT_CACHED(name);
+	INJECTION_POINT_CACHED(name, NULL);
 
 	PG_RETURN_VOID();
 }
