@@ -751,7 +751,7 @@ InitPostgres(const char *in_dbname, Oid dboid,
 	if (!bootstrap)
 	{
 		pgstat_bestart_initial();
-		INJECTION_POINT("init-pre-auth");
+		INJECTION_POINT("init-pre-auth", NULL);
 	}
 
 	/*

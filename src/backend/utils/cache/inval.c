@@ -1200,7 +1200,7 @@ AtEOXact_Inval(bool isCommit)
 	/* Must be at top of stack */
 	Assert(transInvalInfo->my_level == 1 && transInvalInfo->parent == NULL);
 
-	INJECTION_POINT("AtEOXact_Inval-with-transInvalInfo");
+	INJECTION_POINT("AtEOXact_Inval-with-transInvalInfo", NULL);
 
 	if (isCommit)
 	{
