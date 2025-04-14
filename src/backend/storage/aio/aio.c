@@ -96,17 +96,6 @@ static const IoMethodOps *const pgaio_method_ops_table[] = {
 const IoMethodOps *pgaio_method_ops;
 
 
-/*
- * Currently there's no infrastructure to pass arguments to injection points,
- * so we instead set this up for the duration of the injection point
- * invocation. See pgaio_io_call_inj().
- */
-#ifdef USE_INJECTION_POINTS
-static PgAioHandle *pgaio_inj_cur_handle;
-#endif
-
-
-
 /* --------------------------------------------------------------------------------
  * Public Functions related to PgAioHandle
  * --------------------------------------------------------------------------------
@@ -507,7 +496,7 @@ pgaio_io_process_completion(PgAioHandle *ioh, int result)
 
 	pgaio_io_update_state(ioh, PGAIO_HS_COMPLETED_IO);
 
-	pgaio_io_call_inj(ioh, "AIO_PROCESS_COMPLETION_BEFORE_SHARED");
+	INJECTION_POINT("AIO_PROCESS_COMPLETION_BEFORE_SHARED", ioh);
 
 	pgaio_io_call_complete_shared(ioh);
 
@@ -1225,43 +1214,3 @@ check_io_max_concurrency(int *newval, void **extra, GucSource source)
 
 	return true;
 }
-
-
-
-/* --------------------------------------------------------------------------------
- * Injection point support
- * --------------------------------------------------------------------------------
- */
-
-#ifdef USE_INJECTION_POINTS
-
-/*
- * Call injection point with support for pgaio_inj_io_get().
- */
-void
-pgaio_io_call_inj(PgAioHandle *ioh, const char *injection_point)
-{
-	pgaio_inj_cur_handle = ioh;
-
-	PG_TRY();
-	{
-		InjectionPointCached(injection_point, NULL);
-	}
-	PG_FINALLY();
-	{
-		pgaio_inj_cur_handle = NULL;
-	}
-	PG_END_TRY();
-}
-
-/*
- * Return IO associated with injection point invocation. This is only needed
- * as injection points currently don't support arguments.
- */
-PgAioHandle *
-pgaio_inj_io_get(void)
-{
-	return pgaio_inj_cur_handle;
-}
-
-#endif
