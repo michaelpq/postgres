@@ -1281,6 +1281,7 @@ InjectionPointCacheEntry
 InjectionPointCallback
 InjectionPointCondition
 InjectionPointConditionType
+InjectionPointData
 InjectionPointEntry
 InjectionPointsCtl
 InjectionPointSharedState

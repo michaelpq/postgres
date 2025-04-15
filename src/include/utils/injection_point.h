@@ -12,6 +12,17 @@
 #define INJECTION_POINT_H
 
 /*
+ * Injection point data, used when retrieving a list of all the attached
+ * injection points.
+ */
+typedef struct InjectionPointData
+{
+	const char *name;
+	const char *library;
+	const char *function;
+} InjectionPointData;
+
+/*
  * Injection points require --enable-injection-points.
  */
 #ifdef USE_INJECTION_POINTS
@@ -45,6 +56,9 @@ extern void InjectionPointRun(const char *name);
 extern void InjectionPointCached(const char *name);
 extern bool IsInjectionPointAttached(const char *name);
 extern bool InjectionPointDetach(const char *name);
+
+/* Get the current set of injection points attached */
+extern InjectionPointData *InjectionPointList(uint32 *num_points);
 
 #ifdef EXEC_BACKEND
 extern PGDLLIMPORT struct InjectionPointsCtl *ActiveInjectionPoints;

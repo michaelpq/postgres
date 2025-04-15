@@ -584,3 +584,55 @@ IsInjectionPointAttached(const char *name)
 	return false;				/* silence compiler */
 #endif
 }
+
+/*
+ * Retrieve a list of all the injection points currently attached.
+ *
+ * This list is palloc'd in the current memory context.
+ */
+InjectionPointData *
+InjectionPointList(uint32 *num_points)
+{
+#ifdef USE_INJECTION_POINTS
+	InjectionPointData *result;
+	uint32		max_inuse;
+	int			cur_pos = 0;
+
+	LWLockAcquire(InjectionPointLock, LW_SHARED);
+
+	max_inuse = pg_atomic_read_u32(&ActiveInjectionPoints->max_inuse);
+
+	/*
+	 * This overestimates the allocation size, including slots that may be
+	 * free, for simplicity.
+	 */
+	result = palloc0(sizeof(InjectionPointData) * max_inuse);
+
+	for (uint32 idx = 0; idx < max_inuse; idx++)
+	{
+		InjectionPointEntry *entry;
+		uint64		generation;
+
+		entry = &ActiveInjectionPoints->entries[idx];
+		generation = pg_atomic_read_u64(&entry->generation);
+
+		/* skip free slots */
+		if (generation % 2 == 0)
+			continue;
+
+		result[cur_pos].name = pstrdup(entry->name);
+		result[cur_pos].library = pstrdup(entry->library);
+		result[cur_pos].function = pstrdup(entry->function);
+		cur_pos++;
+	}
+
+	LWLockRelease(InjectionPointLock);
+
+	*num_points = cur_pos;
+	return result;
+
+#else
+	*num_points = 0;
+	return NULL;
+#endif
+}
