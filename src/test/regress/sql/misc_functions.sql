@@ -355,6 +355,9 @@ SELECT count(*) > 0 AS ok FROM pg_control_init();
 SELECT count(*) > 0 AS ok FROM pg_control_recovery();
 SELECT count(*) > 0 AS ok FROM pg_control_system();
 
+-- Test function for injection point
+SELECT count(*) >= 0 AS ok FROM pg_get_injection_points();
+
 -- pg_split_walfile_name, pg_walfile_name & pg_walfile_name_offset
 SELECT * FROM pg_split_walfile_name(NULL);
 SELECT * FROM pg_split_walfile_name('invalid');

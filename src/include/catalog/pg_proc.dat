@@ -12566,4 +12566,12 @@
   proargnames => '{pid,io_id,io_generation,state,operation,off,length,target,handle_data_len,raw_result,result,target_desc,f_sync,f_localmem,f_buffered}',
   prosrc => 'pg_get_aios' },
 
+# Injection point functions
+{ oid => '8490', descr => 'information about injection points attached',
+  proname => 'pg_get_injection_points', prorows => '3', proretset => 't',
+  provolatile => 'v', proparallel => 'r', prorettype => 'record',
+  proargtypes => '', proallargtypes => '{text,text,text}',
+  proargmodes => '{o,o,o}', proargnames => '{name,library,function}',
+  prosrc => 'pg_get_injection_points' },
+
 ]
