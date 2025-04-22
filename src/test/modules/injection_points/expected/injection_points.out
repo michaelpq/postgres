@@ -26,6 +26,15 @@ SELECT injection_points_attach('TestInjectionLog2', 'notice');
  
 (1 row)
 
+SELECT name, library, function FROM pg_get_injection_points()
+  ORDER BY name COLLATE "C";
+        name        |     library      |     function     
+--------------------+------------------+------------------
+ TestInjectionError | injection_points | injection_error
+ TestInjectionLog   | injection_points | injection_notice
+ TestInjectionLog2  | injection_points | injection_notice
+(3 rows)
+
 SELECT injection_points_run('TestInjectionBooh'); -- nothing
  injection_points_run 
 ----------------------
@@ -252,6 +261,13 @@ SELECT injection_points_detach('TestConditionLocal1');
 -------------------------
  
 (1 row)
+
+-- No points should be left around.
+SELECT name, library, function FROM pg_get_injection_points()
+  ORDER BY name COLLATE "C";
+ name | library | function 
+------+---------+----------
+(0 rows)
 
 DROP EXTENSION injection_points;
 DROP FUNCTION wait_pid;

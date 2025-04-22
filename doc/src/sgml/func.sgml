@@ -28496,6 +28496,52 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
 
   </sect2>
 
+  <sect2 id="functions-info-injection-points">
+   <title>Injection Points Information Functions</title>
+
+   <para>
+    The functions shown in <xref linkend="functions-info-injection-points"/>
+    print information about the injection points.
+    See <xref linkend="xfunc-addin-injection-points" />.
+   </para>
+
+   <table id="functions-injection-points">
+    <title>WAL Summarization Information Functions</title>
+    <tgroup cols="1">
+     <thead>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para></entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_get_injection_points</primary>
+        </indexterm>
+        <function>pg_get_injection_points</function> ()
+        <returnvalue>setof record</returnvalue>
+        ( <parameter>name</parameter> <type>text</type>,
+        <parameter>library</parameter> <type>text</type>,
+        <parameter>function</parameter> <type>text</type> )
+       </para>
+       <para>
+        Returns information about the injection points currently attached
+        to the cluster.
+       </para></entry>
+      </row>
+     </tbody>
+
+    </tgroup>
+   </table>
+  </sect2>
+
   </sect1>
 
   <sect1 id="functions-admin">

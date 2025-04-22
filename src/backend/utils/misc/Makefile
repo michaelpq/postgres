@@ -22,6 +22,7 @@ OBJS = \
 	guc_tables.o \
 	help_config.o \
 	injection_point.o \
+	injection_point_funcs.o \
 	pg_config.o \
 	pg_controldata.o \
 	pg_rusage.o \
