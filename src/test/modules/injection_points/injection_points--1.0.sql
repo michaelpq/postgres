@@ -4,6 +4,16 @@
 \echo Use "CREATE EXTENSION injection_points" to load this file. \quit
 
 --
+-- injection_points_flush()
+--
+-- Flush to disk all the data of the injection points attached.
+--
+CREATE FUNCTION injection_points_flush()
+RETURNS void
+AS 'MODULE_PATHNAME', 'injection_points_flush'
+LANGUAGE C STRICT;
+
+--
 -- injection_points_attach()
 --
 -- Attaches the action to the given injection point.

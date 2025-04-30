@@ -56,6 +56,7 @@ tests += {
     },
     'tests': [
       't/001_stats.pl',
+      't/002_data_persist.pl',
     ],
   },
 }
