@@ -51,6 +51,27 @@ $node_paris->append_conf(
 ));
 $node_paris->start;
 
+# Check if the extension injection_points is available, as it may be
+# possible that this script is run with installcheck, where the module
+# would not be installed by default.
+my $injection_points_supported =
+  $node_london->check_extension('injection_points');
+if ($injection_points_supported != 0)
+{
+	$node_london->safe_psql('postgres', 'CREATE EXTENSION injection_points;');
+
+	# Set shared_preload_libraries, to allow the injection points to persist
+	# across restarts.
+	$node_london->append_conf(
+		'postgresql.conf', qq(
+		shared_preload_libraries = 'injection_points'
+	));
+	$node_paris->append_conf(
+		'postgresql.conf', qq(
+		shared_preload_libraries = 'injection_points'
+	));
+}
+
 # Switch to synchronous replication in both directions
 configure_and_reload($node_london, "synchronous_standby_names = 'paris'");
 configure_and_reload($node_paris, "synchronous_standby_names = 'london'");
@@ -327,6 +348,23 @@ $cur_primary->psql(
 	INSERT INTO t_009_tbl_standby_mvcc VALUES (2, 'issued to ${cur_primary_name}');
 	PREPARE TRANSACTION 'xact_009_standby_mvcc';
 	");
+
+# Attach an injection point to wait in the checkpointer when configuring
+# the shared memory state data related to synchronous_standby_names, then
+# persist the attached point to disk so as the follow-up restart will be able
+# to wait at the early stages of the checkpointer startup sequence.
+#
+# Note that as the checkpointer has already applied the
+# synchronous_standby_names configuration, this has no effect until the
+# next startup of the primary.
+if ($injection_points_supported != 0)
+{
+	$cur_primary->psql('postgres',
+		"SELECT injection_points_attach('checkpointer-syncrep-update', 'wait')"
+	);
+	$cur_primary->psql('postgres', "SELECT injection_points_flush()");
+}
+
 $cur_primary->stop;
 $cur_standby->restart;
 
@@ -341,6 +379,16 @@ is($psql_out, '0',
 
 # Commit the transaction in primary
 $cur_primary->start;
+
+# Make sure that the checkpointer is waiting before setting up the data of
+# synchronous_standby_names in shared memory.  We want the checkpointer to be
+# stuck and make sure that the next COMMIT PREPARED is detected correctly on
+# the standby when remote_apply is set on the primary.
+if ($injection_points_supported != 0)
+{
+	$cur_primary->wait_for_event('checkpointer',
+		'checkpointer-syncrep-update');
+}
 $cur_primary->psql(
 	'postgres', "
 SET synchronous_commit='remote_apply'; -- To ensure the standby is caught up
@@ -360,6 +408,18 @@ $psql_out =
 is($psql_out, '2',
 	"Committed prepared transaction is visible to new snapshot in standby");
 $standby_session->quit;
+
+# Remove the injection point, the checkpointer now applies the configuration
+# related to synchronous_standby_names in shared memory.
+if ($injection_points_supported != 0)
+{
+	$cur_primary->psql('postgres',
+		"SELECT injection_points_wakeup('checkpointer-syncrep-update')");
+	$cur_primary->psql('postgres',
+		"SELECT injection_points_detach('checkpointer-syncrep-update')");
+}
+
+$cur_standby->restart;
 
 ###############################################################################
 # Check for a lock conflict between prepared transaction with DDL inside and
