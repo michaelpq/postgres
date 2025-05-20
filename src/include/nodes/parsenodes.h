@@ -128,7 +128,7 @@ typedef struct Query
 	 * might not be set; also not stored.  This is the result of the query
 	 * jumble, hence ignored.
 	 */
-	uint64		queryId pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(0));
+	int64		queryId pg_node_attr(equal_ignore, query_jumble_ignore, read_write_ignore, read_as(0));
 
 	/* do I set the command result tag? */
 	bool		canSetTag pg_node_attr(query_jumble_ignore);
