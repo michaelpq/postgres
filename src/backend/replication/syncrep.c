@@ -84,6 +84,7 @@
 #include "storage/proc.h"
 #include "tcop/tcopprot.h"
 #include "utils/guc_hooks.h"
+#include "utils/injection_point.h"
 #include "utils/ps_status.h"
 
 /* User-settable parameters for sync rep */
@@ -968,6 +969,8 @@ SyncRepUpdateSyncStandbysDefined(void)
 	if (sync_standbys_defined !=
 		((WalSndCtl->sync_standbys_status & SYNC_STANDBY_DEFINED) != 0))
 	{
+		INJECTION_POINT("checkpointer-syncrep-update", NULL);
+
 		LWLockAcquire(SyncRepLock, LW_EXCLUSIVE);
 
 		/*
