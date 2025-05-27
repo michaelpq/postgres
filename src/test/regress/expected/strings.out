@@ -617,93 +617,64 @@ HINT:  Escape string must be empty or one character.
 -- Characters that should be left alone in character classes when a
 -- SIMILAR TO regexp pattern is converted to POSIX style.
 -- Underscore "_"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '_[_[:alpha:]_]_';
-                          QUERY PLAN                           
----------------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:.[_[:alpha:]_].)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '_[_[:alpha:]_]_';
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on text_tbl
+   Filter: (f1 ~ '^(?:.[_[:alpha:]_].)$'::text)
+(2 rows)
 
 -- Percentage "%"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '%[%[:alnum:]%]%';
-                           QUERY PLAN                            
------------------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:.*[%[:alnum:]%].*)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '%[%[:alnum:]%]%';
+                    QUERY PLAN                    
+--------------------------------------------------
+ Seq Scan on text_tbl
+   Filter: (f1 ~ '^(?:.*[%[:alnum:]%].*)$'::text)
+(2 rows)
 
 -- Dot "."
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '.[.[:alnum:].].';
-                           QUERY PLAN                            
------------------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:\.[.[:alnum:].]\.)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '.[.[:alnum:].].';
+                    QUERY PLAN                    
+--------------------------------------------------
+ Seq Scan on text_tbl
+   Filter: (f1 ~ '^(?:\.[.[:alnum:].]\.)$'::text)
+(2 rows)
 
 -- Dollar "$"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '$[$[:alnum:]$]$';
-                           QUERY PLAN                            
------------------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:\$[$[:alnum:]$]\$)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '$[$[:alnum:]$]$';
+                    QUERY PLAN                    
+--------------------------------------------------
+ Seq Scan on text_tbl
+   Filter: (f1 ~ '^(?:\$[$[:alnum:]$]\$)$'::text)
+(2 rows)
 
 -- Opening parenthesis "("
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '([([:alnum:](](';
-                            QUERY PLAN                             
--------------------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:(?:[([:alnum:](](?:)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
-
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '([([:alnum:](](';
+ERROR:  invalid regular expression: parentheses () not balanced
 -- Caret "^"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '^[^[:alnum:]^[^^][[^^]][\^][[\^]]\^]^';
-                                      QUERY PLAN                                       
----------------------------------------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:\^[^[:alnum:]^[^^][[^^]][\^][[\^]]\^]\^)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '^[^[:alnum:]^[^^][[^^]][\^][[\^]]\^]^';
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Seq Scan on text_tbl
+   Filter: (f1 ~ '^(?:\^[^[:alnum:]^[^^][[^^]][\^][[\^]]\^]\^)$'::text)
+(2 rows)
 
 -- Closing square bracket "]" at the beginning of character class
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '[]%][^]%][^%]%';
-                          QUERY PLAN                           
----------------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:[]%][^]%][^%].*)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '[]%][^]%][^%]%';
+                   QUERY PLAN                   
+------------------------------------------------
+ Seq Scan on text_tbl
+   Filter: (f1 ~ '^(?:[]%][^]%][^%].*)$'::text)
+(2 rows)
 
 -- Closing square bracket effective after two carets at the beginning
 -- of character class.
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '[^^]^';
-                      QUERY PLAN                      
-------------------------------------------------------
- Result
-   Output: ((InitPlan 1).col1 ~ '^(?:[^^]\^)$'::text)
-   InitPlan 1
-     ->  Result
-           Output: ''::text
-(5 rows)
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '[^^]^';
+              QUERY PLAN               
+---------------------------------------
+ Seq Scan on text_tbl
+   Filter: (f1 ~ '^(?:[^^]\^)$'::text)
+(2 rows)
 
 -- Test backslash escapes in regexp_replace's replacement string
 SELECT regexp_replace('1112223333', E'(\\d{3})(\\d{3})(\\d{4})', E'(\\1) \\2-\\3');

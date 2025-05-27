@@ -200,22 +200,22 @@ SELECT 'abcdefg' SIMILAR TO '_bcd#%' ESCAPE '##' AS error;
 -- Characters that should be left alone in character classes when a
 -- SIMILAR TO regexp pattern is converted to POSIX style.
 -- Underscore "_"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '_[_[:alpha:]_]_';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '_[_[:alpha:]_]_';
 -- Percentage "%"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '%[%[:alnum:]%]%';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '%[%[:alnum:]%]%';
 -- Dot "."
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '.[.[:alnum:].].';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '.[.[:alnum:].].';
 -- Dollar "$"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '$[$[:alnum:]$]$';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '$[$[:alnum:]$]$';
 -- Opening parenthesis "("
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '([([:alnum:](](';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '([([:alnum:](](';
 -- Caret "^"
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '^[^[:alnum:]^[^^][[^^]][\^][[\^]]\^]^';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '^[^[:alnum:]^[^^][[^^]][\^][[\^]]\^]^';
 -- Closing square bracket "]" at the beginning of character class
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '[]%][^]%][^%]%';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '[]%][^]%][^%]%';
 -- Closing square bracket effective after two carets at the beginning
 -- of character class.
-EXPLAIN (VERBOSE, COSTS OFF) SELECT (SELECT '') SIMILAR TO '[^^]^';
+EXPLAIN (COSTS OFF) SELECT * FROM TEXT_TBL WHERE f1 SIMILAR TO '[^^]^';
 
 -- Test backslash escapes in regexp_replace's replacement string
 SELECT regexp_replace('1112223333', E'(\\d{3})(\\d{3})(\\d{4})', E'(\\1) \\2-\\3');
