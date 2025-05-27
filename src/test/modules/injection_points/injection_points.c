@@ -24,6 +24,7 @@
 #include "nodes/value.h"
 #include "storage/condition_variable.h"
 #include "storage/dsm_registry.h"
+#include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
@@ -38,6 +39,14 @@ PG_MODULE_MAGIC;
 /* Maximum number of waits usable in injection points at once */
 #define INJ_MAX_WAIT	8
 #define INJ_NAME_MAXLEN	64
+
+/* Location of injection point data files, if flush has been requested */
+#define INJ_DUMP_FILE	"injection_points.data"
+#define INJ_DUMP_FILE_TMP	INJ_DUMP_FILE ".tmp"
+
+/* Magic number identifying the injection file */
+static const uint32 INJ_FILE_HEADER = 0xFF345678;
+
 
 /*
  * Conditions related to injection points.  This tracks in shared memory the
@@ -151,6 +160,9 @@ static void
 injection_shmem_startup(void)
 {
 	bool		found;
+	int32		num_inj_points;
+	uint32		header;
+	FILE	   *file;
 
 	if (prev_shmem_startup_hook)
 		prev_shmem_startup_hook();
@@ -172,6 +184,87 @@ injection_shmem_startup(void)
 	}
 
 	LWLockRelease(AddinShmemInitLock);
+
+	/*
+	 * Done if some other process already completed the initialization.
+	 */
+	if (found)
+		return;
+
+	/*
+	 * Note: there should be no need to bother with locks here, because there
+	 * should be no other processes running when this code is reached.
+	 */
+
+	/* Load injection point data, if any has been found while starting up */
+	file = AllocateFile(INJ_DUMP_FILE, PG_BINARY_R);
+
+	if (file == NULL)
+	{
+		if (errno != ENOENT)
+			goto error;
+
+		/* No file?  We are done. */
+		return;
+	}
+
+	if (fread(&header, sizeof(uint32), 1, file) != 1 ||
+		fread(&num_inj_points, sizeof(int32), 1, file) != 1)
+		goto error;
+
+	if (header != INJ_FILE_HEADER)
+		goto error;
+
+	for (int i = 0; i < num_inj_points; i++)
+	{
+		const char *name;
+		const char *library;
+		const char *function;
+		uint32		len;
+		char		buf[1024];
+
+		if (fread(&len, sizeof(uint32), 1, file) != 1)
+			goto error;
+		if (fread(buf, 1, len + 1, file) != len + 1)
+			goto error;
+		buf[len] = '\0';
+		name = pstrdup(buf);
+
+		if (fread(&len, sizeof(uint32), 1, file) != 1)
+			goto error;
+		if (fread(buf, 1, len + 1, file) != len + 1)
+			goto error;
+		buf[len] = '\0';
+		library = pstrdup(buf);
+
+		if (fread(&len, sizeof(uint32), 1, file) != 1)
+			goto error;
+		if (fread(buf, 1, len + 1, file) != len + 1)
+			goto error;
+		buf[len] = '\0';
+		function = pstrdup(buf);
+
+		/* No private data handled here */
+		InjectionPointAttach(name, library, function, NULL, 0);
+	}
+
+	/*
+	 * Remove the persisted injection point file, we do not need it anymore.
+	 */
+	unlink(INJ_DUMP_FILE);
+	FreeFile(file);
+
+	return;
+
+error:
+	ereport(LOG,
+			(errcode_for_file_access(),
+			 errmsg("could not read file \"%s\": %m",
+					INJ_DUMP_FILE)));
+	if (file)
+		FreeFile(file);
+
+	unlink(INJ_DUMP_FILE);
 }
 
 /*
@@ -341,6 +434,83 @@ injection_wait(const char *name, const void *private_data, void *arg)
 	SpinLockAcquire(&inj_state->lock);
 	inj_state->name[index][0] = '\0';
 	SpinLockRelease(&inj_state->lock);
+}
+
+/*
+ * SQL function for flushing injection point data to disk.
+ */
+PG_FUNCTION_INFO_V1(injection_points_flush);
+Datum
+injection_points_flush(PG_FUNCTION_ARGS)
+{
+	FILE	   *file = NULL;
+	List	   *inj_points = NIL;
+	ListCell   *lc;
+	int32		num_inj_points;
+
+	inj_points = InjectionPointList();
+	if (inj_points == NIL)
+		PG_RETURN_VOID();
+
+	num_inj_points = list_length(inj_points);
+
+	/*
+	 * The injection point data is written to a temporary file renamed to a
+	 * final file to avoid incomplete files that could be loaded by backends.
+	 */
+	file = AllocateFile(INJ_DUMP_FILE ".tmp", PG_BINARY_W);
+	if (file == NULL)
+		goto error;
+
+	if (fwrite(&INJ_FILE_HEADER, sizeof(uint32), 1, file) != 1)
+		goto error;
+
+	if (fwrite(&num_inj_points, sizeof(int32), 1, file) != 1)
+		goto error;
+
+	foreach(lc, inj_points)
+	{
+		InjectionPointData *inj_point = lfirst(lc);
+		uint32		len;
+
+		len = strlen(inj_point->name);
+		if (fwrite(&len, sizeof(uint32), 1, file) != 1 ||
+			fwrite(inj_point->name, 1, len + 1, file) != len + 1)
+			goto error;
+
+		len = strlen(inj_point->library);
+		if (fwrite(&len, sizeof(uint32), 1, file) != 1 ||
+			fwrite(inj_point->library, 1, len + 1, file) != len + 1)
+			goto error;
+
+		len = strlen(inj_point->function);
+		if (fwrite(&len, sizeof(uint32), 1, file) != 1 ||
+			fwrite(inj_point->function, 1, len + 1, file) != len + 1)
+			goto error;
+	}
+
+	if (FreeFile(file))
+	{
+		file = NULL;
+		goto error;
+	}
+
+	/*
+	 * Rename file into place, so we atomically replace any old one.
+	 */
+	durable_rename(INJ_DUMP_FILE_TMP, INJ_DUMP_FILE, ERROR);
+
+	PG_RETURN_VOID();
+
+error:
+	ereport(LOG,
+			(errcode_for_file_access(),
+			 errmsg("could not write file \"%s\": %m",
+					INJ_DUMP_FILE_TMP)));
+	if (file)
+		FreeFile(file);
+	unlink(INJ_DUMP_FILE_TMP);
+	PG_RETURN_VOID();
 }
 
 /*
