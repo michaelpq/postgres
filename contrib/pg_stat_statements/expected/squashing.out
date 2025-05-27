@@ -453,7 +453,7 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
                        query                        | calls 
 ----------------------------------------------------+-------
  SELECT * FROM test_squash_bigint WHERE data IN    +|     2
-         ($1 /*, ... */::bigint)                    | 
+         ($1 /*, ... */)                            | 
  SELECT pg_stat_statements_reset() IS NOT NULL AS t |     1
 (2 rows)
 
@@ -503,10 +503,10 @@ SELECT WHERE 1 = ANY(ARRAY[1::int::bigint::int, 2::int::bigint::int]);
 (1 row)
 
 SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
-                              query                              | calls 
------------------------------------------------------------------+-------
- SELECT WHERE $1 IN ($2::int::bigint::int, $3::int::bigint::int) |     2
- SELECT pg_stat_statements_reset() IS NOT NULL AS t              |     1
+                       query                        | calls 
+----------------------------------------------------+-------
+ SELECT WHERE $1 IN ($2 /*, ... */)                 |     2
+ SELECT pg_stat_statements_reset() IS NOT NULL AS t |     1
 (2 rows)
 
 --
@@ -572,7 +572,7 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
                        query                        | calls 
 ----------------------------------------------------+-------
  SELECT * FROM test_squash_cast WHERE data IN      +|     2
-         ($1 /*, ... */::int4::casttesttype)        | 
+         ($1 /*, ... */)                            | 
  SELECT pg_stat_statements_reset() IS NOT NULL AS t |     1
 (2 rows)
 
@@ -604,7 +604,7 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
                        query                        | calls 
 ----------------------------------------------------+-------
  SELECT * FROM test_squash_jsonb WHERE data IN     +|     2
-         (($1 /*, ... */)::jsonb)                   | 
+         ($1 /*, ... */)                            | 
  SELECT pg_stat_statements_reset() IS NOT NULL AS t |     1
 (2 rows)
 
@@ -704,9 +704,9 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
                                query                                | calls 
 --------------------------------------------------------------------+-------
  SELECT * FROM test_squash WHERE id IN                             +|     1
-         ($1 /*, ... */::oid)                                       | 
+         ($1 /*, ... */)                                            | 
  SELECT * FROM test_squash WHERE id IN ($1::oid, $2::oid::int::oid) |     2
- SELECT ARRAY[$1 /*, ... */::oid]                                   |     1
+ SELECT ARRAY[$1 /*, ... */]                                        |     1
  SELECT pg_stat_statements_reset() IS NOT NULL AS t                 |     1
 (4 rows)
 
@@ -773,7 +773,7 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
                        query                        | calls 
 ----------------------------------------------------+-------
  SELECT pg_stat_statements_reset() IS NOT NULL AS t |     1
- select where $1 IN ($2 /*, ... */::int)            |     1
+ select where $1 IN ($2 /*, ... */)                 |     1
  select where $1 IN ($2::int, $3::int::text)        |     1
 (3 rows)
 
@@ -797,7 +797,7 @@ SELECT query, calls FROM pg_stat_statements ORDER BY query COLLATE "C";
                        query                        | calls 
 ----------------------------------------------------+-------
  SELECT pg_stat_statements_reset() IS NOT NULL AS t |     1
- select where $1 IN ($2 /*, ... */::int::text)      |     2
+ select where $1 IN ($2 /*, ... */)                 |     2
 (2 rows)
 
 --
