@@ -33,6 +33,7 @@
 #include "access/gin.h"
 #include "access/slru.h"
 #include "access/toast_compression.h"
+#include "access/toast_type.h"
 #include "access/twophase.h"
 #include "access/xlog_internal.h"
 #include "access/xlogprefetcher.h"
@@ -461,6 +462,13 @@ static const struct config_enum_entry default_toast_compression_options[] = {
 #ifdef  USE_LZ4
 	{"lz4", TOAST_LZ4_COMPRESSION, false},
 #endif
+	{NULL, 0, false}
+};
+
+
+static const struct config_enum_entry default_toast_type_options[] = {
+	{"oid", TOAST_TYPE_OID, false},
+	{"int8", TOAST_TYPE_INT8, false},
 	{NULL, 0, false}
 };
 
@@ -5055,6 +5063,17 @@ struct config_enum ConfigureNamesEnum[] =
 		&default_toast_compression,
 		TOAST_PGLZ_COMPRESSION,
 		default_toast_compression_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"default_toast_type", PGC_USERSET, CLIENT_CONN_STATEMENT,
+			gettext_noop("Sets the default type used for TOAST values."),
+			NULL
+		},
+		&default_toast_type,
+		TOAST_TYPE_OID,
+		default_toast_type_options,
 		NULL, NULL, NULL
 	},
 
