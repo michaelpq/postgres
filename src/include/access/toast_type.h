@@ -9,7 +9,6 @@
  * src/include/access/toast_type.h
  *
  *-------------------------------------------------------------------------
-
  */
 #ifndef TOAST_TYPE_H
 #define TOAST_TYPE_H

@@ -45,6 +45,7 @@
 
 #include "access/heaptoast.h"
 #include "access/multixact.h"
+#include "access/toast_counter.h"
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
@@ -686,6 +687,7 @@ GuessControlValues(void)
 	ControlFile.checkPointCopy.nextOid = FirstGenbkiObjectId;
 	ControlFile.checkPointCopy.nextMulti = FirstMultiXactId;
 	ControlFile.checkPointCopy.nextMultiOffset = 0;
+	ControlFile.checkPointCopy.nextToastId = FirstToastId;
 	ControlFile.checkPointCopy.oldestXid = FirstNormalTransactionId;
 	ControlFile.checkPointCopy.oldestXidDB = InvalidOid;
 	ControlFile.checkPointCopy.oldestMulti = FirstMultiXactId;
