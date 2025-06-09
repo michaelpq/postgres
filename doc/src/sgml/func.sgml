@@ -28242,6 +28242,11 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
       </row>
 
       <row>
+       <entry><structfield>max_toast_bigint_chunk_size</structfield></entry>
+       <entry><type>integer</type></entry>
+      </row>
+
+      <row>
        <entry><structfield>large_object_chunk_size</structfield></entry>
        <entry><type>integer</type></entry>
       </row>

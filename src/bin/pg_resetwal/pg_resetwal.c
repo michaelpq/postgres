@@ -720,6 +720,7 @@ GuessControlValues(void)
 	ControlFile.nameDataLen = NAMEDATALEN;
 	ControlFile.indexMaxKeys = INDEX_MAX_KEYS;
 	ControlFile.toast_max_chunk_size = TOAST_MAX_CHUNK_SIZE;
+	ControlFile.toast_bigint_max_chunk_size = TOAST_BIGINT_MAX_CHUNK_SIZE;
 	ControlFile.loblksize = LOBLKSIZE;
 	ControlFile.float8ByVal = FLOAT8PASSBYVAL;
 
@@ -792,8 +793,10 @@ PrintControlValues(bool guessed)
 		   ControlFile.nameDataLen);
 	printf(_("Maximum columns in an index:          %u\n"),
 		   ControlFile.indexMaxKeys);
-	printf(_("Maximum size of a TOAST chunk:        %u\n"),
+	printf(_("Maximum size of a TOAST (Oid) chunk:  %u\n"),
 		   ControlFile.toast_max_chunk_size);
+	printf(_("Maximum size of a TOAST (int8) chunk: %u\n"),
+		   ControlFile.toast_bigint_max_chunk_size);
 	printf(_("Size of a large-object chunk:         %u\n"),
 		   ControlFile.loblksize);
 	/* This is no longer configurable, but users may still expect to see it: */

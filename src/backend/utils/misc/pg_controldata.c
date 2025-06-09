@@ -206,8 +206,8 @@ pg_control_recovery(PG_FUNCTION_ARGS)
 Datum
 pg_control_init(PG_FUNCTION_ARGS)
 {
-	Datum		values[12];
-	bool		nulls[12];
+	Datum		values[13];
+	bool		nulls[13];
 	TupleDesc	tupdesc;
 	HeapTuple	htup;
 	ControlFileData *ControlFile;
@@ -248,17 +248,20 @@ pg_control_init(PG_FUNCTION_ARGS)
 	values[7] = Int32GetDatum(ControlFile->toast_max_chunk_size);
 	nulls[7] = false;
 
-	values[8] = Int32GetDatum(ControlFile->loblksize);
+	values[8] = Int32GetDatum(ControlFile->toast_bigint_max_chunk_size);
 	nulls[8] = false;
 
-	values[9] = BoolGetDatum(ControlFile->float8ByVal);
+	values[9] = Int32GetDatum(ControlFile->loblksize);
 	nulls[9] = false;
 
-	values[10] = Int32GetDatum(ControlFile->data_checksum_version);
+	values[10] = BoolGetDatum(ControlFile->float8ByVal);
 	nulls[10] = false;
 
-	values[11] = BoolGetDatum(ControlFile->default_char_signedness);
+	values[11] = Int32GetDatum(ControlFile->data_checksum_version);
 	nulls[11] = false;
+
+	values[12] = BoolGetDatum(ControlFile->default_char_signedness);
+	nulls[12] = false;
 
 	htup = heap_form_tuple(tupdesc, values, nulls);
 

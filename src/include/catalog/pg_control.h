@@ -215,7 +215,9 @@ typedef struct ControlFileData
 	uint32		nameDataLen;	/* catalog name field width */
 	uint32		indexMaxKeys;	/* max number of columns in an index */
 
-	uint32		toast_max_chunk_size;	/* chunk size in TOAST tables */
+	uint32		toast_max_chunk_size;	/* chunk size in TOAST (Oid) tables */
+	uint32		toast_bigint_max_chunk_size;	/* chunk size in TOAST (int8)
+												 * tables */
 	uint32		loblksize;		/* chunk size in pg_largeobject */
 
 	bool		float8ByVal;	/* float8, int8, etc pass-by-value? */
