@@ -20,6 +20,7 @@
 #include "access/nbtree.h"
 #include "access/subtrans.h"
 #include "access/syncscan.h"
+#include "access/toast_counter.h"
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xlogprefetcher.h"
@@ -119,6 +120,7 @@ CalculateShmemSize(int *num_semaphores)
 	size = add_size(size, ProcGlobalShmemSize());
 	size = add_size(size, XLogPrefetchShmemSize());
 	size = add_size(size, VarsupShmemSize());
+	size = add_size(size, ToastCounterShmemSize());
 	size = add_size(size, XLOGShmemSize());
 	size = add_size(size, XLogRecoveryShmemSize());
 	size = add_size(size, CLOGShmemSize());
@@ -280,8 +282,9 @@ CreateOrAttachShmemStructs(void)
 	DSMRegistryShmemInit();
 
 	/*
-	 * Set up xlog, clog, and buffers
+	 * Set up TOAST counter, xlog, clog, and buffers
 	 */
+	ToastCounterShmemInit();
 	VarsupShmemInit();
 	XLOGShmemInit();
 	XLogPrefetchShmemInit();
