@@ -411,14 +411,12 @@ pg_fsync(int fd)
 	{
 		int			desc_flags = fcntl(fd, F_GETFL);
 
-		/*
-		 * O_RDONLY is historically 0, so just make sure that for directories
-		 * no write flags are used.
-		 */
+		desc_flags &= O_ACCMODE;
+
 		if (S_ISDIR(st.st_mode))
-			Assert((desc_flags & (O_RDWR | O_WRONLY)) == 0);
+			Assert(desc_flags == O_RDONLY);
 		else
-			Assert((desc_flags & (O_RDWR | O_WRONLY)) != 0);
+			Assert(desc_flags != O_RDONLY);
 	}
 	errno = 0;
 #endif
