@@ -184,7 +184,8 @@ toast_tuple_find_biggest_attribute(ToastTupleContext *ttc,
 	TupleDesc	tupleDesc = ttc->ttc_rel->rd_att;
 	int			numAttrs = tupleDesc->natts;
 	int			biggest_attno = -1;
-	int32		biggest_size = MAXALIGN(TOAST_POINTER_SIZE);
+	/* XXX: this is wrong, should check depending on the varatt_external_ondisk */
+	int32		biggest_size = MAXALIGN(TOAST_POINTER_INT8_SIZE);
 	int32		skip_colflags = TOASTCOL_IGNORE;
 	int			i;
 

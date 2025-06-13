@@ -5117,7 +5117,7 @@ drop role regress_partitioning_role;
 TOAST table "pg_toast.pg_toast_2619"
    Column   |  Type   
 ------------+---------
- chunk_id   | oid
+ chunk_id   | bigint
  chunk_seq  | integer
  chunk_data | bytea
 Owning table: "pg_catalog.pg_statistic"

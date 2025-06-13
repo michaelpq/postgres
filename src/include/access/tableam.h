@@ -740,7 +740,7 @@ typedef struct TableAmRoutine
 	 * table implemented by this AM.  See table_relation_fetch_toast_slice()
 	 * for more details.
 	 */
-	void		(*relation_fetch_toast_slice) (Relation toastrel, Oid valueid,
+	void		(*relation_fetch_toast_slice) (Relation toastrel, uint64 valueid,
 											   int32 attrsize,
 											   int32 sliceoffset,
 											   int32 slicelength,
@@ -1873,7 +1873,7 @@ table_relation_toast_am(Relation rel)
  * stored.
  */
 static inline void
-table_relation_fetch_toast_slice(Relation toastrel, Oid valueid,
+table_relation_fetch_toast_slice(Relation toastrel, uint64 valueid,
 								 int32 attrsize, int32 sliceoffset,
 								 int32 slicelength, struct varlena *result)
 {

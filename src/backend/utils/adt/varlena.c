@@ -5317,7 +5317,8 @@ pg_column_toast_chunk_id(PG_FUNCTION_ARGS)
 {
 	int			typlen;
 	struct varlena *attr;
-	struct varatt_external toast_pointer;
+	struct varatt_external_data toast_pointer;
+	uint64		result;
 
 	/* On first call, get the input type's typlen, and save at *fn_extra */
 	if (fcinfo->flinfo->fn_extra == NULL)
@@ -5344,9 +5345,16 @@ pg_column_toast_chunk_id(PG_FUNCTION_ARGS)
 	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
 		PG_RETURN_NULL();
 
-	VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+	varatt_external_get(attr, &toast_pointer);
 
-	PG_RETURN_OID(toast_pointer.va_valueid);
+	if (VARATT_IS_EXTERNAL_ONDISK_OID(attr))
+		result = toast_pointer.value_oid;
+	else if (VARATT_IS_EXTERNAL_ONDISK_INT8(attr))
+		result = toast_pointer.value_uint64;
+	else
+		Assert(false);
+
+	PG_RETURN_UINT64(result);
 }
 
 /*

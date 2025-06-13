@@ -262,9 +262,9 @@ toast_get_compression_id(struct varlena *attr)
 	 */
 	if (VARATT_IS_EXTERNAL_ONDISK(attr))
 	{
-		struct varatt_external toast_pointer;
+		struct varatt_external_data toast_pointer;
 
-		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+		varatt_external_get(attr, &toast_pointer);
 
 		if (VARATT_EXTERNAL_IS_COMPRESSED(toast_pointer))
 			cmid = VARATT_EXTERNAL_GET_COMPRESS_METHOD(toast_pointer);

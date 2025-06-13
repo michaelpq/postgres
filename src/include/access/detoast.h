@@ -14,10 +14,11 @@
 
 /*
  * Macro to fetch the possibly-unaligned contents of an EXTERNAL datum
- * into a local "struct varatt_external" toast pointer.  This should be
- * just a memcpy, but some versions of gcc seem to produce broken code
- * that assumes the datum contents are aligned.  Introducing an explicit
- * intermediate "varattrib_1b_e *" variable seems to fix it.
+ * into a local "struct varatt_external_oid" or "struct varatt_external_oid"
+ * toast pointer.  This should be just a memcpy, but some versions of gcc
+ * seem to produce broken code that assumes the datum contents are aligned.
+ * Introducing an explicit intermediate "varattrib_1b_e *" variable seems
+ * to fix it.
  */
 #define VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr) \
 do { \
@@ -27,8 +28,17 @@ do { \
 	memcpy(&(toast_pointer), VARDATA_EXTERNAL(attre), sizeof(toast_pointer)); \
 } while (0)
 
-/* Size of an EXTERNAL datum that contains a standard TOAST pointer */
-#define TOAST_POINTER_SIZE (VARHDRSZ_EXTERNAL + sizeof(varatt_external))
+/*
+ * Size of an EXTERNAL datum that contains a standard TOAST pointer (OID
+ * value).
+ */
+#define TOAST_POINTER_OID_SIZE (VARHDRSZ_EXTERNAL + sizeof(varatt_external_oid))
+
+/*
+ * Size of an EXTERNAL datum that contains a standard TOAST pointer
+ * (uint64 value).
+ */
+#define TOAST_POINTER_INT8_SIZE (VARHDRSZ_EXTERNAL + sizeof(varatt_external_int8))
 
 /* Size of an EXTERNAL datum that contains an indirection pointer */
 #define INDIRECT_POINTER_SIZE (VARHDRSZ_EXTERNAL + sizeof(varatt_indirect))

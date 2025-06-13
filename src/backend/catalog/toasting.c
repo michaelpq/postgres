@@ -149,6 +149,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	int16		coloptions[2];
 	ObjectAddress baseobject,
 				toastobject;
+	Oid			toast_typid;
 
 	/*
 	 * Is it already toasted?
@@ -206,9 +207,16 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 
 	/* this is pretty painful...  need a tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(3);
+	if (default_toast_type == TOAST_TYPE_OID)
+		toast_typid = OIDOID;
+	else if (default_toast_type == TOAST_TYPE_INT8)
+		toast_typid = INT8OID;
+	else
+		Assert(false);
+
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1,
 					   "chunk_id",
-					   OIDOID,
+					   toast_typid,
 					   -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2,
 					   "chunk_seq",
@@ -316,7 +324,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	collationIds[0] = InvalidOid;
 	collationIds[1] = InvalidOid;
 
-	opclassIds[0] = OID_BTREE_OPS_OID;
+	opclassIds[0] = INT8_BTREE_OPS_OID;
 	opclassIds[1] = INT4_BTREE_OPS_OID;
 
 	coloptions[0] = 0;

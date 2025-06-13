@@ -16,10 +16,47 @@
 #define VARATT_H
 
 /*
- * struct varatt_external is a traditional "TOAST pointer", that is, the
+ * XXX: this is for VARATT_EXTERNAL_GET_POINTER used below, should split
+ * into a separate header but it's Friday and I am lazy.
+ */
+#include "access/detoast.h"
+/* This one is for OIDOID and INT8OID, again, lazy now */
+#include "catalog/pg_type_d.h"
+
+/*
+ * Intermediate in-memory structure used when constructing on-disk
+ * varatt_external_* or when deserializing varlena contents.
+ */
+typedef struct varatt_external_data
+{
+	/* type of varatt_external, based on vartag.  Determines the value ID. */
+	// XXX may not be necessary
+	//uint8		vartag;
+	/* Original data size (includes header) */
+	int32       va_rawsize;
+	/* External saved size (without header) */
+	uint32      va_extinfo;
+	/* compression method */
+	// XXX may not be necessary
+	//uint32      va_compression_method;
+	/* RelID of TOAST table containing it */
+	Oid			va_toastrelid;
+	/* Unique ID of value within TOAST table */
+	union
+	{
+		Oid			value_oid;
+		uint64		value_uint64;
+	};
+} varatt_external_data;
+
+/*
+ * struct varatt_external_oid is a traditional "TOAST pointer", that is, the
  * information needed to fetch a Datum stored out-of-line in a TOAST table.
  * The data is compressed if and only if the external size stored in
  * va_extinfo is less than va_rawsize - VARHDRSZ.
+ *
+ * The value ID used is an OID, used for TOAST relations with OID as
+ * attribute for chunk_id.
  *
  * This struct must not contain any padding, because we sometimes compare
  * these pointers using memcmp.
@@ -29,14 +66,38 @@
  * you can look at these fields!  (The reason we use memcmp is to avoid
  * having to do that just to detect equality of two TOAST pointers...)
  */
-typedef struct varatt_external
+typedef struct varatt_external_oid
 {
 	int32		va_rawsize;		/* Original data size (includes header) */
 	uint32		va_extinfo;		/* External saved size (without header) and
 								 * compression method */
 	Oid			va_valueid;		/* Unique ID of value within TOAST table */
 	Oid			va_toastrelid;	/* RelID of TOAST table containing it */
-}			varatt_external;
+}			varatt_external_oid;
+
+/*
+ * struct varatt_external_int8 is a "larger" version of "TOAST pointer",
+ * that uses an 8-byte integer as value.
+ *
+ * This follows the same properties as varatt_external_oid, except that
+ * this is used in TOAST relations with int8 as attribute for chunk_id.
+ */
+typedef struct varatt_external_int8
+{
+	int32		va_rawsize;		/* Original data size (includes header) */
+	uint32		va_extinfo;		/* External saved size (without header) and
+								 * compression method */
+	/*
+	 * Unique ID of value within TOAST table, as two uint32 for alignment
+	 * and padding (XXX: think for example about the addition of an extra
+	 * field for meta-data and/or more compression data, even if it's OK
+	 * here).
+	 */
+	uint32		va_valueid_lo;
+	uint32		va_valueid_hi;
+	Oid			va_toastrelid;	/* RelID of TOAST table containing it */
+}			varatt_external_int8;
+
 
 /*
  * These macros define the "saved size" portion of va_extinfo.  Its remaining
@@ -78,15 +139,17 @@ typedef struct varatt_expanded
 
 /*
  * Type tag for the various sorts of "TOAST pointer" datums.  The peculiar
- * value for VARTAG_ONDISK comes from a requirement for on-disk compatibility
- * with a previous notion that the tag field was the pointer datum's length.
+ * value for VARTAG_ONDISK_OID comes from a requirement for on-disk
+ * compatibility with a previous notion that the tag field was the pointer
+ * datum's length.
  */
 typedef enum vartag_external
 {
 	VARTAG_INDIRECT = 1,
 	VARTAG_EXPANDED_RO = 2,
 	VARTAG_EXPANDED_RW = 3,
-	VARTAG_ONDISK = 18
+	VARTAG_ONDISK_INT8 = 4,
+	VARTAG_ONDISK_OID = 18
 } vartag_external;
 
 /* this test relies on the specific tag values above */
@@ -96,7 +159,8 @@ typedef enum vartag_external
 #define VARTAG_SIZE(tag) \
 	((tag) == VARTAG_INDIRECT ? sizeof(varatt_indirect) : \
 	 VARTAG_IS_EXPANDED(tag) ? sizeof(varatt_expanded) : \
-	 (tag) == VARTAG_ONDISK ? sizeof(varatt_external) : \
+	 (tag) == VARTAG_ONDISK_OID ? sizeof(varatt_external_oid) : \
+	 (tag) == VARTAG_ONDISK_INT8 ? sizeof(varatt_external_int8) : \
 	 (AssertMacro(false), 0))
 
 /*
@@ -287,8 +351,12 @@ typedef struct
 
 #define VARATT_IS_COMPRESSED(PTR)			VARATT_IS_4B_C(PTR)
 #define VARATT_IS_EXTERNAL(PTR)				VARATT_IS_1B_E(PTR)
+#define VARATT_IS_EXTERNAL_ONDISK_OID(PTR) \
+	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_OID)
+#define VARATT_IS_EXTERNAL_ONDISK_INT8(PTR) \
+	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_INT8)
 #define VARATT_IS_EXTERNAL_ONDISK(PTR) \
-	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK)
+	(VARATT_IS_EXTERNAL_ONDISK_OID(PTR) || VARATT_IS_EXTERNAL_ONDISK_INT8(PTR))
 #define VARATT_IS_EXTERNAL_INDIRECT(PTR) \
 	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_INDIRECT)
 #define VARATT_IS_EXTERNAL_EXPANDED_RO(PTR) \
@@ -330,7 +398,10 @@ typedef struct
 #define VARDATA_COMPRESSED_GET_COMPRESS_METHOD(PTR) \
 	(((varattrib_4b *) (PTR))->va_compressed.va_tcinfo >> VARLENA_EXTSIZE_BITS)
 
-/* Same for external Datums; but note argument is a struct varatt_external */
+/*
+ * Same for external Datums; but note argument is a struct
+ * varatt_external_oid or varatt_external_int8.
+ */
 #define VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer) \
 	((toast_pointer).va_extinfo & VARLENA_EXTSIZE_MASK)
 #define VARATT_EXTERNAL_GET_COMPRESS_METHOD(toast_pointer) \
@@ -354,5 +425,92 @@ typedef struct
 #define VARATT_EXTERNAL_IS_COMPRESSED(toast_pointer) \
 	(VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer) < \
 	 (toast_pointer).va_rawsize - VARHDRSZ)
+
+/*
+ * Helper routines able to translate the various varatt_external_* from/to
+ * the in-memory representation varatt_external_data.
+ */
+
+/*
+ * Map an on-disk extension TOAST pointer to varatt_external_data,
+ * for consumption in the toast/detoast code, to serialize what's in
+ * memory.
+ *
+ * XXX: That's definitely boiler-plate, but this is a POC to check the
+ * portability of this code across multiple toast value types so that's
+ * still fine, for now.
+ */
+static inline void
+varatt_external_get(struct varlena *attr, varatt_external_data *data)
+{
+	Assert(VARATT_IS_EXTERNAL(attr));
+
+	if (VARATT_IS_EXTERNAL_ONDISK_OID(attr))
+	{
+		varatt_external_oid		external;
+
+		VARATT_EXTERNAL_GET_POINTER(external, attr);
+		data->va_rawsize = external.va_rawsize;
+		data->va_extinfo = external.va_extinfo;
+		data->va_toastrelid = external.va_toastrelid;
+		data->value_oid = external.va_valueid;
+	}
+	else if (VARATT_IS_EXTERNAL_ONDISK_INT8(attr))
+	{
+		varatt_external_int8	external;
+
+		VARATT_EXTERNAL_GET_POINTER(external, attr);
+		data->va_rawsize = external.va_rawsize;
+		data->va_extinfo = external.va_extinfo;
+		data->value_uint64 = (((uint64) external.va_valueid_hi) << 32) |
+				  external.va_valueid_lo;
+		data->va_toastrelid = external.va_toastrelid;
+	}
+	else
+		Assert(false);
+}
+
+/*
+ * Create a new on-disk external TOAST pointer, based on a newly-filled
+ * varatt_external_data, allocated in the current memory context.  toasttyp
+ * is the attribute type of the TOAST relation.
+ */
+static inline struct varlena *
+varatt_external_create(varatt_external_data data, Oid toasttyp)
+{
+	struct varlena *result = NULL;
+
+	if (toasttyp == OIDOID)
+	{
+		varatt_external_oid external;
+
+		external.va_rawsize = data.va_rawsize;
+		external.va_extinfo = data.va_extinfo;
+		external.va_toastrelid = data.va_toastrelid;
+		external.va_valueid = data.value_oid;
+
+		result = (struct varlena *) palloc(TOAST_POINTER_OID_SIZE);
+		SET_VARTAG_EXTERNAL(result, VARTAG_ONDISK_OID);
+		memcpy(VARDATA_EXTERNAL(result), &external, sizeof(external));
+	}
+	else if (toasttyp == INT8OID)
+	{
+		varatt_external_int8 external;
+
+		external.va_rawsize = data.va_rawsize;
+		external.va_extinfo = data.va_extinfo;
+		external.va_toastrelid = data.va_toastrelid;
+		external.va_valueid_hi = (((uint64) data.value_uint64) >> 32);
+		external.va_valueid_lo = (uint32) data.value_uint64;
+
+		result = (struct varlena *) palloc(TOAST_POINTER_INT8_SIZE);
+		SET_VARTAG_EXTERNAL(result, VARTAG_ONDISK_INT8);
+		memcpy(VARDATA_EXTERNAL(result), &external, sizeof(external));
+	}
+	else
+		Assert(false);
+
+	return result;
+}
 
 #endif
