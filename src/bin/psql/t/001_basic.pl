@@ -483,7 +483,7 @@ psql_like($node, "copy (values ('foo'),('bar')) to stdout \\g | $pipe_cmd",
 my $c4 = slurp_file($g_file);
 like($c4, qr/foo.*bar/s);
 
-# Tests COPY within pipelines. Those abort the connection from
+# Tests COPY within pipelines.  Those abort the connection from
 # the frontend so they cannot be tested via SQL.
 $node->safe_psql('postgres', 'CREATE TABLE psql_pipeline()');
 my $log_location = -s $node->logfile;
@@ -496,8 +496,7 @@ SELECT 'val1';
 \\getresults
 \\endpipeline},
 	qr/COPY in a pipeline is not supported, aborting connection/,
-	'COPY in pipeline: direct COPY, SELECT, sync and getresult'
-);
+	'COPY in pipeline: direct COPY, SELECT, sync and getresult');
 $node->wait_for_log(
 	qr/FATAL: .*terminating connection because protocol synchronization was lost/,
 	$log_location);

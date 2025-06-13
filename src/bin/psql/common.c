@@ -1870,22 +1870,25 @@ ExecQueryAndProcessResults(const char *query,
 			if (PQpipelineStatus(pset.db) != PQ_PIPELINE_OFF)
 			{
 				/*
-				 * Running COPY within a pipeline can break protocol
-				 * synchronisation in multiple ways.
+				 * Running COPY within a pipeline can break the protocol
+				 * synchronisation in multiple ways, and psql shows its limits
+				 * when it comes to tracking this information.
 				 *
-				 * While in copy mode, the backend process ignores additional
-				 * Sync messages and won't send the matching ReadyForQuery
-				 * expected by the frontend
+				 * While in COPY mode, the backend process ignores additional
+				 * Sync messages and will not send the matching ReadyForQuery
+				 * expected by the frontend.
 				 *
-				 * libq also automatically sends a Sync with the Copy message,
-				 * creating an unexpected synchronisation point. A failure
-				 * during copy would leave the pipeline in an aborted state
-				 * while the backend would be in a clean state, ready to
-				 * process commands.
+				 * Additionally, libpq automatically sends a Sync with the
+				 * Copy message, creating an unexpected synchronisation point.
+				 * A failure during COPY would leave the pipeline in an
+				 * aborted state while the backend would be in a clean state,
+				 * ready to process commands.
 				 *
-				 * Fixing those issues would require modifications in how
-				 * libpq handle pipeline and COPY. For the time being, we
-				 * forbid the use of COPY within a pipeline.
+				 * Improving those issues would require modifications in how
+				 * libpq handles pipelines and COPY.  Hence, for the time
+				 * being, we forbid the use of COPY within a pipeline,
+				 * aborting the connection to avoid an inconsistent state on
+				 * psql side if trying to use a COPY command.
 				 */
 				pg_log_info("COPY in a pipeline is not supported, aborting connection");
 				exit(EXIT_BADCONN);
