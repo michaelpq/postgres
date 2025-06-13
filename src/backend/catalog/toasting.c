@@ -324,7 +324,10 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	collationIds[0] = InvalidOid;
 	collationIds[1] = InvalidOid;
 
-	opclassIds[0] = INT8_BTREE_OPS_OID;
+	if (toast_typid == OIDOID)
+		opclassIds[0] = OID_BTREE_OPS_OID;
+	else if (toast_typid == INT8OID)
+		opclassIds[0] = INT8_BTREE_OPS_OID;
 	opclassIds[1] = INT4_BTREE_OPS_OID;
 
 	coloptions[0] = 0;
