@@ -211,3 +211,4 @@ PQgetAuthDataHook         208
 PQdefaultAuthDataHook     209
 PQfullProtocolVersion     210
 appendPQExpBufferVA       211
+PQserviceFile             212
