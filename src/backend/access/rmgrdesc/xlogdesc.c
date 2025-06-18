@@ -96,6 +96,13 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 		memcpy(&nextOid, rec, sizeof(Oid));
 		appendStringInfo(buf, "%u", nextOid);
 	}
+	else if (info == XLOG_NEXT_TOAST_ID)
+	{
+		uint64		nextId;
+
+		memcpy(&nextId, rec, sizeof(uint64));
+		appendStringInfo(buf, "%" PRIu64, nextId);
+	}
 	else if (info == XLOG_RESTORE_POINT)
 	{
 		xl_restore_point *xlrec = (xl_restore_point *) rec;
@@ -217,6 +224,9 @@ xlog_identify(uint8 info)
 			break;
 		case XLOG_CHECKPOINT_REDO:
 			id = "CHECKPOINT_REDO";
+			break;
+		case XLOG_NEXT_TOAST_ID:
+			id = "NEXT_TOAST_ID";
 			break;
 	}
 

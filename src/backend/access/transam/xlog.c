@@ -53,6 +53,7 @@
 #include "access/rewriteheap.h"
 #include "access/subtrans.h"
 #include "access/timeline.h"
+#include "access/toast_counter.h"
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
@@ -5269,6 +5270,7 @@ BootStrapXLOG(uint32 data_checksum_version)
 	checkPoint.nextOid = FirstGenbkiObjectId;
 	checkPoint.nextMulti = FirstMultiXactId;
 	checkPoint.nextMultiOffset = 0;
+	checkPoint.nextToastId = FirstToastId;
 	checkPoint.oldestXid = FirstNormalTransactionId;
 	checkPoint.oldestXidDB = Template1DbOid;
 	checkPoint.oldestMulti = FirstMultiXactId;
@@ -5281,6 +5283,10 @@ BootStrapXLOG(uint32 data_checksum_version)
 	TransamVariables->nextXid = checkPoint.nextXid;
 	TransamVariables->nextOid = checkPoint.nextOid;
 	TransamVariables->oidCount = 0;
+
+	ToastCounter->nextId = checkPoint.nextToastId;
+	ToastCounter->idCount = 0;
+
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
 	AdvanceOldestClogXid(checkPoint.oldestXid);
 	SetTransactionIdLimit(checkPoint.oldestXid, checkPoint.oldestXidDB);
@@ -5757,6 +5763,8 @@ StartupXLOG(void)
 	TransamVariables->nextXid = checkPoint.nextXid;
 	TransamVariables->nextOid = checkPoint.nextOid;
 	TransamVariables->oidCount = 0;
+	ToastCounter->nextId = checkPoint.nextToastId;
+	ToastCounter->idCount = 0;
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
 	AdvanceOldestClogXid(checkPoint.oldestXid);
 	SetTransactionIdLimit(checkPoint.oldestXid, checkPoint.oldestXidDB);
@@ -7299,6 +7307,12 @@ CreateCheckPoint(int flags)
 		checkPoint.nextOid += TransamVariables->oidCount;
 	LWLockRelease(OidGenLock);
 
+	LWLockAcquire(ToastIdGenLock, LW_SHARED);
+	checkPoint.nextToastId = ToastCounter->nextId;
+	if (!shutdown)
+		checkPoint.nextToastId += ToastCounter->idCount;
+	LWLockRelease(ToastIdGenLock);
+
 	MultiXactGetCheckptMulti(shutdown,
 							 &checkPoint.nextMulti,
 							 &checkPoint.nextMultiOffset,
@@ -8239,6 +8253,22 @@ XLogPutNextOid(Oid nextOid)
 }
 
 /*
+ * Write a NEXT_TOAST_ID log record.
+ */
+void
+XLogPutNextToastId(uint64 nextId)
+{
+	XLogBeginInsert();
+	XLogRegisterData(&nextId, sizeof(uint64));
+	(void) XLogInsert(RM_XLOG_ID, XLOG_NEXT_TOAST_ID);
+
+	/*
+	 * The next TOAST value ID is not flushed immediately, for the same reason
+	 * as above for the OIDs in XLogPutNextOid().
+	 */
+}
+
+/*
  * Write an XLOG SWITCH record.
  *
  * Here we just blindly issue an XLogInsert request for the record.
@@ -8453,6 +8483,16 @@ xlog_redo(XLogReaderState *record)
 		TransamVariables->oidCount = 0;
 		LWLockRelease(OidGenLock);
 	}
+	else if (info == XLOG_NEXT_TOAST_ID)
+	{
+		uint64		nextToastId;
+
+		memcpy(&nextToastId, XLogRecGetData(record), sizeof(uint64));
+		LWLockAcquire(ToastIdGenLock, LW_EXCLUSIVE);
+		ToastCounter->nextId = nextToastId;
+		ToastCounter->idCount = 0;
+		LWLockRelease(ToastIdGenLock);
+	}
 	else if (info == XLOG_CHECKPOINT_SHUTDOWN)
 	{
 		CheckPoint	checkPoint;
@@ -8467,6 +8507,10 @@ xlog_redo(XLogReaderState *record)
 		TransamVariables->nextOid = checkPoint.nextOid;
 		TransamVariables->oidCount = 0;
 		LWLockRelease(OidGenLock);
+		LWLockAcquire(ToastIdGenLock, LW_EXCLUSIVE);
+		ToastCounter->nextId = checkPoint.nextToastId;
+		ToastCounter->idCount = 0;
+		LWLockRelease(ToastIdGenLock);
 		MultiXactSetNextMXact(checkPoint.nextMulti,
 							  checkPoint.nextMultiOffset);
 
