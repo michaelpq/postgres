@@ -9830,6 +9830,23 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       </listitem>
      </varlistentry>
 
+     <varlistentry id="guc-default-toast-type" xreflabel="default_toast_type">
+      <term><varname>default_toast_type</varname> (<type>enum</type>)
+      <indexterm>
+       <primary><varname>default_toast_type</varname> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        This variable sets the default type for
+        <link linkend="storage-toast">TOAST</link> values.
+        The value types supported are <literal>oid</literal> and
+        <literal>int8</literal>.
+        The default is <literal>oid</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-temp-tablespaces" xreflabel="temp_tablespaces">
       <term><varname>temp_tablespaces</varname> (<type>string</type>)
       <indexterm>
