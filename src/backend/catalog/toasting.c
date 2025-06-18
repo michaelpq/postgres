@@ -16,6 +16,7 @@
 
 #include "access/heapam.h"
 #include "access/toast_compression.h"
+#include "access/toast_type.h"
 #include "access/xact.h"
 #include "catalog/binary_upgrade.h"
 #include "catalog/catalog.h"
@@ -32,6 +33,9 @@
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+
+/* GUC support */
+int			default_toast_type = TOAST_TYPE_OID;
 
 static void CheckAndCreateToastTable(Oid relOid, Datum reloptions,
 									 LOCKMODE lockmode, bool check,
