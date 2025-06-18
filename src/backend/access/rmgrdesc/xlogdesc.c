@@ -98,7 +98,7 @@ xlog_desc(StringInfo buf, XLogReaderState *record)
 	}
 	else if (info == XLOG_NEXT_TOAST_ID)
 	{
-		uint64			nextId;
+		uint64		nextId;
 
 		memcpy(&nextId, rec, sizeof(uint64));
 		appendStringInfo(buf, "%" PRIu64, nextId);

@@ -19,6 +19,7 @@
 
 #include "access/detoast.h"
 #include "access/toast_compression.h"
+#include "access/toast_external.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_type.h"
 #include "common/hashfn.h"
@@ -5317,7 +5318,7 @@ pg_column_toast_chunk_id(PG_FUNCTION_ARGS)
 {
 	int			typlen;
 	struct varlena *attr;
-	struct varatt_external toast_pointer;
+	uint64		result;
 
 	/* On first call, get the input type's typlen, and save at *fn_extra */
 	if (fcinfo->flinfo->fn_extra == NULL)
@@ -5344,9 +5345,9 @@ pg_column_toast_chunk_id(PG_FUNCTION_ARGS)
 	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
 		PG_RETURN_NULL();
 
-	VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+	result = toast_external_info_get_value(attr);
 
-	PG_RETURN_OID(toast_pointer.va_valueid);
+	PG_RETURN_UINT64(result);
 }
 
 /*

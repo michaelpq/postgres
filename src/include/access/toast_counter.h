@@ -12,8 +12,8 @@
 #ifndef TOAST_COUNTER_H
 #define TOAST_COUNTER_H
 
-#define InvalidToastId	0	/* Invalid TOAST value ID */
-#define FirstToastId	1	/* First TOAST value ID assigned */
+#define InvalidToastId	0		/* Invalid TOAST value ID */
+#define FirstToastId	1		/* First TOAST value ID assigned */
 
 /*
  * Structure in shared memory to track TOAST value counter activity.

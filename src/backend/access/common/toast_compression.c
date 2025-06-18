@@ -19,6 +19,7 @@
 
 #include "access/detoast.h"
 #include "access/toast_compression.h"
+#include "access/toast_external.h"
 #include "common/pg_lzcompress.h"
 #include "varatt.h"
 
@@ -261,14 +262,7 @@ toast_get_compression_id(struct varlena *attr)
 	 * toast compression header.
 	 */
 	if (VARATT_IS_EXTERNAL_ONDISK(attr))
-	{
-		struct varatt_external toast_pointer;
-
-		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
-
-		if (VARATT_EXTERNAL_IS_COMPRESSED(toast_pointer))
-			cmid = VARATT_EXTERNAL_GET_COMPRESS_METHOD(toast_pointer);
-	}
+		cmid = toast_external_info_get_compression_method(attr);
 	else if (VARATT_IS_COMPRESSED(attr))
 		cmid = VARDATA_COMPRESSED_GET_COMPRESS_METHOD(attr);
 

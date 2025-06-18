@@ -149,6 +149,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	int16		coloptions[2];
 	ObjectAddress baseobject,
 				toastobject;
+	Oid			toast_typid = InvalidOid;
 
 	/*
 	 * Is it already toasted?
@@ -206,9 +207,39 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 
 	/* this is pretty painful...  need a tuple descriptor */
 	tupdesc = CreateTemplateTupleDesc(3);
+
+	/*
+	 * Determine the type OID to use for the value.  If OIDOldToast is
+	 * defined, we need to rely on the existing table for the job because
+	 * we do not want to create an inconsistent relation that would conflict
+	 * with the parent and break the world.
+	 */
+	if (!OidIsValid(OIDOldToast))
+	{
+		if (default_toast_type == TOAST_TYPE_OID)
+			toast_typid = OIDOID;
+		else if (default_toast_type == TOAST_TYPE_INT8)
+			toast_typid = INT8OID;
+		else
+			Assert(false);
+	}
+	else
+	{
+		HeapTuple	tuple;
+		Form_pg_attribute atttoast;
+
+		/* For the chunk_id type. */
+		tuple = SearchSysCacheAttNum(OIDOldToast, 1);
+		if (!HeapTupleIsValid(tuple))
+			elog(ERROR, "cache lookup failed for relation %u", OIDOldToast);
+		atttoast = (Form_pg_attribute) GETSTRUCT(tuple);
+		toast_typid = atttoast->atttypid;
+		ReleaseSysCache(tuple);
+	}
+
 	TupleDescInitEntry(tupdesc, (AttrNumber) 1,
 					   "chunk_id",
-					   OIDOID,
+					   toast_typid,
 					   -1, 0);
 	TupleDescInitEntry(tupdesc, (AttrNumber) 2,
 					   "chunk_seq",
@@ -316,7 +347,10 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 	collationIds[0] = InvalidOid;
 	collationIds[1] = InvalidOid;
 
-	opclassIds[0] = OID_BTREE_OPS_OID;
+	if (toast_typid == OIDOID)
+		opclassIds[0] = OID_BTREE_OPS_OID;
+	else if (toast_typid == INT8OID)
+		opclassIds[0] = INT8_BTREE_OPS_OID;
 	opclassIds[1] = INT4_BTREE_OPS_OID;
 
 	coloptions[0] = 0;

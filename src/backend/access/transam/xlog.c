@@ -8263,8 +8263,8 @@ XLogPutNextToastId(uint64 nextId)
 	(void) XLogInsert(RM_XLOG_ID, XLOG_NEXT_TOAST_ID);
 
 	/*
-	 * The next TOAST value ID is not flushed immediately, for the same
-	 * reason as above for the OIDs in XLogPutNextOid().
+	 * The next TOAST value ID is not flushed immediately, for the same reason
+	 * as above for the OIDs in XLogPutNextOid().
 	 */
 }
 

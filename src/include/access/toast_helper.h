@@ -47,6 +47,7 @@ typedef struct
 	 * should be NULL in the case of an insert.
 	 */
 	Relation	ttc_rel;		/* the relation that contains the tuple */
+	int32		ttc_toast_pointer_size;	/* size of external TOAST pointer */
 	Datum	   *ttc_values;		/* values from the tuple columns */
 	bool	   *ttc_isnull;		/* null flags for the tuple columns */
 	Datum	   *ttc_oldvalues;	/* values from previous tuple */

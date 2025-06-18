@@ -81,12 +81,21 @@
 
 #define EXTERN_TUPLE_MAX_SIZE	MaximumBytesPerTuple(EXTERN_TUPLES_PER_PAGE)
 
-#define TOAST_MAX_CHUNK_SIZE	\
+#define TOAST_MAX_CHUNK_SIZE_INT8	\
+	(EXTERN_TUPLE_MAX_SIZE -							\
+	 MAXALIGN(SizeofHeapTupleHeader) -					\
+	 (sizeof(uint32) * 2) -								\
+	 sizeof(int32) -									\
+	 VARHDRSZ)
+#define TOAST_MAX_CHUNK_SIZE_OID	\
 	(EXTERN_TUPLE_MAX_SIZE -							\
 	 MAXALIGN(SizeofHeapTupleHeader) -					\
 	 sizeof(Oid) -										\
 	 sizeof(int32) -									\
 	 VARHDRSZ)
+
+/* Maximum size of chunk possible for both types */
+#define TOAST_MAX_CHUNK_SIZE	Max(TOAST_MAX_CHUNK_SIZE_INT8, TOAST_MAX_CHUNK_SIZE_OID)
 
 /* ----------
  * heap_toast_insert_or_update -
@@ -142,7 +151,7 @@ extern HeapTuple toast_build_flattened_tuple(TupleDesc tupleDesc,
  *	Fetch a slice from a toast value stored in a heap table.
  * ----------
  */
-extern void heap_fetch_toast_slice(Relation toastrel, Oid valueid,
+extern void heap_fetch_toast_slice(Relation toastrel, uint64 valueid,
 								   int32 attrsize, int32 sliceoffset,
 								   int32 slicelength, struct varlena *result);
 

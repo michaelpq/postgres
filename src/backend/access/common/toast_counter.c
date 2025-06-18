@@ -41,8 +41,8 @@ ToastCounterShmemInit(void)
 
 	/* Initialize shared state struct */
 	ToastCounter = ShmemInitStruct("ToastCounter",
-									   sizeof(ToastCounterData),
-									   &found);
+								   sizeof(ToastCounterData),
+								   &found);
 	if (!IsUnderPostmaster)
 	{
 		Assert(!found);
@@ -70,9 +70,9 @@ GetNewToastId(void)
 
 	/*
 	 * Check for initialization or wraparound of the toast counter ID.
-	 * InvalidToastId (0) should never be returned.  We are 64 bit-wide,
-	 * hence wraparound is unlikely going to happen, but this check is
-	 * cheap so let's play it safe.
+	 * InvalidToastId (0) should never be returned.  We are 64 bit-wide, hence
+	 * wraparound is unlikely going to happen, but this check is cheap so
+	 * let's play it safe.
 	 */
 	if (ToastCounter->nextId < ((uint64) FirstToastId))
 	{

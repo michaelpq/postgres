@@ -92,6 +92,7 @@
 #include "access/detoast.h"
 #include "access/heapam.h"
 #include "access/rewriteheap.h"
+#include "access/toast_external.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
@@ -176,7 +177,7 @@ typedef struct ReorderBufferIterTXNState
 /* toast datastructures */
 typedef struct ReorderBufferToastEnt
 {
-	Oid			chunk_id;		/* toast_table.chunk_id */
+	uint64		chunk_id;		/* toast_table.chunk_id */
 	int32		last_chunk_seq; /* toast_table.chunk_seq of the last chunk we
 								 * have seen */
 	Size		num_chunks;		/* number of chunks we've already seen */
@@ -4944,7 +4945,7 @@ ReorderBufferToastInitHash(ReorderBuffer *rb, ReorderBufferTXN *txn)
 
 	Assert(txn->toast_hash == NULL);
 
-	hash_ctl.keysize = sizeof(Oid);
+	hash_ctl.keysize = sizeof(uint64);
 	hash_ctl.entrysize = sizeof(ReorderBufferToastEnt);
 	hash_ctl.hcxt = rb->context;
 	txn->toast_hash = hash_create("ReorderBufferToastHash", 5, &hash_ctl,
@@ -4968,16 +4969,26 @@ ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	bool		isnull;
 	Pointer		chunk;
 	TupleDesc	desc = RelationGetDescr(relation);
-	Oid			chunk_id;
+	uint64		chunk_id;
 	int32		chunk_seq;
+	Oid			toast_typid;
 
 	if (txn->toast_hash == NULL)
 		ReorderBufferToastInitHash(rb, txn);
+	toast_typid = TupleDescAttr(desc, 0)->atttypid;
 
 	Assert(IsToastRelation(relation));
 
 	newtup = change->data.tp.newtuple;
-	chunk_id = DatumGetObjectId(fastgetattr(newtup, 1, desc, &isnull));
+
+	/* This depends on the type of TOAST value dealt with. */
+	if (toast_typid == OIDOID)
+		chunk_id = DatumGetObjectId(fastgetattr(newtup, 1, desc, &isnull));
+	else if (toast_typid == INT8OID)
+		chunk_id = DatumGetUInt64(fastgetattr(newtup, 1, desc, &isnull));
+	else
+		Assert(false);
+
 	Assert(!isnull);
 	chunk_seq = DatumGetInt32(fastgetattr(newtup, 2, desc, &isnull));
 	Assert(!isnull);
@@ -4995,11 +5006,11 @@ ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		dlist_init(&ent->chunks);
 
 		if (chunk_seq != 0)
-			elog(ERROR, "got sequence entry %d for toast chunk %u instead of seq 0",
+			elog(ERROR, "got sequence entry %d for toast chunk %" PRIu64 " instead of seq 0",
 				 chunk_seq, chunk_id);
 	}
 	else if (found && chunk_seq != ent->last_chunk_seq + 1)
-		elog(ERROR, "got sequence entry %d for toast chunk %u instead of seq %d",
+		elog(ERROR, "got sequence entry %d for toast chunk %" PRIu64 " instead of seq %d",
 			 chunk_seq, chunk_id, ent->last_chunk_seq + 1);
 
 	chunk = DatumGetPointer(fastgetattr(newtup, 3, desc, &isnull));
@@ -5102,12 +5113,13 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		struct varlena *varlena;
 
 		/* va_rawsize is the size of the original datum -- including header */
-		struct varatt_external toast_pointer;
+		struct toast_external_data toast_pointer;
 		struct varatt_indirect redirect_pointer;
 		struct varlena *new_datum = NULL;
 		struct varlena *reconstructed;
 		dlist_iter	it;
 		Size		data_done = 0;
+		uint64		va_valueid;
 
 		/* system columns aren't toasted */
 		if (attr->attnum < 0)
@@ -5131,14 +5143,15 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		if (!VARATT_IS_EXTERNAL(varlena))
 			continue;
 
-		VARATT_EXTERNAL_GET_POINTER(toast_pointer, varlena);
+		toast_external_info_get_data(varlena, &toast_pointer);
+		va_valueid = toast_pointer.value;
 
 		/*
 		 * Check whether the toast tuple changed, replace if so.
 		 */
 		ent = (ReorderBufferToastEnt *)
 			hash_search(txn->toast_hash,
-						&toast_pointer.va_valueid,
+						&va_valueid,
 						HASH_FIND,
 						NULL);
 		if (ent == NULL)
@@ -5149,7 +5162,7 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 		free[natt] = true;
 
-		reconstructed = palloc0(toast_pointer.va_rawsize);
+		reconstructed = palloc0(toast_pointer.rawsize);
 
 		ent->reconstructed = reconstructed;
 
@@ -5174,10 +5187,10 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 				   VARSIZE(chunk) - VARHDRSZ);
 			data_done += VARSIZE(chunk) - VARHDRSZ;
 		}
-		Assert(data_done == VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer));
+		Assert(data_done == toast_pointer.extsize);
 
 		/* make sure its marked as compressed or not */
-		if (VARATT_EXTERNAL_IS_COMPRESSED(toast_pointer))
+		if (TOAST_EXTERNAL_IS_COMPRESSED(toast_pointer))
 			SET_VARSIZE_COMPRESSED(reconstructed, data_done + VARHDRSZ);
 		else
 			SET_VARSIZE(reconstructed, data_done + VARHDRSZ);

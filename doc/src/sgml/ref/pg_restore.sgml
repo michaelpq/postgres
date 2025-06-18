@@ -843,6 +843,18 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
+      <term><option>--no-toast-type</option></term>
+      <listitem>
+       <para>
+        Do not output commands to select <acronym>TOAST</acronym> table
+        types.
+        With this option, all <acronym>TOAST</acronym> tables will be
+        created with whichever type is the default during restore.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
        <term><option>--section=<replaceable class="parameter">sectionname</replaceable></option></term>
        <listitem>
          <para>

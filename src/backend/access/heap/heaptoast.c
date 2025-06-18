@@ -28,9 +28,12 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/heaptoast.h"
+#include "access/toast_external.h"
 #include "access/toast_helper.h"
 #include "access/toast_internals.h"
+#include "access/toast_type.h"
 #include "utils/fmgroids.h"
+#include "utils/syscache.h"
 
 
 /* ----------
@@ -140,6 +143,46 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	 * Prepare for toasting
 	 * ----------
 	 */
+
+	/* Retrieve the toast pointer size based on the TOAST value type. */
+	if (OidIsValid(rel->rd_rel->reltoastrelid))
+	{
+		HeapTuple	atttuple;
+		Form_pg_attribute atttoast;
+
+		/*
+		 * XXX: This is very unlikely efficient, but it is not possible to
+		 * rely on the relation cache to retrieve this information as syscache
+		 * lookups should not happen when loading critical entries.
+		 */
+		atttuple = SearchSysCacheAttNum(rel->rd_rel->reltoastrelid, 1);
+		if (!HeapTupleIsValid(atttuple))
+			elog(ERROR, "cache lookup failed for relation %u",
+				 rel->rd_rel->reltoastrelid);
+		atttoast = (Form_pg_attribute) GETSTRUCT(atttuple);
+		ttc.ttc_toast_pointer_size =
+			toast_external_info_get_pointer_size(atttoast->atttypid);
+		ReleaseSysCache(atttuple);
+	}
+	else
+	{
+		/*
+		 * No TOAST relation to rely on, which is a case possible when
+		 * dealing with partitioned tables, for example.  Hence, perform
+		 * a best guess based on the GUC default_toast_type.
+		 */
+		Oid		toast_typeid = InvalidOid;
+
+		if (default_toast_type == TOAST_TYPE_INT8)
+			toast_typeid = INT8OID;
+		else if (default_toast_type == TOAST_TYPE_OID)
+			toast_typeid = OIDOID;
+		else
+			Assert(false);
+		ttc.ttc_toast_pointer_size =
+			toast_external_info_get_pointer_size(toast_typeid);
+	}
+
 	ttc.ttc_rel = rel;
 	ttc.ttc_values = toast_values;
 	ttc.ttc_isnull = toast_isnull;
@@ -623,7 +666,7 @@ toast_build_flattened_tuple(TupleDesc tupleDesc,
  * result is the varlena into which the results should be written.
  */
 void
-heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
+heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 					   int32 sliceoffset, int32 slicelength,
 					   struct varlena *result)
 {
@@ -634,11 +677,15 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 	SysScanDesc toastscan;
 	HeapTuple	ttup;
 	int32		expectedchunk;
-	int32		totalchunks = ((attrsize - 1) / TOAST_MAX_CHUNK_SIZE) + 1;
+	int32		totalchunks;
 	int			startchunk;
 	int			endchunk;
 	int			num_indexes;
 	int			validIndex;
+	Oid			toast_typid;
+	int32		max_chunk_size;
+	const toast_external_info *info;
+	uint8		tag = VARTAG_INDIRECT;  /* init value does not matter */
 
 	/* Look for the valid index of toast relation */
 	validIndex = toast_open_indexes(toastrel,
@@ -646,15 +693,46 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 									&toastidxs,
 									&num_indexes);
 
-	startchunk = sliceoffset / TOAST_MAX_CHUNK_SIZE;
-	endchunk = (sliceoffset + slicelength - 1) / TOAST_MAX_CHUNK_SIZE;
+	toast_typid = TupleDescAttr(toastrel->rd_att, 0)->atttypid;
+	Assert(toast_typid == OIDOID || toast_typid == INT8OID);
+
+	/*
+	 * Grab the information for toast_external_data.
+	 *
+	 * Note: there is no access to the vartag of the original varlena from
+	 * which we are trying to retrieve the chunks from the TOAST relation,
+	 * so guess the external TOAST pointer information to use depending
+	 * on the attribute of the TOAST value.  If we begin to support multiple
+	 * external TOAST pointers for a single attribute type, we would need
+	 * to pass down this information from the upper callers.  This is
+	 * currently on required for the maximum chunk_size.
+	 */
+	if (toast_typid == OIDOID)
+		tag = VARTAG_ONDISK_OID;
+	else if (toast_typid == INT8OID)
+		tag = VARTAG_ONDISK_INT8;
+	info = toast_external_get_info(tag);
+
+	max_chunk_size = info->maximum_chunk_size;
+
+	totalchunks = ((attrsize - 1) / max_chunk_size) + 1;
+	startchunk = sliceoffset / max_chunk_size;
+	endchunk = (sliceoffset + slicelength - 1) / max_chunk_size;
 	Assert(endchunk <= totalchunks);
 
 	/* Set up a scan key to fetch from the index. */
-	ScanKeyInit(&toastkey[0],
-				(AttrNumber) 1,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(valueid));
+	if (toast_typid == OIDOID)
+		ScanKeyInit(&toastkey[0],
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(valueid));
+	else if (toast_typid == INT8OID)
+		ScanKeyInit(&toastkey[0],
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_INT8EQ,
+					Int64GetDatum(valueid));
+	else
+		Assert(false);
 
 	/*
 	 * No additional condition if fetching all chunks. Otherwise, use an
@@ -725,7 +803,7 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 		else
 		{
 			/* should never happen */
-			elog(ERROR, "found toasted toast chunk for toast value %u in %s",
+			elog(ERROR, "found toasted toast chunk for toast value %" PRIu64 " in %s",
 				 valueid, RelationGetRelationName(toastrel));
 			chunksize = 0;		/* keep compiler quiet */
 			chunkdata = NULL;
@@ -737,22 +815,22 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 		if (curchunk != expectedchunk)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg_internal("unexpected chunk number %d (expected %d) for toast value %u in %s",
+					 errmsg_internal("unexpected chunk number %d (expected %d) for toast value %" PRIu64 " in %s",
 									 curchunk, expectedchunk, valueid,
 									 RelationGetRelationName(toastrel))));
 		if (curchunk > endchunk)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg_internal("unexpected chunk number %d (out of range %d..%d) for toast value %u in %s",
+					 errmsg_internal("unexpected chunk number %d (out of range %d..%d) for toast value %" PRIu64 " in %s",
 									 curchunk,
 									 startchunk, endchunk, valueid,
 									 RelationGetRelationName(toastrel))));
-		expected_size = curchunk < totalchunks - 1 ? TOAST_MAX_CHUNK_SIZE
-			: attrsize - ((totalchunks - 1) * TOAST_MAX_CHUNK_SIZE);
+		expected_size = curchunk < totalchunks - 1 ? max_chunk_size
+			: attrsize - ((totalchunks - 1) * max_chunk_size);
 		if (chunksize != expected_size)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg_internal("unexpected chunk size %d (expected %d) in chunk %d of %d for toast value %u in %s",
+					 errmsg_internal("unexpected chunk size %d (expected %d) in chunk %d of %d for toast value %" PRIu64 " in %s",
 									 chunksize, expected_size,
 									 curchunk, totalchunks, valueid,
 									 RelationGetRelationName(toastrel))));
@@ -763,12 +841,12 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 		chcpystrt = 0;
 		chcpyend = chunksize - 1;
 		if (curchunk == startchunk)
-			chcpystrt = sliceoffset % TOAST_MAX_CHUNK_SIZE;
+			chcpystrt = sliceoffset % max_chunk_size;
 		if (curchunk == endchunk)
-			chcpyend = (sliceoffset + slicelength - 1) % TOAST_MAX_CHUNK_SIZE;
+			chcpyend = (sliceoffset + slicelength - 1) % max_chunk_size;
 
 		memcpy(VARDATA(result) +
-			   (curchunk * TOAST_MAX_CHUNK_SIZE - sliceoffset) + chcpystrt,
+			   (curchunk * max_chunk_size - sliceoffset) + chcpystrt,
 			   chunkdata + chcpystrt,
 			   (chcpyend - chcpystrt) + 1);
 
@@ -781,7 +859,7 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 	if (expectedchunk != (endchunk + 1))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg_internal("missing chunk number %d for toast value %u in %s",
+				 errmsg_internal("missing chunk number %d for toast value %" PRIu64 " in %s",
 								 expectedchunk, valueid,
 								 RelationGetRelationName(toastrel))));
 
