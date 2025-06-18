@@ -266,6 +266,8 @@ main(int argc, char *argv[])
 		   ControlFile->checkPointCopy.nextMulti);
 	printf(_("Latest checkpoint's NextMultiOffset:  %u\n"),
 		   ControlFile->checkPointCopy.nextMultiOffset);
+	printf(_("Latest checkpoint's NextToastID:      %" PRIu64 "\n"),
+		   ControlFile->checkPointCopy.nextToastId);
 	printf(_("Latest checkpoint's oldestXID:        %u\n"),
 		   ControlFile->checkPointCopy.oldestXid);
 	printf(_("Latest checkpoint's oldestXID's DB:   %u\n"),

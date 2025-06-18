@@ -28158,6 +28158,11 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
       </row>
 
       <row>
+       <entry><structfield>next_toast_id</structfield></entry>
+       <entry><type>bigint</type></entry>
+      </row>
+
+      <row>
        <entry><structfield>oldest_xid</structfield></entry>
        <entry><type>xid</type></entry>
       </row>
