@@ -3044,6 +3044,7 @@ TmFromChar
 TmToChar
 ToastAttrInfo
 ToastCompressionId
+ToastCounterData
 ToastTupleContext
 ToastedAttribute
 TocEntry

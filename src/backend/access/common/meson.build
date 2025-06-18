@@ -15,6 +15,7 @@ backend_sources += files(
   'syncscan.c',
   'tidstore.c',
   'toast_compression.c',
+  'toast_counter.c',
   'toast_internals.c',
   'tupconvert.c',
   'tupdesc.c',
