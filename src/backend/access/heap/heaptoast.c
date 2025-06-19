@@ -710,7 +710,7 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 	if (toast_typid == OIDOID)
 		tag = VARTAG_ONDISK_OID;
 	else if (toast_typid == INT8OID)
-		tag = VARTAG_ONDISK_OID;
+		tag = VARTAG_ONDISK_INT8;
 	info = toast_external_get_info(tag);
 
 	max_chunk_size = info->maximum_chunk_size;

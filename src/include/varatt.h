@@ -41,6 +41,29 @@ typedef struct varatt_external_oid
 	Oid			va_toastrelid;	/* RelID of TOAST table containing it */
 }			varatt_external_oid;
 
+/*
+ * struct varatt_external_int8 is a "larger" version of "TOAST pointer",
+ * that uses an 8-byte integer as value.
+ *
+ * This follows the same properties as varatt_external_oid, except that
+ * this is used in TOAST relations with int8 as attribute for chunk_id.
+ */
+typedef struct varatt_external_int8
+{
+	int32		va_rawsize;		/* Original data size (includes header) */
+	uint32		va_extinfo;		/* External saved size (without header) and
+								 * compression method */
+	/*
+	 * Unique ID of value within TOAST table, as two uint32 for alignment
+	 * and padding.
+	 * XXX: think for example about the addition of an extra field for
+	 * meta-data and/or more compression data, even if it's OK here).
+	 */
+	uint32		va_valueid_lo;
+	uint32		va_valueid_hi;
+	Oid			va_toastrelid;	/* RelID of TOAST table containing it */
+}			varatt_external_int8;
+
 
 /*
  * These macros define the "saved size" portion of va_extinfo.  Its remaining
@@ -91,6 +114,7 @@ typedef enum vartag_external
 	VARTAG_INDIRECT = 1,
 	VARTAG_EXPANDED_RO = 2,
 	VARTAG_EXPANDED_RW = 3,
+	VARTAG_ONDISK_INT8 = 4,
 	VARTAG_ONDISK_OID = 18
 } vartag_external;
 
@@ -102,6 +126,7 @@ typedef enum vartag_external
 	((tag) == VARTAG_INDIRECT ? sizeof(varatt_indirect) : \
 	 VARTAG_IS_EXPANDED(tag) ? sizeof(varatt_expanded) : \
 	 (tag) == VARTAG_ONDISK_OID ? sizeof(varatt_external_oid) : \
+	 (tag) == VARTAG_ONDISK_INT8 ? sizeof(varatt_external_int8) : \
 	 (AssertMacro(false), 0))
 
 /*
@@ -294,8 +319,10 @@ typedef struct
 #define VARATT_IS_EXTERNAL(PTR)				VARATT_IS_1B_E(PTR)
 #define VARATT_IS_EXTERNAL_ONDISK_OID(PTR) \
 	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_OID)
+#define VARATT_IS_EXTERNAL_ONDISK_INT8(PTR) \
+	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_INT8)
 #define VARATT_IS_EXTERNAL_ONDISK(PTR) \
-	(VARATT_IS_EXTERNAL_ONDISK_OID(PTR))
+	(VARATT_IS_EXTERNAL_ONDISK_OID(PTR) || VARATT_IS_EXTERNAL_ONDISK_INT8(PTR))
 #define VARATT_IS_EXTERNAL_INDIRECT(PTR) \
 	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_INDIRECT)
 #define VARATT_IS_EXTERNAL_EXPANDED_RO(PTR) \
@@ -339,7 +366,7 @@ typedef struct
 
 /*
  * Same for external Datums; but note argument is a struct
- * varatt_external_oid.
+ * varatt_external_oid or varatt_external_int8.
  */
 #define VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer) \
 	((toast_pointer).va_extinfo & VARLENA_EXTSIZE_MASK)

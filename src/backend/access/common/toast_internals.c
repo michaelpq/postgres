@@ -177,7 +177,7 @@ toast_save_datum(Relation rel, Datum value,
 	if (toast_typid == OIDOID)
 		tag = VARTAG_ONDISK_OID;
 	else if (toast_typid == INT8OID)
-		tag = VARTAG_ONDISK_OID;
+		tag = VARTAG_ONDISK_INT8;
 	info = toast_external_get_info(tag);
 
 	/* Open all the toast indexes and look for the valid one */
