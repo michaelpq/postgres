@@ -318,6 +318,7 @@ typedef struct _tableInfo
 	uint32		frozenxid;		/* table's relfrozenxid */
 	uint32		minmxid;		/* table's relminmxid */
 	Oid			toast_oid;		/* toast table's OID, or 0 if none */
+	char	   *toast_type;		/* toast table type, or NULL if none */
 	uint32		toast_frozenxid;	/* toast table's relfrozenxid, if any */
 	uint32		toast_minmxid;	/* toast table's relminmxid */
 	int			ncheck;			/* # of CHECK expressions */

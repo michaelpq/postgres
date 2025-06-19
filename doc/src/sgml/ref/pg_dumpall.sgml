@@ -634,6 +634,18 @@ exclude database <replaceable class="parameter">PATTERN</replaceable>
      </varlistentry>
 
      <varlistentry>
+      <term><option>--no-toast-type</option></term>
+      <listitem>
+       <para>
+        Do not output commands to set <acronym>TOAST</acronym> table
+        types.
+        With this option, all <acronym>TOAST</acronym> tables will be
+        restored with the default type.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>--no-unlogged-table-data</option></term>
       <listitem>
        <para>
