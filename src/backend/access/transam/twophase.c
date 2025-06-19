@@ -1472,7 +1472,7 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
 		return false;			/* nothing to do */
 
 	/* Read and validate file */
-	fxid = FullTransactionIdFromAllowableAt(TransamVariables->nextXid, xid);
+	fxid = AdjustToFullTransactionId(xid);
 	buf = ReadTwoPhaseFile(fxid, true);
 	if (buf == NULL)
 		return false;
@@ -2491,8 +2491,11 @@ PrepareRedoAdd(FullTransactionId fxid, char *buf,
 	Assert(RecoveryInProgress());
 
 	if (!FullTransactionIdIsValid(fxid))
+	{
+		Assert(InRecovery);
 		fxid = FullTransactionIdFromAllowableAt(TransamVariables->nextXid,
 												hdr->xid);
+	}
 
 	bufptr = buf + MAXALIGN(sizeof(TwoPhaseFileHeader));
 	gid = (const char *) bufptr;
