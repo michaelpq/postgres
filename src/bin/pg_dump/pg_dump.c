@@ -508,6 +508,7 @@ main(int argc, char **argv)
 		{"lock-wait-timeout", required_argument, NULL, 2},
 		{"no-table-access-method", no_argument, &dopt.outputNoTableAm, 1},
 		{"no-tablespaces", no_argument, &dopt.outputNoTablespaces, 1},
+		{"no-toast-type", no_argument, &dopt.outputNoToastType, 1},
 		{"quote-all-identifiers", no_argument, &quote_all_identifiers, 1},
 		{"load-via-partition-root", no_argument, &dopt.load_via_partition_root, 1},
 		{"role", required_argument, NULL, 3},
@@ -1225,6 +1226,7 @@ main(int argc, char **argv)
 	ropt->noOwner = dopt.outputNoOwner;
 	ropt->noTableAm = dopt.outputNoTableAm;
 	ropt->noTablespace = dopt.outputNoTablespaces;
+	ropt->noToastType = dopt.outputNoToastType;
 	ropt->disable_triggers = dopt.disable_triggers;
 	ropt->use_setsessauth = dopt.use_setsessauth;
 	ropt->disable_dollar_quoting = dopt.disable_dollar_quoting;
@@ -1347,6 +1349,7 @@ help(const char *progname)
 	printf(_("  --no-table-access-method     do not dump table access methods\n"));
 	printf(_("  --no-tablespaces             do not dump tablespace assignments\n"));
 	printf(_("  --no-toast-compression       do not dump TOAST compression methods\n"));
+	printf(_("  --no-toast-type              do not dump TOAST table type\n"));
 	printf(_("  --no-unlogged-table-data     do not dump unlogged table data\n"));
 	printf(_("  --on-conflict-do-nothing     add ON CONFLICT DO NOTHING to INSERT commands\n"));
 	printf(_("  --quote-all-identifiers      quote all identifiers, even if not key words\n"));
@@ -7111,6 +7114,7 @@ getTables(Archive *fout, int *numTables)
 	int			i_relfrozenxid;
 	int			i_toastfrozenxid;
 	int			i_toastoid;
+	int			i_toasttype;
 	int			i_relminmxid;
 	int			i_toastminmxid;
 	int			i_reloptions;
@@ -7165,6 +7169,14 @@ getTables(Archive *fout, int *numTables)
 						 "ELSE 0 END AS foreignserver, "
 						 "c.relfrozenxid, tc.relfrozenxid AS tfrozenxid, "
 						 "tc.oid AS toid, "
+						 "CASE WHEN c.reltoastrelid <> 0 THEN "
+						 " (SELECT CASE "
+						 "   WHEN a.atttypid::regtype = 'oid'::regtype THEN 'oid'::text "
+						 "   WHEN a.atttypid::regtype = 'bigint'::regtype THEN 'int8'::text "
+						 "   ELSE NULL END"
+						 "  FROM pg_attribute AS a "
+						 "  WHERE a.attrelid = tc.oid AND a.attname = 'chunk_id') "
+						 " ELSE NULL END AS toasttype, "
 						 "tc.relpages AS toastpages, "
 						 "tc.reloptions AS toast_reloptions, "
 						 "d.refobjid AS owning_tab, "
@@ -7335,6 +7347,7 @@ getTables(Archive *fout, int *numTables)
 	i_relfrozenxid = PQfnumber(res, "relfrozenxid");
 	i_toastfrozenxid = PQfnumber(res, "tfrozenxid");
 	i_toastoid = PQfnumber(res, "toid");
+	i_toasttype = PQfnumber(res, "toasttype");
 	i_relminmxid = PQfnumber(res, "relminmxid");
 	i_toastminmxid = PQfnumber(res, "tminmxid");
 	i_reloptions = PQfnumber(res, "reloptions");
@@ -7413,6 +7426,10 @@ getTables(Archive *fout, int *numTables)
 		tblinfo[i].frozenxid = atooid(PQgetvalue(res, i, i_relfrozenxid));
 		tblinfo[i].toast_frozenxid = atooid(PQgetvalue(res, i, i_toastfrozenxid));
 		tblinfo[i].toast_oid = atooid(PQgetvalue(res, i, i_toastoid));
+		if (PQgetisnull(res, i, i_toasttype))
+			tblinfo[i].toast_type = NULL;
+		else
+			tblinfo[i].toast_type = pg_strdup(PQgetvalue(res, i, i_toasttype));
 		tblinfo[i].minmxid = atooid(PQgetvalue(res, i, i_relminmxid));
 		tblinfo[i].toast_minmxid = atooid(PQgetvalue(res, i, i_toastminmxid));
 		tblinfo[i].reloptions = pg_strdup(PQgetvalue(res, i, i_reloptions));
@@ -17874,6 +17891,7 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 	{
 		char	   *tablespace = NULL;
 		char	   *tableam = NULL;
+		char	   *toasttype = NULL;
 
 		/*
 		 * _selectTablespace() relies on tablespace-enabled objects in the
@@ -17888,12 +17906,15 @@ dumpTableSchema(Archive *fout, const TableInfo *tbinfo)
 		if (RELKIND_HAS_TABLE_AM(tbinfo->relkind) ||
 			tbinfo->relkind == RELKIND_PARTITIONED_TABLE)
 			tableam = tbinfo->amname;
+		if (OidIsValid(tbinfo->toast_oid))
+			toasttype = tbinfo->toast_type;
 
 		ArchiveEntry(fout, tbinfo->dobj.catId, tbinfo->dobj.dumpId,
 					 ARCHIVE_OPTS(.tag = tbinfo->dobj.name,
 								  .namespace = tbinfo->dobj.namespace->dobj.name,
 								  .tablespace = tablespace,
 								  .tableam = tableam,
+								  .toasttype = toasttype,
 								  .relkind = tbinfo->relkind,
 								  .owner = tbinfo->rolname,
 								  .description = reltypename,

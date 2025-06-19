@@ -93,6 +93,7 @@ static int	if_exists = 0;
 static int	inserts = 0;
 static int	no_table_access_method = 0;
 static int	no_tablespaces = 0;
+static int	no_toast_type = 0;
 static int	use_setsessauth = 0;
 static int	no_comments = 0;
 static int	no_policies = 0;
@@ -164,6 +165,7 @@ main(int argc, char *argv[])
 		{"lock-wait-timeout", required_argument, NULL, 2},
 		{"no-table-access-method", no_argument, &no_table_access_method, 1},
 		{"no-tablespaces", no_argument, &no_tablespaces, 1},
+		{"no-toast-type", no_argument, &no_tablespaces, 1},
 		{"quote-all-identifiers", no_argument, &quote_all_identifiers, 1},
 		{"load-via-partition-root", no_argument, &load_via_partition_root, 1},
 		{"role", required_argument, NULL, 3},
@@ -449,6 +451,8 @@ main(int argc, char *argv[])
 		appendPQExpBufferStr(pgdumpopts, " --no-table-access-method");
 	if (no_tablespaces)
 		appendPQExpBufferStr(pgdumpopts, " --no-tablespaces");
+	if (no_toast_type)
+		appendPQExpBufferStr(pgdumpopts, " --no-toast-type");
 	if (quote_all_identifiers)
 		appendPQExpBufferStr(pgdumpopts, " --quote-all-identifiers");
 	if (load_via_partition_root)
@@ -707,6 +711,7 @@ help(void)
 	printf(_("  --no-table-access-method     do not dump table access methods\n"));
 	printf(_("  --no-tablespaces             do not dump tablespace assignments\n"));
 	printf(_("  --no-toast-compression       do not dump TOAST compression methods\n"));
+	printf(_("  --no-toast-type              do not dump TOAST table types\n"));
 	printf(_("  --no-unlogged-table-data     do not dump unlogged table data\n"));
 	printf(_("  --on-conflict-do-nothing     add ON CONFLICT DO NOTHING to INSERT commands\n"));
 	printf(_("  --quote-all-identifiers      quote all identifiers, even if not key words\n"));

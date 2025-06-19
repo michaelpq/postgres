@@ -185,6 +185,7 @@ dumpOptionsFromRestoreOptions(RestoreOptions *ropt)
 	dopt->outputNoOwner = ropt->noOwner;
 	dopt->outputNoTableAm = ropt->noTableAm;
 	dopt->outputNoTablespaces = ropt->noTablespace;
+	dopt->outputNoToastType = ropt->noToastType;
 	dopt->disable_triggers = ropt->disable_triggers;
 	dopt->use_setsessauth = ropt->use_setsessauth;
 	dopt->disable_dollar_quoting = ropt->disable_dollar_quoting;
@@ -1244,6 +1245,7 @@ ArchiveEntry(Archive *AHX, CatalogId catalogId, DumpId dumpId,
 	newToc->namespace = opts->namespace ? pg_strdup(opts->namespace) : NULL;
 	newToc->tablespace = opts->tablespace ? pg_strdup(opts->tablespace) : NULL;
 	newToc->tableam = opts->tableam ? pg_strdup(opts->tableam) : NULL;
+	newToc->toasttype = opts->toasttype ? pg_strdup(opts->toasttype) : NULL;
 	newToc->relkind = opts->relkind;
 	newToc->owner = opts->owner ? pg_strdup(opts->owner) : NULL;
 	newToc->desc = pg_strdup(opts->description);
@@ -2403,6 +2405,7 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 	AH->currSchema = NULL;		/* ditto */
 	AH->currTablespace = NULL;	/* ditto */
 	AH->currTableAm = NULL;		/* ditto */
+	AH->currToastType = NULL;		/* ditto */
 
 	AH->toc = (TocEntry *) pg_malloc0(sizeof(TocEntry));
 
@@ -2670,6 +2673,7 @@ WriteToc(ArchiveHandle *AH)
 		WriteStr(AH, te->tablespace);
 		WriteStr(AH, te->tableam);
 		WriteInt(AH, te->relkind);
+		WriteStr(AH, te->toasttype);
 		WriteStr(AH, te->owner);
 		WriteStr(AH, "false");
 
@@ -2777,6 +2781,9 @@ ReadToc(ArchiveHandle *AH)
 
 		if (AH->version >= K_VERS_1_16)
 			te->relkind = ReadInt(AH);
+
+		if (AH->version >= K_VERS_1_17)
+			te->toasttype = ReadStr(AH);
 
 		te->owner = ReadStr(AH);
 		is_supported = true;
@@ -3477,6 +3484,9 @@ _reconnectToDB(ArchiveHandle *AH, const char *dbname)
 	free(AH->currTablespace);
 	AH->currTablespace = NULL;
 
+	free(AH->currToastType);
+	AH->currToastType = NULL;
+
 	/* re-establish fixed state */
 	_doSetFixedOutputState(AH);
 }
@@ -3682,6 +3692,56 @@ _selectTableAccessMethod(ArchiveHandle *AH, const char *tableam)
 	AH->currTableAm = pg_strdup(want);
 }
 
+
+/*
+ * Set the proper default_toast_type value for the table.
+ */
+static void
+_selectToastType(ArchiveHandle *AH, const char *toasttype)
+{
+	RestoreOptions *ropt = AH->public.ropt;
+	PQExpBuffer cmd;
+	const char *want,
+			   *have;
+
+	/* do nothing in --no-toast-type mode */
+	if (ropt->noToastType)
+		return;
+
+	have = AH->currToastType;
+	want = toasttype;
+
+	if (!want)
+		return;
+
+	if (have && strcmp(want, have) == 0)
+		return;
+
+	cmd = createPQExpBuffer();
+
+	appendPQExpBuffer(cmd, "SET default_toast_type = %s;", fmtId(toasttype));
+
+	if (RestoringToDB(AH))
+	{
+		PGresult   *res;
+
+		res = PQexec(AH->connection, cmd->data);
+
+		if (!res || PQresultStatus(res) != PGRES_COMMAND_OK)
+			warn_or_exit_horribly(AH,
+								  "could not set \"default_toast_type\": %s",
+								  PQerrorMessage(AH->connection));
+		PQclear(res);
+	}
+	else
+		ahprintf(AH, "%s\n\n", cmd->data);
+
+	destroyPQExpBuffer(cmd);
+
+	free(AH->currToastType);
+	AH->currToastType = pg_strdup(want);
+}
+
 /*
  * Set the proper default table access method for a table without storage.
  * Currently, this is required only for partitioned tables with a table AM.
@@ -3837,13 +3897,16 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, const char *pfx)
 	 * Select owner, schema, tablespace and default AM as necessary. The
 	 * default access method for partitioned tables is handled after
 	 * generating the object definition, as it requires an ALTER command
-	 * rather than SET.
+	 * rather than SET.  Partitioned tables do not have TOAST tables.
 	 */
 	_becomeOwner(AH, te);
 	_selectOutputSchema(AH, te->namespace);
 	_selectTablespace(AH, te->tablespace);
 	if (te->relkind != RELKIND_PARTITIONED_TABLE)
+	{
 		_selectTableAccessMethod(AH, te->tableam);
+		_selectToastType(AH, te->toasttype);
+	}
 
 	/* Emit header comment for item */
 	if (!AH->noTocComments)
@@ -4402,6 +4465,8 @@ restore_toc_entries_prefork(ArchiveHandle *AH, TocEntry *pending_list)
 	AH->currTablespace = NULL;
 	free(AH->currTableAm);
 	AH->currTableAm = NULL;
+	free(AH->currToastType);
+	AH->currToastType = NULL;
 }
 
 /*
@@ -5139,6 +5204,7 @@ CloneArchive(ArchiveHandle *AH)
 	clone->currSchema = NULL;
 	clone->currTableAm = NULL;
 	clone->currTablespace = NULL;
+	clone->currToastType = NULL;
 
 	/* savedPassword must be local in case we change it while connecting */
 	if (clone->savedPassword)
@@ -5198,6 +5264,7 @@ DeCloneArchive(ArchiveHandle *AH)
 	free(AH->currSchema);
 	free(AH->currTablespace);
 	free(AH->currTableAm);
+	free(AH->currToastType);
 	free(AH->savedPassword);
 
 	free(AH);
