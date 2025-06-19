@@ -37,6 +37,7 @@
 #include "access/sysattr.h"
 #include "access/table.h"
 #include "access/tableam.h"
+#include "access/toast_external.h"
 #include "access/tupdesc_details.h"
 #include "access/xact.h"
 #include "catalog/binary_upgrade.h"
