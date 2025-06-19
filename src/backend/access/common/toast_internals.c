@@ -26,8 +26,8 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
-static bool toastrel_valueid_exists(Relation toastrel, Oid valueid);
-static bool toastid_valueid_exists(Oid toastrelid, Oid valueid);
+static bool toastrel_valueid_exists(Relation toastrel, uint64 valueid);
+static bool toastid_valueid_exists(Oid toastrelid, uint64 valueid);
 
 /* ----------
  * toast_compress_datum -
@@ -456,7 +456,7 @@ toast_delete_datum(Relation rel, Datum value, bool is_speculative)
  * ----------
  */
 static bool
-toastrel_valueid_exists(Relation toastrel, Oid valueid)
+toastrel_valueid_exists(Relation toastrel, uint64 valueid)
 {
 	bool		result = false;
 	ScanKeyData toastkey;
@@ -504,7 +504,7 @@ toastrel_valueid_exists(Relation toastrel, Oid valueid)
  * ----------
  */
 static bool
-toastid_valueid_exists(Oid toastrelid, Oid valueid)
+toastid_valueid_exists(Oid toastrelid, uint64 valueid)
 {
 	bool		result;
 	Relation	toastrel;
