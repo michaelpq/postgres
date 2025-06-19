@@ -659,6 +659,15 @@ my %pgdump_runs = (
 			'postgres',
 		],
 	},
+	no_toast_type => {
+		dump_cmd => [
+			'pg_dump', '--no-sync',
+			'--file' => "$tempdir/no_toast_type.sql",
+			'--no-toast-type',
+			'--with-statistics',
+			'postgres',
+		],
+	},
 	only_dump_test_schema => {
 		dump_cmd => [
 			'pg_dump', '--no-sync',
@@ -881,6 +890,7 @@ my %full_runs = (
 	no_privs => 1,
 	no_statistics => 1,
 	no_table_access_method => 1,
+	no_toast_type => 1,
 	pg_dumpall_dbprivs => 1,
 	pg_dumpall_exclude => 1,
 	schema_only => 1,
@@ -4909,6 +4919,31 @@ my %tests = (
 		unlike => {
 			exclude_dump_test_schema => 1,
 			no_table_access_method => 1,
+			only_dump_measurement => 1,
+		},
+	},
+
+	# Test the case of multiple TOAST table types.
+	'CREATE TABLE regress_toast_type' => {
+		create_order => 13,
+		create_sql => '
+			SET default_toast_type = int8;
+			CREATE TABLE dump_test.regress_toast_type_int8 (col1 text);
+			SET default_toast_type = oid;
+			CREATE TABLE dump_test.regress_toast_type_oid (col1 text);
+			RESET default_toast_type;',
+		regexp => qr/^
+			\QSET default_toast_type = int8;\E
+			(\n(?!SET[^;]+;)[^\n]*)*
+			\n\QCREATE TABLE dump_test.regress_toast_type_int8 (\E
+			\n\s+\Qcol1 text\E
+			\n\);/xm,
+		like => {
+			%full_runs, %dump_test_schema_runs, section_pre_data => 1,
+		},
+		unlike => {
+			exclude_dump_test_schema => 1,
+			no_toast_type => 1,
 			only_dump_measurement => 1,
 		},
 	},
