@@ -1877,6 +1877,9 @@ check_toasted_attribute(HeapCheckContext *ctx, ToastedAttribute *ta)
 	int32		last_chunk_seq;
 	uint64		toast_valueid;
 	int32		max_chunk_size = TOAST_MAX_CHUNK_SIZE;
+	Oid			toast_typid;
+
+	toast_typid = TupleDescAttr(ctx->toast_rel->rd_att, 0)->atttypid;
 
 	extsize = VARATT_EXTERNAL_GET_EXTSIZE(ta->toast_pointer);
 	last_chunk_seq = (extsize - 1) / max_chunk_size;
@@ -1884,10 +1887,18 @@ check_toasted_attribute(HeapCheckContext *ctx, ToastedAttribute *ta)
 	/*
 	 * Setup a scan key to find chunks in toast table with matching va_valueid
 	 */
-	ScanKeyInit(&toastkey,
-				(AttrNumber) 1,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(ta->toast_pointer.va_valueid));
+	if (toast_typid == OIDOID)
+		ScanKeyInit(&toastkey,
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(ta->toast_pointer.va_valueid));
+	else if (toast_typid == INT8OID)
+		ScanKeyInit(&toastkey,
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_INT8EQ,
+					Int64GetDatum(ta->toast_pointer.va_valueid));
+	else
+		Assert(false);
 
 	/*
 	 * Check if any chunks for this toasted object exist in the toast table,
