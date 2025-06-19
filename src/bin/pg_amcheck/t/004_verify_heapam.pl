@@ -83,8 +83,8 @@ use Test::More;
 # it is convenient enough to do it this way.  We define packing code
 # constants here, where they can be compared easily against the layout.
 
-use constant HEAPTUPLE_PACK_CODE => 'LLLSSSSSCCLLCCCCCCCCCCllLL';
-use constant HEAPTUPLE_PACK_LENGTH => 58;    # Total size
+use constant HEAPTUPLE_PACK_CODE => 'LLLSSSSSCCLLCCCCCCCCCCllLLL';
+use constant HEAPTUPLE_PACK_LENGTH => 62;    # Total size
 
 # Read a tuple of our table from a heap page.
 #
@@ -129,7 +129,8 @@ sub read_tuple
 		c_va_vartag => shift,
 		c_va_rawsize => shift,
 		c_va_extinfo => shift,
-		c_va_valueid => shift,
+		c_va_valueid_lo => shift,
+		c_va_valueid_hi => shift,
 		c_va_toastrelid => shift);
 	# Stitch together the text for column 'b'
 	$tup{b} = join('', map { chr($tup{"b_body$_"}) } (1 .. 7));
@@ -163,7 +164,8 @@ sub write_tuple
 		$tup->{b_body6}, $tup->{b_body7},
 		$tup->{c_va_header}, $tup->{c_va_vartag},
 		$tup->{c_va_rawsize}, $tup->{c_va_extinfo},
-		$tup->{c_va_valueid}, $tup->{c_va_toastrelid});
+		$tup->{c_va_valueid_lo}, $tup->{c_va_valueid_hi},
+		$tup->{c_va_toastrelid});
 	sysseek($fh, $offset, 0)
 	  or BAIL_OUT("sysseek failed: $!");
 	defined(syswrite($fh, $buffer, HEAPTUPLE_PACK_LENGTH))
@@ -184,6 +186,7 @@ my $node = PostgreSQL::Test::Cluster->new('test');
 $node->init(no_data_checksums => 1);
 $node->append_conf('postgresql.conf', 'autovacuum=off');
 $node->append_conf('postgresql.conf', 'max_prepared_transactions=10');
+$node->append_conf('postgresql.conf', 'default_toast_type=int8');
 
 # Start the node and load the extensions.  We depend on both
 # amcheck and pageinspect for this test.
@@ -496,7 +499,7 @@ for (my $tupidx = 0; $tupidx < $ROWCOUNT; $tupidx++)
 		$tup->{t_hoff} += 128;
 
 		push @expected,
-		  qr/${$header}data begins at offset 152 beyond the tuple length 58/,
+		  qr/${$header}data begins at offset 152 beyond the tuple length 62/,
 		  qr/${$header}tuple data should begin at byte 24, but actually begins at byte 152 \(3 attributes, no nulls\)/;
 	}
 	elsif ($offnum == 6)
@@ -581,7 +584,7 @@ for (my $tupidx = 0; $tupidx < $ROWCOUNT; $tupidx++)
 	elsif ($offnum == 13)
 	{
 		# Corrupt the bits in column 'c' toast pointer
-		$tup->{c_va_valueid} = 0xFFFFFFFF;
+		$tup->{c_va_valueid_lo} = 0xFFFFFFFF;
 
 		$header = header(0, $offnum, 2);
 		push @expected, qr/${header}toast value \d+ not found in toast table/;
