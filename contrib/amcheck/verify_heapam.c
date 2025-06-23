@@ -1733,7 +1733,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	{
 		uint8		va_tag = VARTAG_EXTERNAL(tp + ctx->offset);
 
-		if (va_tag != VARTAG_ONDISK_OID)
+		if (va_tag != VARTAG_ONDISK_OID && va_tag != VARTAG_ONDISK_INT8)
 		{
 			report_corruption(ctx,
 							  psprintf("toasted attribute has unexpected TOAST tag %u",
