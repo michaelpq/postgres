@@ -28,6 +28,7 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/heaptoast.h"
+#include "access/toast_external.h"
 #include "access/toast_helper.h"
 #include "access/toast_internals.h"
 #include "utils/fmgroids.h"
@@ -140,6 +141,17 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	 * Prepare for toasting
 	 * ----------
 	 */
+
+	/*
+	 * Retrieve the toast pointer size based on the type of external TOAST
+	 * pointer assumed to be used.
+	 *
+	 * Only one format of external TOAST pointer is supported currently,
+	 * making this code simple, based on a single vartag.
+	 */
+	ttc.ttc_toast_pointer_size =
+		toast_external_info_get_pointer_size(VARTAG_ONDISK_OID);
+
 	ttc.ttc_rel = rel;
 	ttc.ttc_values = toast_values;
 	ttc.ttc_isnull = toast_isnull;
@@ -640,6 +652,8 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 	int			num_indexes;
 	int			validIndex;
 	int32		max_chunk_size;
+	const toast_external_info *info;
+	uint8		tag = VARTAG_INDIRECT;  /* init value does not matter */
 
 	/* Look for the valid index of toast relation */
 	validIndex = toast_open_indexes(toastrel,
@@ -647,7 +661,21 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 									&toastidxs,
 									&num_indexes);
 
-	max_chunk_size = TOAST_MAX_CHUNK_SIZE;
+	/*
+	 * Grab the information for toast_external_data.
+	 *
+	 * Note: there is no access to the vartag of the original varlena from
+	 * which we are trying to retrieve the chunks from the TOAST relation,
+	 * so guess the external TOAST pointer information to use depending
+	 * on the attribute of the TOAST value.  If we begin to support multiple
+	 * external TOAST pointers for a single attribute type, we would need
+	 * to pass down this information from the upper callers.  This is
+	 * currently on required for the maximum chunk_size.
+	 */
+	tag = VARTAG_ONDISK_OID;
+	info = toast_external_get_info(tag);
+
+	max_chunk_size = info->maximum_chunk_size;
 
 	totalchunks = ((attrsize - 1) / max_chunk_size) + 1;
 	startchunk = sliceoffset / max_chunk_size;
