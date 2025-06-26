@@ -723,11 +723,14 @@ restart:
 			/* Calculate pointer to beginning of next page */
 			targetPagePtr += XLOG_BLCKSZ;
 
-			/* Wait for the next page to become available */
-			readOff = ReadPageInternal(state, targetPagePtr,
-									   Min(total_len - gotlen + SizeOfXLogShortPHD,
-										   XLOG_BLCKSZ));
-
+			/*
+			 * Read the page header before processing the WAL record data.
+			 * This is necessary to correctly handle cases where the previous
+			 * record ended as a partial record. Attempting to read the full
+			 * record without checking the header may result in waiting
+			 * indefinitely for data that doesn't exist.
+			 */
+			readOff = ReadPageInternal(state, targetPagePtr, SizeOfXLogShortPHD);
 			if (readOff == XLREAD_WOULDBLOCK)
 				return XLREAD_WOULDBLOCK;
 			else if (readOff < 0)
@@ -775,6 +778,15 @@ restart:
 									  LSN_FORMAT_ARGS(RecPtr));
 				goto err;
 			}
+
+			/* Wait for the next page to become available */
+			readOff = ReadPageInternal(state, targetPagePtr,
+									   Min(total_len - gotlen + SizeOfXLogShortPHD,
+										   XLOG_BLCKSZ));
+			if (readOff == XLREAD_WOULDBLOCK)
+				return XLREAD_WOULDBLOCK;
+			else if (readOff < 0)
+				goto err;
 
 			/* Append the continuation from this page to the buffer */
 			pageHeaderSize = XLogPageHeaderSize(pageHeader);
