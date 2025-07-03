@@ -191,8 +191,8 @@ ok( $logfile =~
 $node_standby = PostgreSQL::Test::Cluster->new('standby_9');
 $node_standby->init_from_backup($node_primary, 'my_backup',
 	has_restoring => 1);
-$node_standby->append_conf(
-	'postgresql.conf', "recovery_target_timeline = 'bogus'");
+$node_standby->append_conf('postgresql.conf',
+	"recovery_target_timeline = 'bogus'");
 
 $res = run_log(
 	[
@@ -206,8 +206,8 @@ ok(!$res, 'invalid timeline target (bogus value)');
 my $log_start = $node_standby->wait_for_log("is not a valid number");
 
 # Timeline target out of min range
-$node_standby->append_conf(
-	'postgresql.conf', "recovery_target_timeline = '0'");
+$node_standby->append_conf('postgresql.conf',
+	"recovery_target_timeline = '0'");
 
 $res = run_log(
 	[
@@ -218,12 +218,12 @@ $res = run_log(
 	]);
 ok(!$res, 'invalid timeline target (lower bound check)');
 
-$log_start = $node_standby->wait_for_log("must be between 1 and 4294967295",
-										 $log_start);
+$log_start =
+  $node_standby->wait_for_log("must be between 1 and 4294967295", $log_start);
 
 # Timeline target out of max range
-$node_standby->append_conf(
-	'postgresql.conf', "recovery_target_timeline = '4294967296'");
+$node_standby->append_conf('postgresql.conf',
+	"recovery_target_timeline = '4294967296'");
 
 $res = run_log(
 	[
@@ -234,7 +234,7 @@ $res = run_log(
 	]);
 ok(!$res, 'invalid timeline target (upper bound check)');
 
-$log_start = $node_standby->wait_for_log("must be between 1 and 4294967295",
-										 $log_start);
+$log_start =
+  $node_standby->wait_for_log("must be between 1 and 4294967295", $log_start);
 
 done_testing();

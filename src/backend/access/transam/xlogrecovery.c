@@ -4994,8 +4994,9 @@ check_recovery_target_timeline(char **newval, void **extra, GucSource source)
 		rttg = RECOVERY_TARGET_TIMELINE_LATEST;
 	else
 	{
-		char		 *endp;
+		char	   *endp;
 		uint64		timeline;
+
 		rttg = RECOVERY_TARGET_TIMELINE_NUMERIC;
 
 		errno = 0;
