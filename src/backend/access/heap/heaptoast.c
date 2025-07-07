@@ -654,6 +654,7 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 	int32		max_chunk_size;
 	const toast_external_info *info;
 	uint8		tag = VARTAG_INDIRECT;  /* init value does not matter */
+	Oid			toast_typid;
 
 	/* Look for the valid index of toast relation */
 	validIndex = toast_open_indexes(toastrel,
@@ -677,16 +678,27 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 
 	max_chunk_size = info->maximum_chunk_size;
 
+	toast_typid = TupleDescAttr(toastrel->rd_att, 0)->atttypid;
+	Assert(toast_typid == OIDOID || toast_typid == INT8OID);
+
 	totalchunks = ((attrsize - 1) / max_chunk_size) + 1;
 	startchunk = sliceoffset / max_chunk_size;
 	endchunk = (sliceoffset + slicelength - 1) / max_chunk_size;
 	Assert(endchunk <= totalchunks);
 
 	/* Set up a scan key to fetch from the index. */
-	ScanKeyInit(&toastkey[0],
-				(AttrNumber) 1,
-				BTEqualStrategyNumber, F_OIDEQ,
-				ObjectIdGetDatum(valueid));
+	if (toast_typid == OIDOID)
+		ScanKeyInit(&toastkey[0],
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(valueid));
+	else if (toast_typid == INT8OID)
+		ScanKeyInit(&toastkey[0],
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_INT8EQ,
+					Int64GetDatum(valueid));
+	else
+		Assert(false);
 
 	/*
 	 * No additional condition if fetching all chunks. Otherwise, use an
