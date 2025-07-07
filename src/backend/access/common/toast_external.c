@@ -16,11 +16,14 @@
 #include "access/detoast.h"
 #include "access/heaptoast.h"
 #include "access/toast_external.h"
+#include "catalog/catalog.h"
 
 /* Callbacks for VARTAG_ONDISK_OID */
 static void ondisk_oid_to_external_data(struct varlena *attr,
 										toast_external_data *data);
 static struct varlena *ondisk_oid_create_external_data(toast_external_data data);
+static uint64 ondisk_oid_get_new_value(Relation toastrel, Oid indexid,
+									   AttrNumber attnum);
 
 
 /*
@@ -48,6 +51,7 @@ static const toast_external_info toast_external_infos[TOAST_EXTERNAL_INFO_SIZE] 
 		.maximum_chunk_size = TOAST_MAX_CHUNK_SIZE_OID,
 		.to_external_data = ondisk_oid_to_external_data,
 		.create_external_data = ondisk_oid_create_external_data,
+		.get_new_value = ondisk_oid_get_new_value,
 	},
 };
 
@@ -128,4 +132,11 @@ ondisk_oid_create_external_data(toast_external_data data)
 	memcpy(VARDATA_EXTERNAL(result), &external, sizeof(external));
 
 	return result;
+}
+
+static uint64
+ondisk_oid_get_new_value(Relation toastrel, Oid indexid,
+						 AttrNumber attnum)
+{
+	return GetNewOidWithIndex(toastrel, indexid, attnum);
 }

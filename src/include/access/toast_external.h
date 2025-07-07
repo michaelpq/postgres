@@ -15,8 +15,13 @@
 #ifndef TOAST_EXTERNAL_H
 #define TOAST_EXTERNAL_H
 
+#include "access/attnum.h"
 #include "access/toast_compression.h"
+#include "utils/relcache.h"
 #include "varatt.h"
+
+/* Invalid TOAST value ID */
+#define InvalidToastId 0
 
 /*
  * Intermediate in-memory structure used when creating on-disk
@@ -35,7 +40,7 @@ typedef struct toast_external_data
 	/*
 	 * Unique ID of value within TOAST table.  This could be an OID or an
 	 * int8 value.  This field is large enough to be able to store any of
-	 * them.
+	 * them.  InvalidToastId if invalid.
 	 */
 	uint64		value;
 } toast_external_data;
@@ -73,6 +78,18 @@ typedef struct toast_external_info
 	 * The result is the varlena created, for on-disk insertion.
 	 */
 	struct varlena  *(*create_external_data) (toast_external_data data);
+
+	/*
+	 * Retrieve a new value, to be assigned for a TOAST entry that will
+	 * be saved.  "toastrel" is the relation where the entry is added.
+	 * "indexid" and "attnum" can be used to check if a value is already
+	 * in use in the TOAST relation where the new entry is inserted.
+	 *
+	 * When "check" is set to true, the value generated should be rechecked
+	 * with the existing TOAST index.
+	 */
+	uint64		(*get_new_value) (Relation toastrel, Oid indexid,
+								  AttrNumber attnum);
 
 } toast_external_info;
 

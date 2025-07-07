@@ -252,14 +252,14 @@ toast_save_datum(Relation rel, Datum value,
 	{
 		/* normal case: just choose an unused OID */
 		toast_pointer.value =
-			GetNewOidWithIndex(toastrel,
-							   RelationGetRelid(toastidxs[validIndex]),
-							   (AttrNumber) 1);
+			info->get_new_value(toastrel,
+								RelationGetRelid(toastidxs[validIndex]),
+								(AttrNumber) 1);
 	}
 	else
 	{
 		/* rewrite case: check to see if value was in old toast table */
-		toast_pointer.value = InvalidOid;
+		toast_pointer.value = InvalidToastId;
 		if (oldexternal != NULL)
 		{
 			struct toast_external_data old_toast_pointer;
@@ -297,7 +297,7 @@ toast_save_datum(Relation rel, Datum value,
 				}
 			}
 		}
-		if (toast_pointer.value == InvalidOid)
+		if (toast_pointer.value == InvalidToastId)
 		{
 			/*
 			 * new value; must choose an OID that doesn't conflict in either
@@ -306,9 +306,9 @@ toast_save_datum(Relation rel, Datum value,
 			do
 			{
 				toast_pointer.value =
-					GetNewOidWithIndex(toastrel,
-									   RelationGetRelid(toastidxs[validIndex]),
-									   (AttrNumber) 1);
+					info->get_new_value(toastrel,
+										RelationGetRelid(toastidxs[validIndex]),
+										(AttrNumber) 1);
 			} while (toastid_valueid_exists(rel->rd_toastoid,
 											toast_pointer.value));
 		}
