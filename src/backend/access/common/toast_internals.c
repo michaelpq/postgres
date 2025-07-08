@@ -18,7 +18,6 @@
 #include "access/heapam.h"
 #include "access/heaptoast.h"
 #include "access/table.h"
-#include "access/toast_counter.h"
 #include "access/toast_external.h"
 #include "access/toast_internals.h"
 #include "access/xact.h"
@@ -158,6 +157,8 @@ toast_save_datum(Relation rel, Datum value,
 	 */
 	toastrel = table_open(rel->rd_rel->reltoastrelid, RowExclusiveLock);
 	toasttupDesc = toastrel->rd_att;
+	toast_typid = TupleDescAttr(toasttupDesc, 0)->atttypid;
+	Assert(toast_typid == OIDOID || toast_typid == INT8OID);
 
 	/*
 	 * Grab the information for toast_external_data.
@@ -165,11 +166,11 @@ toast_save_datum(Relation rel, Datum value,
 	 * Note: if we support multiple external vartags for a single value
 	 * type, we would need to be smarter in the vartag selection.
 	 */
-	tag = VARTAG_ONDISK_OID;
+	if (toast_typid == OIDOID)
+		tag = VARTAG_ONDISK_OID;
+	else if (toast_typid == INT8OID)
+		tag = VARTAG_ONDISK_INT8;
 	info = toast_external_get_info(tag);
-
-	toast_typid = TupleDescAttr(toasttupDesc, 0)->atttypid;
-	Assert(toast_typid == OIDOID || toast_typid == INT8OID);
 
 	/* Open all the toast indexes and look for the valid one */
 	validIndex = toast_open_indexes(toastrel,

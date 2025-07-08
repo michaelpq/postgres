@@ -14,9 +14,22 @@
 #include "postgres.h"
 
 #include "access/detoast.h"
+#include "access/genam.h"
 #include "access/heaptoast.h"
+#include "access/toast_counter.h"
 #include "access/toast_external.h"
 #include "catalog/catalog.h"
+#include "miscadmin.h"
+#include "utils/fmgroids.h"
+#include "utils/snapmgr.h"
+
+
+/* Callbacks for VARTAG_ONDISK_INT8 */
+static void ondisk_int8_to_external_data(struct varlena *attr,
+										 toast_external_data *data);
+static struct varlena *ondisk_int8_create_external_data(toast_external_data data);
+static uint64 ondisk_int8_get_new_value(Relation toastrel, Oid indexid,
+										AttrNumber attnum);
 
 /* Callbacks for VARTAG_ONDISK_OID */
 static void ondisk_oid_to_external_data(struct varlena *attr,
@@ -25,6 +38,12 @@ static struct varlena *ondisk_oid_create_external_data(toast_external_data data)
 static uint64 ondisk_oid_get_new_value(Relation toastrel, Oid indexid,
 									   AttrNumber attnum);
 
+
+/*
+ * Size of an EXTERNAL datum that contains a standard TOAST pointer
+ * (int8 value).
+ */
+#define TOAST_POINTER_INT8_SIZE (VARHDRSZ_EXTERNAL + sizeof(varatt_external_int8))
 
 /*
  * Size of an EXTERNAL datum that contains a standard TOAST pointer (OID
@@ -46,6 +65,13 @@ static uint64 ondisk_oid_get_new_value(Relation toastrel, Oid indexid,
  * individual fields.
  */
 static const toast_external_info toast_external_infos[TOAST_EXTERNAL_INFO_SIZE] = {
+	[VARTAG_ONDISK_INT8] = {
+		.toast_pointer_size = TOAST_POINTER_INT8_SIZE,
+		.maximum_chunk_size = TOAST_MAX_CHUNK_SIZE_INT8,
+		.to_external_data = ondisk_int8_to_external_data,
+		.create_external_data = ondisk_int8_create_external_data,
+		.get_new_value = ondisk_int8_get_new_value,
+	},
 	[VARTAG_ONDISK_OID] = {
 		.toast_pointer_size = TOAST_POINTER_OID_SIZE,
 		.maximum_chunk_size = TOAST_MAX_CHUNK_SIZE_OID,
@@ -77,6 +103,104 @@ toast_external_info_get_pointer_size(uint8 tag)
  * Helper routines able to translate the various varatt_external_* from/to
  * the in-memory representation toast_external_data used in the backend.
  */
+
+/* Callbacks for VARTAG_ONDISK_INT8 */
+static void
+ondisk_int8_to_external_data(struct varlena *attr, toast_external_data *data)
+{
+	varatt_external_int8	external;
+
+	VARATT_EXTERNAL_GET_POINTER(external, attr);
+	data->rawsize = external.va_rawsize;
+
+	/* External size and compression methods are stored in the same field */
+	if (VARATT_EXTERNAL_IS_COMPRESSED(external))
+	{
+		data->extsize = VARATT_EXTERNAL_GET_EXTSIZE(external);
+		data->compression_method = VARATT_EXTERNAL_GET_COMPRESS_METHOD(external);
+	}
+	else
+	{
+		data->extsize = external.va_extinfo;
+		data->compression_method = TOAST_INVALID_COMPRESSION_ID;
+	}
+
+	data->value = (((uint64) external.va_valueid_hi) << 32) |
+		external.va_valueid_lo;
+	data->toastrelid = external.va_toastrelid;
+
+}
+
+static struct varlena *
+ondisk_int8_create_external_data(toast_external_data data)
+{
+	struct varlena *result = NULL;
+	varatt_external_int8 external;
+
+	external.va_rawsize = data.rawsize;
+
+	if (data.compression_method != TOAST_INVALID_COMPRESSION_ID)
+	{
+		/* Set size and compression method, in a single field. */
+		VARATT_EXTERNAL_SET_SIZE_AND_COMPRESS_METHOD(external,
+													 data.extsize,
+													 data.compression_method);
+	}
+	else
+		external.va_extinfo = data.extsize;
+
+	external.va_toastrelid = data.toastrelid;
+	external.va_valueid_hi = (((uint64) data.value) >> 32);
+	external.va_valueid_lo = (uint32) data.value;
+
+	result = (struct varlena *) palloc(TOAST_POINTER_INT8_SIZE);
+	SET_VARTAG_EXTERNAL(result, VARTAG_ONDISK_INT8);
+	memcpy(VARDATA_EXTERNAL(result), &external, sizeof(external));
+
+	return result;
+}
+
+static uint64
+ondisk_int8_get_new_value(Relation toastrel, Oid indexid,
+						  AttrNumber attnum)
+{
+	uint64		new_value;
+	SysScanDesc	scan;
+	ScanKeyData	key;
+	bool		collides = false;
+
+retry:
+	new_value = GetNewToastId();
+
+	/* No indexes in bootstrap mode, so leave */
+	if (IsBootstrapProcessingMode())
+		return new_value;
+
+	Assert(IsSystemRelation(toastrel));
+
+	CHECK_FOR_INTERRUPTS();
+
+	/*
+	 * Check if the new value picked already exists in the toast relation.
+	 * If there is a conflict, retry.
+	 */
+	ScanKeyInit(&key,
+				attnum,
+				BTEqualStrategyNumber, F_INT8EQ,
+				Int64GetDatum(new_value));
+
+	/* see notes in GetNewOidWithIndex() above about using SnapshotAny */
+	scan = systable_beginscan(toastrel, indexid, true,
+							  SnapshotAny, 1, &key);
+	collides = HeapTupleIsValid(systable_getnext(scan));
+	systable_endscan(scan);
+
+	if (collides)
+		goto retry;
+
+	return new_value;
+}
+
 
 /* Callbacks for VARTAG_ONDISK_OID */
 static void

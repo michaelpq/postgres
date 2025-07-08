@@ -31,7 +31,9 @@
 #include "access/toast_external.h"
 #include "access/toast_helper.h"
 #include "access/toast_internals.h"
+#include "access/toast_type.h"
 #include "utils/fmgroids.h"
+#include "utils/syscache.h"
 
 
 /* ----------
@@ -145,12 +147,52 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	/*
 	 * Retrieve the toast pointer size based on the type of external TOAST
 	 * pointer assumed to be used.
-	 *
-	 * Only one format of external TOAST pointer is supported currently,
-	 * making this code simple, based on a single vartag.
 	 */
-	ttc.ttc_toast_pointer_size =
-		toast_external_info_get_pointer_size(VARTAG_ONDISK_OID);
+	if (OidIsValid(rel->rd_rel->reltoastrelid))
+	{
+		HeapTuple	atttuple;
+		Form_pg_attribute atttoast;
+		uint8		vartag = VARTAG_ONDISK_OID;
+
+		/*
+		 * XXX: This is very unlikely efficient, but it is not possible to
+		 * rely on the relation cache to retrieve this information as syscache
+		 * lookups should not happen when loading critical entries.
+		 */
+		atttuple = SearchSysCacheAttNum(rel->rd_rel->reltoastrelid, 1);
+		if (!HeapTupleIsValid(atttuple))
+			elog(ERROR, "cache lookup failed for relation %u",
+				 rel->rd_rel->reltoastrelid);
+		atttoast = (Form_pg_attribute) GETSTRUCT(atttuple);
+
+		if (atttoast->atttypid == OIDOID)
+			vartag = VARTAG_ONDISK_OID;
+		else if (atttoast->atttypid == INT8OID)
+			vartag = VARTAG_ONDISK_INT8;
+		else
+			Assert(false);
+		ttc.ttc_toast_pointer_size =
+			toast_external_info_get_pointer_size(vartag);
+		ReleaseSysCache(atttuple);
+	}
+	else
+	{
+		/*
+		 * No TOAST relation to rely on, which is a case possible when
+		 * dealing with partitioned tables, for example.  Hence, do a best
+		 * guess based on the GUC default_toast_type.
+		 */
+		uint8	vartag = VARTAG_ONDISK_OID;
+
+		if (default_toast_type == TOAST_TYPE_INT8)
+			vartag = VARTAG_ONDISK_INT8;
+		else if (default_toast_type == TOAST_TYPE_OID)
+			vartag = VARTAG_ONDISK_OID;
+		else
+			Assert(false);
+		ttc.ttc_toast_pointer_size =
+			toast_external_info_get_pointer_size(vartag);
+	}
 
 	ttc.ttc_rel = rel;
 	ttc.ttc_values = toast_values;
@@ -654,7 +696,7 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 	int32		max_chunk_size;
 	const toast_external_info *info;
 	uint8		tag = VARTAG_INDIRECT;  /* init value does not matter */
-	Oid			toast_typid;
+	Oid			toast_typid = InvalidOid;
 
 	/* Look for the valid index of toast relation */
 	validIndex = toast_open_indexes(toastrel,
@@ -673,13 +715,18 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 	 * to pass down this information from the upper callers.  This is
 	 * currently on required for the maximum chunk_size.
 	 */
-	tag = VARTAG_ONDISK_OID;
-	info = toast_external_get_info(tag);
-
-	max_chunk_size = info->maximum_chunk_size;
-
 	toast_typid = TupleDescAttr(toastrel->rd_att, 0)->atttypid;
 	Assert(toast_typid == OIDOID || toast_typid == INT8OID);
+
+	if (toast_typid == OIDOID)
+		tag = VARTAG_ONDISK_OID;
+	else if (toast_typid == INT8OID)
+		tag = VARTAG_ONDISK_INT8;
+	else
+		Assert(false);
+
+	info = toast_external_get_info(tag);
+	max_chunk_size = info->maximum_chunk_size;
 
 	totalchunks = ((attrsize - 1) / max_chunk_size) + 1;
 	startchunk = sliceoffset / max_chunk_size;
