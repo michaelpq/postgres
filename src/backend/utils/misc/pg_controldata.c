@@ -69,8 +69,8 @@ pg_control_system(PG_FUNCTION_ARGS)
 Datum
 pg_control_checkpoint(PG_FUNCTION_ARGS)
 {
-	Datum		values[18];
-	bool		nulls[18];
+	Datum		values[19];
+	bool		nulls[19];
 	TupleDesc	tupdesc;
 	HeapTuple	htup;
 	ControlFileData *ControlFile;
@@ -130,29 +130,32 @@ pg_control_checkpoint(PG_FUNCTION_ARGS)
 	values[9] = TransactionIdGetDatum(ControlFile->checkPointCopy.nextMultiOffset);
 	nulls[9] = false;
 
-	values[10] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestXid);
+	values[10] = UInt64GetDatum(ControlFile->checkPointCopy.nextToastId);
 	nulls[10] = false;
 
-	values[11] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestXidDB);
+	values[11] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestXid);
 	nulls[11] = false;
 
-	values[12] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestActiveXid);
+	values[12] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestXidDB);
 	nulls[12] = false;
 
-	values[13] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestMulti);
+	values[13] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestActiveXid);
 	nulls[13] = false;
 
-	values[14] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestMultiDB);
+	values[14] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestMulti);
 	nulls[14] = false;
 
-	values[15] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestCommitTsXid);
+	values[15] = ObjectIdGetDatum(ControlFile->checkPointCopy.oldestMultiDB);
 	nulls[15] = false;
 
-	values[16] = TransactionIdGetDatum(ControlFile->checkPointCopy.newestCommitTsXid);
+	values[16] = TransactionIdGetDatum(ControlFile->checkPointCopy.oldestCommitTsXid);
 	nulls[16] = false;
 
-	values[17] = TimestampTzGetDatum(time_t_to_timestamptz(ControlFile->checkPointCopy.time));
+	values[17] = TransactionIdGetDatum(ControlFile->checkPointCopy.newestCommitTsXid);
 	nulls[17] = false;
+
+	values[18] = TimestampTzGetDatum(time_t_to_timestamptz(ControlFile->checkPointCopy.time));
+	nulls[18] = false;
 
 	htup = heap_form_tuple(tupdesc, values, nulls);
 
