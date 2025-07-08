@@ -18,7 +18,6 @@
 #include "access/heapam.h"
 #include "access/heaptoast.h"
 #include "access/table.h"
-#include "access/toast_counter.h"
 #include "access/toast_external.h"
 #include "access/toast_internals.h"
 #include "access/xact.h"

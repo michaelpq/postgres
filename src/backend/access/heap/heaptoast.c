@@ -31,7 +31,9 @@
 #include "access/toast_external.h"
 #include "access/toast_helper.h"
 #include "access/toast_internals.h"
+#include "access/toast_type.h"
 #include "utils/fmgroids.h"
+#include "utils/syscache.h"
 
 
 /* ----------
@@ -654,7 +656,7 @@ heap_fetch_toast_slice(Relation toastrel, uint64 valueid, int32 attrsize,
 	int32		max_chunk_size;
 	const toast_external_info *info;
 	uint8		tag = VARTAG_INDIRECT;  /* init value does not matter */
-	Oid			toast_typid;
+	Oid			toast_typid = InvalidOid;
 
 	/* Look for the valid index of toast relation */
 	validIndex = toast_open_indexes(toastrel,
