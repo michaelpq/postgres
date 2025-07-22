@@ -279,6 +279,18 @@ typedef enum CmdType
 								 * with qual */
 } CmdType;
 
+/*
+ * Identifies whether a PlannedStmt is a cached plan, and if so,
+ * whether it is generic or custom.
+ *
+ * Used by executor hooks and instrumentation tools.
+ */
+typedef enum CachedPlanType
+{
+	PLAN_CACHE_NOT_SET,			/* Not a cached plan */
+	PLAN_CACHE_GENERIC,			/* Generic cached plan */
+	PLAN_CACHE_CUSTOM,			/* Custom cached plan */
+}			CachedPlanType;
 
 /*
  * JoinType -

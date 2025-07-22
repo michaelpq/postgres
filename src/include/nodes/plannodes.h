@@ -131,6 +131,9 @@ typedef struct PlannedStmt
 	/* non-null if this is utility stmt */
 	Node	   *utilityStmt;
 
+	/* type of cached plan, if it is one */
+	CachedPlanType cached_plan_type;
+
 	/* statement location in source string (copied from Query) */
 	/* start location, or -1 if unknown */
 	ParseLoc	stmt_location;
