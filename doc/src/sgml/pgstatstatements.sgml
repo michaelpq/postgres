@@ -559,7 +559,7 @@
        <structfield>generic_plan_calls</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of times the statement was executed using a generic plan
+       Number of times the statement has been executed using a generic plan
       </para></entry>
      </row>
 
@@ -568,7 +568,7 @@
        <structfield>custom_plan_calls</structfield> <type>bigint</type>
       </para>
       <para>
-       Number of times the statement was executed using a custom plan
+       Number of times the statement has been executed using a custom plan
       </para></entry>
      </row>
 
