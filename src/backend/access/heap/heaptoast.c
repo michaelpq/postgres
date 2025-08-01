@@ -149,7 +149,7 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 	 */
 
 	/* The default value is invalid, to work as a default. */
-	tag = toast_external_assign_vartag(rel->rd_rel->reltoastrelid, InvalidOid);
+	tag = toast_external_assign_vartag(rel->rd_rel->reltoastrelid, InvalidToastId);
 	ttc.ttc_toast_pointer_size = toast_external_info_get_pointer_size(tag);
 
 	ttc.ttc_rel = rel;

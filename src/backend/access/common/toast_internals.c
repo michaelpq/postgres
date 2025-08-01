@@ -228,6 +228,16 @@ toast_save_datum(Relation rel, Datum value,
 		toast_pointer.toastrelid = RelationGetRelid(toastrel);
 
 	/*
+	 * Retrieve the external TOAST information, with the value still
+	 * unknown.  We need to do this again once we know the actual value
+	 * assigned, to define the correct vartag_external for the new TOAST
+	 * tuple.
+	 */
+	tag = toast_external_assign_vartag(toast_pointer.toastrelid,
+									   InvalidToastId);
+	info = toast_external_get_info(tag);
+
+	/*
 	 * Choose an OID to use as the value ID for this toast value.
 	 *
 	 * Normally we just choose an unused OID within the toast table.  But
@@ -243,14 +253,14 @@ toast_save_datum(Relation rel, Datum value,
 	{
 		/* normal case: just choose an unused OID */
 		toast_pointer.value =
-			GetNewOidWithIndex(toastrel,
-							   RelationGetRelid(toastidxs[validIndex]),
-							   (AttrNumber) 1);
+			info->get_new_value(toastrel,
+								RelationGetRelid(toastidxs[validIndex]),
+								(AttrNumber) 1);
 	}
 	else
 	{
 		/* rewrite case: check to see if value was in old toast table */
-		toast_pointer.value = InvalidOid;
+		toast_pointer.value = InvalidToastId;
 		if (oldexternal != NULL)
 		{
 			struct toast_external_data old_toast_pointer;
@@ -288,7 +298,7 @@ toast_save_datum(Relation rel, Datum value,
 				}
 			}
 		}
-		if (toast_pointer.value == InvalidOid)
+		if (toast_pointer.value == InvalidToastId)
 		{
 			/*
 			 * new value; must choose an OID that doesn't conflict in either
@@ -297,9 +307,9 @@ toast_save_datum(Relation rel, Datum value,
 			do
 			{
 				toast_pointer.value =
-					GetNewOidWithIndex(toastrel,
-									   RelationGetRelid(toastidxs[validIndex]),
-									   (AttrNumber) 1);
+					info->get_new_value(toastrel,
+										RelationGetRelid(toastidxs[validIndex]),
+										(AttrNumber) 1);
 			} while (toastid_valueid_exists(rel->rd_toastoid,
 											toast_pointer.value));
 		}
@@ -316,7 +326,7 @@ toast_save_datum(Relation rel, Datum value,
 
 	/*
 	 * Retrieve the vartag that can be assigned for the new TOAST tuple.
-	 * This depends on the type of TOAST table and its assigned value.
+	 * This depends on the type of TOAST table and its now-assigned value.
 	 */
 	tag = toast_external_assign_vartag(toast_pointer.toastrelid,
 									   toast_pointer.value);
