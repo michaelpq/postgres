@@ -127,7 +127,7 @@ toast_save_datum(Relation rel, Datum value,
 	bool		t_isnull[3];
 	CommandId	mycid = GetCurrentCommandId(true);
 	struct varlena *result;
-	struct varatt_external toast_pointer;
+	struct varatt_external_oid toast_pointer;
 	union
 	{
 		struct varlena hdr;
@@ -237,7 +237,7 @@ toast_save_datum(Relation rel, Datum value,
 		toast_pointer.va_valueid = InvalidOid;
 		if (oldexternal != NULL)
 		{
-			struct varatt_external old_toast_pointer;
+			struct varatt_external_oid old_toast_pointer;
 
 			Assert(VARATT_IS_EXTERNAL_ONDISK(oldexternal));
 			/* Must copy to access aligned fields */
@@ -369,7 +369,7 @@ toast_save_datum(Relation rel, Datum value,
 	 * Create the TOAST pointer value that we'll return
 	 */
 	result = (struct varlena *) palloc(TOAST_POINTER_SIZE);
-	SET_VARTAG_EXTERNAL(result, VARTAG_ONDISK);
+	SET_VARTAG_EXTERNAL(result, VARTAG_ONDISK_OID);
 	memcpy(VARDATA_EXTERNAL(result), &toast_pointer, sizeof(toast_pointer));
 
 	return PointerGetDatum(result);
@@ -385,7 +385,7 @@ void
 toast_delete_datum(Relation rel, Datum value, bool is_speculative)
 {
 	struct varlena *attr = (struct varlena *) DatumGetPointer(value);
-	struct varatt_external toast_pointer;
+	struct varatt_external_oid toast_pointer;
 	Relation	toastrel;
 	Relation   *toastidxs;
 	ScanKeyData toastkey;

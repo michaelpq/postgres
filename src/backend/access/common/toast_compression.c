@@ -262,7 +262,7 @@ toast_get_compression_id(struct varlena *attr)
 	 */
 	if (VARATT_IS_EXTERNAL_ONDISK(attr))
 	{
-		struct varatt_external toast_pointer;
+		struct varatt_external_oid toast_pointer;
 
 		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
 

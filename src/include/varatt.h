@@ -16,7 +16,7 @@
 #define VARATT_H
 
 /*
- * struct varatt_external is a traditional "TOAST pointer", that is, the
+ * struct varatt_external_oid is a traditional "TOAST pointer", that is, the
  * information needed to fetch a Datum stored out-of-line in a TOAST table.
  * The data is compressed if and only if the external size stored in
  * va_extinfo is less than va_rawsize - VARHDRSZ.
@@ -29,14 +29,14 @@
  * you can look at these fields!  (The reason we use memcmp is to avoid
  * having to do that just to detect equality of two TOAST pointers...)
  */
-typedef struct varatt_external
+typedef struct varatt_external_oid
 {
 	int32		va_rawsize;		/* Original data size (includes header) */
 	uint32		va_extinfo;		/* External saved size (without header) and
 								 * compression method */
 	Oid			va_valueid;		/* Unique ID of value within TOAST table */
 	Oid			va_toastrelid;	/* RelID of TOAST table containing it */
-}			varatt_external;
+}			varatt_external_oid;
 
 /*
  * These macros define the "saved size" portion of va_extinfo.  Its remaining
@@ -51,7 +51,7 @@ typedef struct varatt_external
  * The creator of such a Datum is entirely responsible that the referenced
  * storage survives for as long as referencing pointer Datums can exist.
  *
- * Note that just as for struct varatt_external, this struct is stored
+ * Note that just as for struct varatt_external_oid, this struct is stored
  * unaligned within any containing tuple.
  */
 typedef struct varatt_indirect
@@ -66,7 +66,7 @@ typedef struct varatt_indirect
  * storage.  APIs for this, in particular the definition of struct
  * ExpandedObjectHeader, are in src/include/utils/expandeddatum.h.
  *
- * Note that just as for struct varatt_external, this struct is stored
+ * Note that just as for struct varatt_external_oid, this struct is stored
  * unaligned within any containing tuple.
  */
 typedef struct ExpandedObjectHeader ExpandedObjectHeader;
@@ -78,7 +78,7 @@ typedef struct varatt_expanded
 
 /*
  * Type tag for the various sorts of "TOAST pointer" datums.  The peculiar
- * value for VARTAG_ONDISK comes from a requirement for on-disk compatibility
+ * value for VARTAG_ONDISK_OID comes from a requirement for on-disk compatibility
  * with a previous notion that the tag field was the pointer datum's length.
  */
 typedef enum vartag_external
@@ -86,7 +86,7 @@ typedef enum vartag_external
 	VARTAG_INDIRECT = 1,
 	VARTAG_EXPANDED_RO = 2,
 	VARTAG_EXPANDED_RW = 3,
-	VARTAG_ONDISK = 18
+	VARTAG_ONDISK_OID = 18
 } vartag_external;
 
 /* this test relies on the specific tag values above */
@@ -96,7 +96,7 @@ typedef enum vartag_external
 #define VARTAG_SIZE(tag) \
 	((tag) == VARTAG_INDIRECT ? sizeof(varatt_indirect) : \
 	 VARTAG_IS_EXPANDED(tag) ? sizeof(varatt_expanded) : \
-	 (tag) == VARTAG_ONDISK ? sizeof(varatt_external) : \
+	 (tag) == VARTAG_ONDISK_OID ? sizeof(varatt_external_oid) : \
 	 (AssertMacro(false), 0))
 
 /*
@@ -288,7 +288,7 @@ typedef struct
 #define VARATT_IS_COMPRESSED(PTR)			VARATT_IS_4B_C(PTR)
 #define VARATT_IS_EXTERNAL(PTR)				VARATT_IS_1B_E(PTR)
 #define VARATT_IS_EXTERNAL_ONDISK(PTR) \
-	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK)
+	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_OID)
 #define VARATT_IS_EXTERNAL_INDIRECT(PTR) \
 	(VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_INDIRECT)
 #define VARATT_IS_EXTERNAL_EXPANDED_RO(PTR) \
@@ -330,7 +330,7 @@ typedef struct
 #define VARDATA_COMPRESSED_GET_COMPRESS_METHOD(PTR) \
 	(((varattrib_4b *) (PTR))->va_compressed.va_tcinfo >> VARLENA_EXTSIZE_BITS)
 
-/* Same for external Datums; but note argument is a struct varatt_external */
+/* Same for external Datums; but note argument is a struct varatt_external_oid */
 #define VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer) \
 	((toast_pointer).va_extinfo & VARLENA_EXTSIZE_MASK)
 #define VARATT_EXTERNAL_GET_COMPRESS_METHOD(toast_pointer) \
