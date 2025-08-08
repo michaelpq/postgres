@@ -21,6 +21,9 @@
  * The data is compressed if and only if the external size stored in
  * va_extinfo is less than va_rawsize - VARHDRSZ.
  *
+ * The value ID is an OID, used for TOAST relations with OID as attribute
+ * for chunk_id.
+ *
  * This struct must not contain any padding, because we sometimes compare
  * these pointers using memcmp.
  *
@@ -51,7 +54,7 @@ typedef struct varatt_external_oid
  * The creator of such a Datum is entirely responsible that the referenced
  * storage survives for as long as referencing pointer Datums can exist.
  *
- * Note that just as for struct varatt_external_oid, this struct is stored
+ * Note that just as for struct varatt_external_*, this struct is stored
  * unaligned within any containing tuple.
  */
 typedef struct varatt_indirect
@@ -66,7 +69,7 @@ typedef struct varatt_indirect
  * storage.  APIs for this, in particular the definition of struct
  * ExpandedObjectHeader, are in src/include/utils/expandeddatum.h.
  *
- * Note that just as for struct varatt_external_oid, this struct is stored
+ * Note that just as for struct varatt_external_*, this struct is stored
  * unaligned within any containing tuple.
  */
 typedef struct ExpandedObjectHeader ExpandedObjectHeader;
@@ -357,11 +360,18 @@ VARATT_IS_EXTERNAL(const void *PTR)
 	return VARATT_IS_1B_E(PTR);
 }
 
+/* Is varlena datum a pointer to on-disk toasted data with OID value? */
+static inline bool
+VARATT_IS_EXTERNAL_ONDISK_OID(const void *PTR)
+{
+	return VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_OID;
+}
+
 /* Is varlena datum a pointer to on-disk toasted data? */
 static inline bool
 VARATT_IS_EXTERNAL_ONDISK(const void *PTR)
 {
-	return VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_OID;
+	return VARATT_IS_EXTERNAL_ONDISK_OID(PTR);
 }
 
 /* Is varlena datum an indirect pointer? */
