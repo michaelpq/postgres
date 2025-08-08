@@ -513,22 +513,6 @@ VARDATA_COMPRESSED_GET_COMPRESS_METHOD(const void *PTR)
 	return ((varattrib_4b *) PTR)->va_compressed.va_tcinfo >> VARLENA_EXTSIZE_BITS;
 }
 
-/*
- * Same for external Datums; but note argument is a struct
- * varatt_external_oid.
- */
-static inline Size
-VARATT_EXTERNAL_GET_EXTSIZE(varatt_external_oid toast_pointer)
-{
-	return toast_pointer.va_extinfo & VARLENA_EXTSIZE_MASK;
-}
-
-static inline uint32
-VARATT_EXTERNAL_GET_COMPRESS_METHOD(varatt_external_oid toast_pointer)
-{
-	return toast_pointer.va_extinfo >> VARLENA_EXTSIZE_BITS;
-}
-
 /* Set size and compress method of an externally-stored varlena datum */
 /* This has to remain a macro; beware multiple evaluations! */
 #define VARATT_EXTERNAL_SET_SIZE_AND_COMPRESS_METHOD(toast_pointer, len, cm) \
@@ -538,19 +522,4 @@ VARATT_EXTERNAL_GET_COMPRESS_METHOD(varatt_external_oid toast_pointer)
 		((toast_pointer).va_extinfo = \
 			(len) | ((uint32) (cm) << VARLENA_EXTSIZE_BITS)); \
 	} while (0)
-
-/*
- * Testing whether an externally-stored value is compressed now requires
- * comparing size stored in va_extinfo (the actual length of the external data)
- * to rawsize (the original uncompressed datum's size).  The latter includes
- * VARHDRSZ overhead, the former doesn't.  We never use compression unless it
- * actually saves space, so we expect either equality or less-than.
- */
-static inline bool
-VARATT_EXTERNAL_IS_COMPRESSED(varatt_external_oid toast_pointer)
-{
-	return VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer) <
-		(Size) (toast_pointer.va_rawsize - VARHDRSZ);
-}
-
 #endif
