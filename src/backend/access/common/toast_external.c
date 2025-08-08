@@ -27,6 +27,40 @@ static void ondisk_oid_to_external_data(struct varlena *attr,
 static struct varlena *ondisk_oid_create_external_data(toast_external_data data);
 
 /*
+ * Decompressed size of an on-disk varlena; but note argument is a struct
+ * varatt_external_oid.
+ */
+static inline Size
+varatt_external_oid_get_extsize(varatt_external_oid toast_pointer)
+{
+	return toast_pointer.va_extinfo & VARLENA_EXTSIZE_MASK;
+}
+
+/*
+ * Compression method of an on-disk varlena; but note argument is a struct
+ *  varatt_external_oid.
+ */
+static inline uint32
+varatt_external_oid_get_compress_method(varatt_external_oid toast_pointer)
+{
+	return toast_pointer.va_extinfo >> VARLENA_EXTSIZE_BITS;
+}
+
+/*
+ * Testing whether an externally-stored TOAST value is compressed now requires
+ * comparing size stored in va_extinfo (the actual length of the external data)
+ * to rawsize (the original uncompressed datum's size).  The latter includes
+ * VARHDRSZ overhead, the former doesn't.  We never use compression unless it
+ * actually saves space, so we expect either equality or less-than.
+ */
+static inline bool
+varatt_external_oid_is_compressed(varatt_external_oid toast_pointer)
+{
+	return varatt_external_oid_get_extsize(toast_pointer) <
+		(Size) (toast_pointer.va_rawsize - VARHDRSZ);
+}
+
+/*
  * Size of an EXTERNAL datum that contains a standard TOAST pointer (OID
  * value).
  */
@@ -146,10 +180,10 @@ ondisk_oid_to_external_data(struct varlena *attr, toast_external_data *data)
 	 * External size and compression methods are stored in the same field,
 	 * extract.
 	 */
-	if (VARATT_EXTERNAL_IS_COMPRESSED(external))
+	if (varatt_external_oid_is_compressed(external))
 	{
-		data->extsize = VARATT_EXTERNAL_GET_EXTSIZE(external);
-		data->compression_method = VARATT_EXTERNAL_GET_COMPRESS_METHOD(external);
+		data->extsize = varatt_external_oid_get_extsize(external);
+		data->compression_method = varatt_external_oid_get_compress_method(external);
 	}
 	else
 	{
