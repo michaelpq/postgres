@@ -42,6 +42,27 @@ typedef struct varatt_external_oid
 }			varatt_external_oid;
 
 /*
+ * struct varatt_external_int8 is a "larger" version of "TOAST pointer",
+ * that uses an 8-byte integer as value.
+ *
+ * This follows the same properties as varatt_external_oid, except that
+ * this is used in TOAST relations with int8 as attribute for chunk_id.
+ */
+typedef struct varatt_external_int8
+{
+	int32		va_rawsize;		/* Original data size (includes header) */
+	uint32		va_extinfo;		/* External saved size (without header) and
+								 * compression method */
+	/*
+	 * Unique ID of value within TOAST table, as two uint32 for alignment
+	 * and padding.
+	 */
+	uint32		va_valueid_lo;
+	uint32		va_valueid_hi;
+	Oid			va_toastrelid;	/* RelID of TOAST table containing it */
+}			varatt_external_int8;
+
+/*
  * These macros define the "saved size" portion of va_extinfo.  Its remaining
  * two high-order bits identify the compression method.
  */
@@ -90,6 +111,7 @@ typedef enum vartag_external
 	VARTAG_INDIRECT = 1,
 	VARTAG_EXPANDED_RO = 2,
 	VARTAG_EXPANDED_RW = 3,
+	VARTAG_ONDISK_INT8 = 4,
 	VARTAG_ONDISK_OID = 18
 } vartag_external;
 
@@ -111,6 +133,8 @@ VARTAG_SIZE(vartag_external tag)
 		return sizeof(varatt_expanded);
 	else if (tag == VARTAG_ONDISK_OID)
 		return sizeof(varatt_external_oid);
+	else if (tag == VARTAG_ONDISK_INT8)
+		return sizeof(varatt_external_int8);
 	else
 	{
 		Assert(false);
@@ -367,11 +391,19 @@ VARATT_IS_EXTERNAL_ONDISK_OID(const void *PTR)
 	return VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_OID;
 }
 
+/* Is varlena datum a pointer to on-disk toasted data with int8 value? */
+static inline bool
+VARATT_IS_EXTERNAL_ONDISK_INT8(const void *PTR)
+{
+	return VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_INT8;
+}
+
 /* Is varlena datum a pointer to on-disk toasted data? */
 static inline bool
 VARATT_IS_EXTERNAL_ONDISK(const void *PTR)
 {
-	return VARATT_IS_EXTERNAL_ONDISK_OID(PTR);
+	return VARATT_IS_EXTERNAL_ONDISK_OID(PTR) ||
+		VARATT_IS_EXTERNAL_ONDISK_INT8(PTR);
 }
 
 /* Is varlena datum an indirect pointer? */
