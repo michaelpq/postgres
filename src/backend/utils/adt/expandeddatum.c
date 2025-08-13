@@ -23,7 +23,7 @@
  * Given a Datum that is an expanded-object reference, extract the pointer.
  *
  * This is a bit tedious since the pointer may not be properly aligned;
- * compare VARATT_EXTERNAL_GET_POINTER().
+ * compare VARATT_INDIRECT_GET_POINTER().
  */
 ExpandedObjectHeader *
 DatumGetEOHP(Datum d)
