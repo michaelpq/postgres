@@ -1,0 +1,757 @@
+CREATE EXTENSION IF NOT EXISTS test_bitmapset;
+-- BASIC FUNCTIONALITY TESTS
+-- Test bms_values function
+SELECT 'values NULL' as test, bms_values(NULL) as result;
+    test     | result 
+-------------+--------
+ values NULL | (b)
+(1 row)
+
+SELECT 'values empty' as test, bms_values(test_bms_from_array(ARRAY[]::integer[])) as result;
+     test     | result 
+--------------+--------
+ values empty | (b)
+(1 row)
+
+SELECT 'values singleton' as test, bms_values(test_bms_make_singleton(42)) as result;
+       test       | result 
+------------------+--------
+ values singleton | (b 42)
+(1 row)
+
+SELECT 'values small set' as test, bms_values(test_bms_from_array(ARRAY[1,3,5])) as result;
+       test       |  result   
+------------------+-----------
+ values small set | (b 1 3 5)
+(1 row)
+
+SELECT 'values larger set' as test, bms_values(test_bms_from_array(ARRAY[0,5,10,15,20])) as result;
+       test        |      result      
+-------------------+------------------
+ values larger set | (b 0 5 10 15 20)
+(1 row)
+
+SELECT 'values unsorted input' as test, bms_values(test_bms_from_array(ARRAY[20,5,15,0,10])) as result;
+         test          |      result      
+-----------------------+------------------
+ values unsorted input | (b 0 5 10 15 20)
+(1 row)
+
+-- Test 1: Basic utility functions
+SELECT 'NULL input to from_array' as test, test_bms_from_array(NULL) IS NULL as result;
+           test           | result 
+--------------------------+--------
+ NULL input to from_array | t
+(1 row)
+
+SELECT 'Empty array to from_array' as test, test_bms_from_array(ARRAY[]::integer[]) IS NULL as result;
+           test            | result 
+---------------------------+--------
+ Empty array to from_array | t
+(1 row)
+
+SELECT 'NULL input to to_array' as test, test_bms_to_array(NULL) IS NULL as result;
+          test          | result 
+------------------------+--------
+ NULL input to to_array | t
+(1 row)
+
+-- Test 2: Singleton operations
+SELECT 'make_singleton(42)' as test, test_bms_to_array(test_bms_make_singleton(42)) = ARRAY[42] as result;
+        test        | result 
+--------------------+--------
+ make_singleton(42) | t
+(1 row)
+
+SELECT 'make_singleton(0)' as test, test_bms_to_array(test_bms_make_singleton(0)) = ARRAY[0] as result;
+       test        | result 
+-------------------+--------
+ make_singleton(0) | t
+(1 row)
+
+SELECT 'make_singleton(1000)' as test, test_bms_to_array(test_bms_make_singleton(1000)) = ARRAY[1000] as result;
+         test         | result 
+----------------------+--------
+ make_singleton(1000) | t
+(1 row)
+
+-- Test 3: Add member operations
+SELECT 'add_member(NULL, 10)' as test, test_bms_to_array(test_bms_add_member(NULL, 10)) = ARRAY[10] as result;
+         test         | result 
+----------------------+--------
+ add_member(NULL, 10) | t
+(1 row)
+
+SELECT 'add_member consistency' as test, bms_values(test_bms_add_member(NULL, 10)) as values;
+          test          | values 
+------------------------+--------
+ add_member consistency | (b 10)
+(1 row)
+
+SELECT 'add_member to existing' as test, test_bms_to_array(test_bms_add_member(test_bms_make_singleton(5), 10)) = ARRAY[5,10] as result;
+          test          | result 
+------------------------+--------
+ add_member to existing | t
+(1 row)
+
+SELECT 'add_member sorted' as test, test_bms_to_array(test_bms_add_member(test_bms_make_singleton(10), 5)) = ARRAY[5,10] as result;
+       test        | result 
+-------------------+--------
+ add_member sorted | t
+(1 row)
+
+SELECT 'add_member idempotent' as test, bms_values(test_bms_add_member(test_bms_make_singleton(10), 10)) as values;
+         test          | values 
+-----------------------+--------
+ add_member idempotent | (b 10)
+(1 row)
+
+-- Test 4: Delete member operations
+SELECT 'del_member from NULL' as test, test_bms_del_member(NULL, 10) IS NULL as result;
+         test         | result 
+----------------------+--------
+ del_member from NULL | t
+(1 row)
+
+SELECT 'del_member singleton becomes empty' as test, test_bms_del_member(test_bms_make_singleton(10), 10) IS NULL as result;
+                test                | result 
+------------------------------------+--------
+ del_member singleton becomes empty | t
+(1 row)
+
+SELECT 'del_member no change' as test, bms_values(test_bms_del_member(test_bms_make_singleton(10), 5)) as values;
+         test         | values 
+----------------------+--------
+ del_member no change | (b 10)
+(1 row)
+
+SELECT 'del_member from middle' as test, test_bms_to_array(test_bms_del_member(test_bms_from_array(ARRAY[1,2,3]), 2)) = ARRAY[1,3] as result;
+          test          | result 
+------------------------+--------
+ del_member from middle | t
+(1 row)
+
+SELECT 'del_member triggers realloc' as test, test_bms_del_member(test_bms_del_member(test_bms_from_array(ARRAY[0,31,32,63,64]), 32), 63) as result;
+            test             |   result    
+-----------------------------+-------------
+ del_member triggers realloc | (b 0 31 64)
+(1 row)
+
+SELECT 'del_member word boundary' as test,
+       bms_values(test_bms_del_member(
+           test_bms_add_range(NULL, 30, 34),
+           32
+       )) as result;
+           test           |     result      
+--------------------------+-----------------
+ del_member word boundary | (b 30 31 33 34)
+(1 row)
+
+-- SET OPERATIONS TESTS
+-- Test 5: Union operations
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135,
+	test_bms_from_array(ARRAY[3,5,7]) AS set_357,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'union overlapping sets' as test,
+       test_bms_to_array(test_bms_union(set_135, set_357)) = ARRAY[1,3,5,7] as result
+FROM test_sets
+UNION ALL
+SELECT 'union with NULL' as test,
+       test_bms_to_array(test_bms_union(set_135, NULL)) = ARRAY[1,3,5] as result
+FROM test_sets
+UNION ALL
+SELECT 'union NULL with NULL' as test,
+       test_bms_union(NULL, NULL) IS NULL as result
+FROM test_sets;
+          test          | result 
+------------------------+--------
+ union overlapping sets | t
+ union with NULL        | t
+ union NULL with NULL   | t
+(3 rows)
+
+SELECT 'overlapping ranges' as test,
+       bms_values(test_bms_union(
+           test_bms_add_range(NULL, 50, 150),
+           test_bms_add_range(NULL, 100, 200)
+       )) as result;
+        test        |                                                                                                                                                                                                                                                                                    result                                                                                                                                                                                                                                                                                     
+--------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ overlapping ranges | (b 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191 192 193 194 195 196 197 198 199 200)
+(1 row)
+
+-- Test 6: Intersection operations
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135,
+	test_bms_from_array(ARRAY[3,5,7]) AS set_357,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'intersect overlapping sets' as test,
+       test_bms_to_array(test_bms_intersect(set_135, set_357)) = ARRAY[3,5] as result
+FROM test_sets
+UNION ALL
+SELECT 'intersect disjoint sets' as test,
+       test_bms_intersect(set_135, set_246) IS NULL as result
+FROM test_sets
+UNION ALL
+SELECT 'intersect with NULL' as test,
+       test_bms_intersect(set_135, NULL) IS NULL as result
+FROM test_sets;
+            test            | result 
+----------------------------+--------
+ intersect overlapping sets | t
+ intersect disjoint sets    | t
+ intersect with NULL        | t
+(3 rows)
+
+-- Test bms_int_members
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135,
+	test_bms_from_array(ARRAY[3,5,7]) AS set_357,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'int(ersect) overlapping sets' as test,
+       test_bms_to_array(test_bms_int_members(set_135, set_357)) = ARRAY[3,5] as result
+FROM test_sets
+UNION ALL
+SELECT 'int(ersect) disjoint sets' as test,
+       test_bms_int_members(set_135, set_246) IS NULL as result
+FROM test_sets
+UNION ALL
+SELECT 'int(ersect) with NULL' as test,
+       test_bms_int_members(set_135, NULL) IS NULL as result
+FROM test_sets;
+             test             | result 
+------------------------------+--------
+ int(ersect) overlapping sets | t
+ int(ersect) disjoint sets    | t
+ int(ersect) with NULL        | t
+(3 rows)
+
+SELECT 'int(ersect) members' as test,
+       bms_values(test_bms_int_members(
+           test_bms_from_array(ARRAY[0,31,32,63,64]),
+           test_bms_from_array(ARRAY[31,32,64,65])
+       )) as result;
+        test         |    result    
+---------------------+--------------
+ int(ersect) members | (b 31 32 64)
+(1 row)
+
+-- Test 7: Difference operations
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135,
+	test_bms_from_array(ARRAY[3,5,7]) AS set_357,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'difference overlapping sets' as test,
+       test_bms_to_array(test_bms_difference(set_135, set_357)) = ARRAY[1] as result
+FROM test_sets
+UNION ALL
+SELECT 'difference disjoint sets' as test,
+       test_bms_to_array(test_bms_difference(set_135, set_246)) = ARRAY[1,3,5] as result
+FROM test_sets
+UNION ALL
+SELECT 'difference identical sets' as test,
+       test_bms_difference(set_135, set_135) IS NULL as result
+FROM test_sets;
+            test             | result 
+-----------------------------+--------
+ difference overlapping sets | t
+ difference disjoint sets    | t
+ difference identical sets   | t
+(3 rows)
+
+SELECT 'difference subtraction edge case' as test,
+       bms_values(test_bms_difference(
+           test_bms_add_range(NULL, 0, 100),
+           test_bms_add_range(NULL, 50, 150)
+       )) as result;
+               test               |                                                                     result                                                                      
+----------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------
+ difference subtraction edge case | (b 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49)
+(1 row)
+
+SELECT 'difference subtract to empty' as test,
+       bms_values(test_bms_difference(
+           test_bms_make_singleton(42),
+           test_bms_make_singleton(42)
+       )) as result;
+             test             | result 
+------------------------------+--------
+ difference subtract to empty | (b)
+(1 row)
+
+-- MEMBERSHIP AND COMPARISON TESTS
+-- Test 8: Membership tests
+WITH test_set AS (SELECT test_bms_from_array(ARRAY[1,3,5]) AS set_135)
+SELECT 'is_member existing' as test, test_bms_is_member(set_135, 1) = true as result FROM test_set
+UNION ALL
+SELECT 'is_member missing' as test, test_bms_is_member(set_135, 2) = false as result FROM test_set
+UNION ALL
+SELECT 'is_member existing middle' as test, test_bms_is_member(set_135, 3) = true as result FROM test_set
+UNION ALL
+SELECT 'is_member NULL set' as test, test_bms_is_member(NULL, 1) = false as result FROM test_set;
+           test            | result 
+---------------------------+--------
+ is_member existing        | t
+ is_member missing         | t
+ is_member existing middle | t
+ is_member NULL set        | t
+(4 rows)
+
+-- Test 9: Set cardinality
+SELECT 'num_members NULL' as test, test_bms_num_members(NULL) = 0 as result;
+       test       | result 
+------------------+--------
+ num_members NULL | t
+(1 row)
+
+SELECT 'num_members small set' as test, test_bms_num_members(test_bms_from_array(ARRAY[1,3,5])) = 3 as result;
+         test          | result 
+-----------------------+--------
+ num_members small set | t
+(1 row)
+
+SELECT 'num_members larger set' as test, test_bms_num_members(test_bms_from_array(ARRAY[2,4,6,8,10])) = 5 as result;
+          test          | result 
+------------------------+--------
+ num_members larger set | t
+(1 row)
+
+-- Test 10: Set equality and comparison
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_a,
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_b,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246,
+	test_bms_from_array(ARRAY[1,3]) AS set_13
+)
+SELECT 'equal NULL NULL' as test, test_bms_equal(NULL, NULL) = true as result FROM test_sets
+UNION ALL
+SELECT 'equal NULL set' as test, test_bms_equal(NULL, set_135_a) = false as result FROM test_sets
+UNION ALL
+SELECT 'equal set NULL' as test, test_bms_equal(set_135_a, NULL) = false as result FROM test_sets
+UNION ALL
+SELECT 'equal identical sets' as test, test_bms_equal(set_135_a, set_135_b) = true as result FROM test_sets
+UNION ALL
+SELECT 'equal different sets' as test, test_bms_equal(set_135_a, set_246) = false as result FROM test_sets
+UNION ALL
+SELECT 'compare NULL NULL' as test, test_bms_compare(NULL, NULL) = 0 as result FROM test_sets
+UNION ALL
+SELECT 'compare NULL set' as test, test_bms_compare(NULL, set_13) = -1 as result FROM test_sets
+UNION ALL
+SELECT 'compare set NULL' as test, test_bms_compare(set_13, NULL) = 1 as result FROM test_sets
+UNION ALL
+SELECT 'compare equal sets' as test, test_bms_compare(set_13, set_13) = 0 as result FROM test_sets
+UNION ALL
+SELECT 'compare subset superset' as test, test_bms_compare(set_13, set_135_a) = -1 as result FROM test_sets
+UNION ALL
+SELECT 'compare superset subset' as test, test_bms_compare(set_135_a, set_13) = 1 as result FROM test_sets;
+          test           | result 
+-------------------------+--------
+ equal NULL NULL         | t
+ equal NULL set          | t
+ equal set NULL          | t
+ equal identical sets    | t
+ equal different sets    | t
+ compare NULL NULL       | t
+ compare NULL set        | t
+ compare set NULL        | t
+ compare equal sets      | t
+ compare subset superset | t
+ compare superset subset | t
+(11 rows)
+
+SELECT 'compare edge case' as test,
+       test_bms_compare(
+           test_bms_add_range(NULL, 0, 63),
+           test_bms_add_range(NULL, 0, 64)
+       ) as result;
+       test        | result 
+-------------------+--------
+ compare edge case |     -1
+(1 row)
+
+-- ADVANCED OPERATIONS TESTS
+-- Test 11: Range operations
+SELECT 'add_range basic' as test, test_bms_to_array(test_bms_add_range(NULL, 5, 7)) = ARRAY[5,6,7] as result;
+      test       | result 
+-----------------+--------
+ add_range basic | t
+(1 row)
+
+SELECT 'add_range single element' as test, test_bms_to_array(test_bms_add_range(NULL, 5, 5)) = ARRAY[5] as result;
+           test           | result 
+--------------------------+--------
+ add_range single element | t
+(1 row)
+
+SELECT 'add_range to existing' as test, test_bms_to_array(test_bms_add_range(test_bms_from_array(ARRAY[1,10]), 5, 7)) = ARRAY[1,5,6,7,10] as result;
+         test          | result 
+-----------------------+--------
+ add_range to existing | t
+(1 row)
+
+SELECT 'add_range at word boundary 31' as test, bms_values(test_bms_add_range(NULL, 30, 34)) as result;
+             test              |       result       
+-------------------------------+--------------------
+ add_range at word boundary 31 | (b 30 31 32 33 34)
+(1 row)
+
+SELECT 'add_range at word boundary 63' as test, bms_values(test_bms_add_range(NULL, 62, 66)) as result;
+             test              |       result       
+-------------------------------+--------------------
+ add_range at word boundary 63 | (b 62 63 64 65 66)
+(1 row)
+
+SELECT 'add_range large range' as test, bms_values(test_bms_add_range(NULL, 0, 1000)) as result;
+         test          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+-----------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ add_range large range | (b 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191 192 193 194 195 196 197 198 199 200 201 202 203 204 205 206 207 208 209 210 211 212 213 214 215 216 217 218 219 220 221 222 223 224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239 240 241 242 243 244 245 246 247 248 249 250 251 252 253 254 255 256 257 258 259 260 261 262 263 264 265 266 267 268 269 270 271 272 273 274 275 276 277 278 279 280 281 282 283 284 285 286 287 288 289 290 291 292 293 294 295 296 297 298 299 300 301 302 303 304 305 306 307 308 309 310 311 312 313 314 315 316 317 318 319 320 321 322 323 324 325 326 327 328 329 330 331 332 333 334 335 336 337 338 339 340 341 342 343 344 345 346 347 348 349 350 351 352 353 354 355 356 357 358 359 360 361 362 363 364 365 366 367 368 369 370 371 372 373 374 375 376 377 378 379 380 381 382 383 384 385 386 387 388 389 390 391 392 393 394 395 396 397 398 399 400 401 402 403 404 405 406 407 408 409 410 411 412 413 414 415 416 417 418 419 420 421 422 423 424 425 426 427 428 429 430 431 432 433 434 435 436 437 438 439 440 441 442 443 444 445 446 447 448 449 450 451 452 453 454 455 456 457 458 459 460 461 462 463 464 465 466 467 468 469 470 471 472 473 474 475 476 477 478 479 480 481 482 483 484 485 486 487 488 489 490 491 492 493 494 495 496 497 498 499 500 501 502 503 504 505 506 507 508 509 510 511 512 513 514 515 516 517 518 519 520 521 522 523 524 525 526 527 528 529 530 531 532 533 534 535 536 537 538 539 540 541 542 543 544 545 546 547 548 549 550 551 552 553 554 555 556 557 558 559 560 561 562 563 564 565 566 567 568 569 570 571 572 573 574 575 576 577 578 579 580 581 582 583 584 585 586 587 588 589 590 591 592 593 594 595 596 597 598 599 600 601 602 603 604 605 606 607 608 609 610 611 612 613 614 615 616 617 618 619 620 621 622 623 624 625 626 627 628 629 630 631 632 633 634 635 636 637 638 639 640 641 642 643 644 645 646 647 648 649 650 651 652 653 654 655 656 657 658 659 660 661 662 663 664 665 666 667 668 669 670 671 672 673 674 675 676 677 678 679 680 681 682 683 684 685 686 687 688 689 690 691 692 693 694 695 696 697 698 699 700 701 702 703 704 705 706 707 708 709 710 711 712 713 714 715 716 717 718 719 720 721 722 723 724 725 726 727 728 729 730 731 732 733 734 735 736 737 738 739 740 741 742 743 744 745 746 747 748 749 750 751 752 753 754 755 756 757 758 759 760 761 762 763 764 765 766 767 768 769 770 771 772 773 774 775 776 777 778 779 780 781 782 783 784 785 786 787 788 789 790 791 792 793 794 795 796 797 798 799 800 801 802 803 804 805 806 807 808 809 810 811 812 813 814 815 816 817 818 819 820 821 822 823 824 825 826 827 828 829 830 831 832 833 834 835 836 837 838 839 840 841 842 843 844 845 846 847 848 849 850 851 852 853 854 855 856 857 858 859 860 861 862 863 864 865 866 867 868 869 870 871 872 873 874 875 876 877 878 879 880 881 882 883 884 885 886 887 888 889 890 891 892 893 894 895 896 897 898 899 900 901 902 903 904 905 906 907 908 909 910 911 912 913 914 915 916 917 918 919 920 921 922 923 924 925 926 927 928 929 930 931 932 933 934 935 936 937 938 939 940 941 942 943 944 945 946 947 948 949 950 951 952 953 954 955 956 957 958 959 960 961 962 963 964 965 966 967 968 969 970 971 972 973 974 975 976 977 978 979 980 981 982 983 984 985 986 987 988 989 990 991 992 993 994 995 996 997 998 999 1000)
+(1 row)
+
+SELECT 'add_range force realloc test 1' as test, bms_values(test_bms_add_range(NULL, 0, 200)) as result;
+              test              |                                                                                                                                                                                                                                                                                                                                                          result                                                                                                                                                                                                                                                                                                                                                           
+--------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ add_range force realloc test 1 | (b 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 180 181 182 183 184 185 186 187 188 189 190 191 192 193 194 195 196 197 198 199 200)
+(1 row)
+
+SELECT 'add_range foce realloc test 2' as test, bms_values(test_bms_add_range(NULL, 1000, 1100)) as result;
+             test              |                                                                                                                                                                                                                                                            result                                                                                                                                                                                                                                                            
+-------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ add_range foce realloc test 2 | (b 1000 1001 1002 1003 1004 1005 1006 1007 1008 1009 1010 1011 1012 1013 1014 1015 1016 1017 1018 1019 1020 1021 1022 1023 1024 1025 1026 1027 1028 1029 1030 1031 1032 1033 1034 1035 1036 1037 1038 1039 1040 1041 1042 1043 1044 1045 1046 1047 1048 1049 1050 1051 1052 1053 1054 1055 1056 1057 1058 1059 1060 1061 1062 1063 1064 1065 1066 1067 1068 1069 1070 1071 1072 1073 1074 1075 1076 1077 1078 1079 1080 1081 1082 1083 1084 1085 1086 1087 1088 1089 1090 1091 1092 1093 1094 1095 1096 1097 1098 1099 1100)
+(1 row)
+
+-- Test 12: Membership types
+SELECT 'membership empty' as test, test_bms_membership(NULL) = 0 as result;
+       test       | result 
+------------------+--------
+ membership empty | t
+(1 row)
+
+SELECT 'membership singleton' as test, test_bms_membership(test_bms_from_array(ARRAY[42])) = 1 as result;
+         test         | result 
+----------------------+--------
+ membership singleton | t
+(1 row)
+
+SELECT 'membership multiple' as test, test_bms_membership(test_bms_from_array(ARRAY[1,2,3])) = 2 as result;
+        test         | result 
+---------------------+--------
+ membership multiple | t
+(1 row)
+
+-- Test 13: Singleton member extraction
+SELECT 'singleton_member valid' as test, test_bms_singleton_member(test_bms_from_array(ARRAY[42])) = 42 as result;
+          test          | result 
+------------------------+--------
+ singleton_member valid | t
+(1 row)
+
+-- Test 14: Set iteration
+WITH test_set AS (SELECT test_bms_from_array(ARRAY[5,10,15,20]) AS set_numbers)
+SELECT 'next_member first' as test, test_bms_next_member(set_numbers, -1) = 5 as result FROM test_set
+UNION ALL
+SELECT 'next_member second' as test, test_bms_next_member(set_numbers, 5) = 10 as result FROM test_set
+UNION ALL
+SELECT 'next_member past end' as test, test_bms_next_member(set_numbers, 20) = -2 as result FROM test_set
+UNION ALL
+SELECT 'next_member empty set' as test, test_bms_next_member(NULL, -1) = -2 as result FROM test_set
+UNION ALL
+SELECT 'prev_member last' as test, test_bms_prev_member(set_numbers, 21) = 20 as result FROM test_set
+UNION ALL
+SELECT 'prev_member penultimate' as test, test_bms_prev_member(set_numbers, 20) = 15 as result FROM test_set
+UNION ALL
+SELECT 'prev_member past beginning' as test, test_bms_prev_member(set_numbers, 5) = -2 as result FROM test_set
+UNION ALL
+SELECT 'prev_member empty set' as test, test_bms_prev_member(NULL, 100) = -2 as result FROM test_set;
+            test            | result 
+----------------------------+--------
+ next_member first          | t
+ next_member second         | t
+ next_member past end       | t
+ next_member empty set      | t
+ prev_member last           | t
+ prev_member penultimate    | t
+ prev_member past beginning | t
+ prev_member empty set      | t
+(8 rows)
+
+-- Test 15: Hash functions
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135a,
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135b,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'hash NULL' as test, test_bms_hash_value(NULL) = 0 as result FROM test_sets
+UNION ALL
+SELECT 'hash consistency' as test, test_bms_hash_value(set_135a) = test_bms_hash_value(set_135b) as result FROM test_sets
+UNION ALL
+SELECT 'hash different sets' as test, test_bms_hash_value(set_135a) != test_bms_hash_value(set_246) as result FROM test_sets;
+        test         | result 
+---------------------+--------
+ hash NULL           | t
+ hash consistency    | t
+ hash different sets | t
+(3 rows)
+
+-- Test 16: Set overlap
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135,
+	test_bms_from_array(ARRAY[3,5,7]) AS set_357,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'overlap existing' as test, test_bms_overlap(set_135, set_357) = true as result FROM test_sets
+UNION ALL
+SELECT 'overlap none' as test, test_bms_overlap(set_135, set_246) = false as result FROM test_sets
+UNION ALL
+SELECT 'overlap with NULL' as test, test_bms_overlap(NULL, set_135) = false as result FROM test_sets;
+       test        | result 
+-------------------+--------
+ overlap existing  | t
+ overlap none      | t
+ overlap with NULL | t
+(3 rows)
+
+-- Test 17: Subset relations
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3]) AS set_13,
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135,
+	test_bms_from_array(ARRAY[2,4]) AS set_24,
+	test_bms_add_range(NULL, 0, 31) AS rng_0_31, -- 1 word
+	test_bms_add_range(NULL, 0, 63) as rng_0_63  -- 2 words
+)
+SELECT 'subset NULL is subset of all' as test, test_bms_is_subset(NULL, set_135) = true as result FROM test_sets
+UNION ALL
+SELECT 'subset proper subset' as test, test_bms_is_subset(set_13, set_135) = true as result FROM test_sets
+UNION ALL
+SELECT 'subset improper subset' as test, test_bms_is_subset(set_135, set_13) = false as result FROM test_sets
+UNION ALL
+SELECT 'subset disjoint sets' as test, test_bms_is_subset(set_13, set_24) = false as result FROM test_sets
+UNION ALL
+SELECT 'subset comparison edge' as test, test_bms_is_subset(rng_0_31, rng_0_63) = true as result FROM test_sets;
+             test             | result 
+------------------------------+--------
+ subset NULL is subset of all | t
+ subset proper subset         | t
+ subset improper subset       | t
+ subset disjoint sets         | t
+ subset comparison edge       | t
+(5 rows)
+
+-- Test 18: Copy operations
+WITH test_set AS (SELECT test_bms_from_array(ARRAY[1,3,5,7]) AS original)
+SELECT 'copy NULL' as test, test_bms_copy(NULL) IS NULL as result FROM test_set
+UNION ALL
+SELECT 'copy equality' as test, test_bms_equal(original, test_bms_copy(original)) = true as result FROM test_set;
+     test      | result 
+---------------+--------
+ copy NULL     | t
+ copy equality | t
+(2 rows)
+
+-- Test 19: Add members operation
+WITH base_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3]) AS set_13,
+	test_bms_from_array(ARRAY[5,7]) AS set_57
+)
+SELECT 'add_members operation' as test,
+       test_bms_to_array(test_bms_add_members(set_13, set_57)) = ARRAY[1,3,5,7] as result
+FROM base_sets;
+         test          | result 
+-----------------------+--------
+ add_members operation | t
+(1 row)
+
+SELECT 'add members complex' as test,
+       bms_values(test_bms_add_members(
+           test_bms_from_array(ARRAY[1,3,5]),
+           test_bms_from_array(ARRAY[100,200,300])
+       )) as result;
+        test         |        result         
+---------------------+-----------------------
+ add members complex | (b 1 3 5 100 200 300)
+(1 row)
+
+-- Test 20: Test hash consistency
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_a,
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_b,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'bitmap_hash NULL' as test,
+       test_bitmap_hash(NULL) = 0 as result
+UNION ALL
+SELECT 'bitmap_hash consistency' as test,
+       test_bitmap_hash(set_135_a) = test_bitmap_hash(set_135_b) as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_hash vs bms_hash_value' as test,
+       test_bitmap_hash(set_135_a) = test_bms_hash_value(set_135_a) as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_hash different sets' as test,
+       test_bitmap_hash(set_135_a) != test_bitmap_hash(set_246) as result
+FROM test_sets;
+             test              | result 
+-------------------------------+--------
+ bitmap_hash NULL              | t
+ bitmap_hash consistency       | t
+ bitmap_hash vs bms_hash_value | t
+ bitmap_hash different sets    | t
+(4 rows)
+
+-- Test 21: bitmap_match function
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_a,
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_b,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246,
+	test_bms_from_array(ARRAY[1,3]) AS set_13
+)
+SELECT 'bitmap_match NULL NULL (should be 0)' as test,
+       test_bitmap_match(NULL, NULL) = 0 as result
+UNION ALL
+SELECT 'bitmap_match NULL set (should be 1)' as test,
+       test_bitmap_match(NULL, set_135_a) = 1 as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_match set NULL (should be 1)' as test,
+       test_bitmap_match(set_135_a, NULL) = 1 as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_match identical sets (should be 0)' as test,
+       test_bitmap_match(set_135_a, set_135_b) = 0 as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_match different sets (should be 1)' as test,
+       test_bitmap_match(set_135_a, set_246) = 1 as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_match subset/superset (should be 1)' as test,
+       test_bitmap_match(set_13, set_135_a) = 1 as result
+FROM test_sets;
+                    test                    | result 
+--------------------------------------------+--------
+ bitmap_match NULL NULL (should be 0)       | t
+ bitmap_match NULL set (should be 1)        | t
+ bitmap_match set NULL (should be 1)        | t
+ bitmap_match identical sets (should be 0)  | t
+ bitmap_match different sets (should be 1)  | t
+ bitmap_match subset/superset (should be 1) | t
+(6 rows)
+
+-- Test relationship with bms_equal
+WITH test_sets AS (
+    SELECT
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_a,
+	test_bms_from_array(ARRAY[1,3,5]) AS set_135_b,
+	test_bms_from_array(ARRAY[2,4,6]) AS set_246
+)
+SELECT 'bitmap_match vs bms_equal (equal sets)' as test,
+       (test_bitmap_match(set_135_a, set_135_b) = 0) = test_bms_equal(set_135_a, set_135_b) as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_match vs bms_equal (different sets)' as test,
+       (test_bitmap_match(set_135_a, set_246) = 0) = test_bms_equal(set_135_a, set_246) as result
+FROM test_sets
+UNION ALL
+SELECT 'bitmap_match vs bms_equal (NULL cases)' as test,
+       (test_bitmap_match(NULL, NULL) = 0) = test_bms_equal(NULL, NULL) as result
+FROM test_sets;
+                    test                    | result 
+--------------------------------------------+--------
+ bitmap_match vs bms_equal (equal sets)     | t
+ bitmap_match vs bms_equal (different sets) | t
+ bitmap_match vs bms_equal (NULL cases)     | t
+(3 rows)
+
+-- Test specific match values for debugging
+SELECT 'bitmap_match [1,3,5] vs [1,3,5]' as test,
+       test_bitmap_match(test_bms_from_array(ARRAY[1,3,5]), test_bms_from_array(ARRAY[1,3,5])) as match_value;
+              test               | match_value 
+---------------------------------+-------------
+ bitmap_match [1,3,5] vs [1,3,5] |           0
+(1 row)
+
+SELECT 'bitmap_match [1,3,5] vs [2,4,6]' as test,
+       test_bitmap_match(test_bms_from_array(ARRAY[1,3,5]), test_bms_from_array(ARRAY[2,4,6])) as match_value;
+              test               | match_value 
+---------------------------------+-------------
+ bitmap_match [1,3,5] vs [2,4,6] |           1
+(1 row)
+
+-- Test edge cases
+SELECT 'bitmap_match empty arrays' as test,
+       test_bitmap_match(test_bms_from_array(ARRAY[]::integer[]), test_bms_from_array(ARRAY[]::integer[])) = 0 as result;
+           test            | result 
+---------------------------+--------
+ bitmap_match empty arrays | t
+(1 row)
+
+-- Test 22: Overlap lists with various scenarios
+WITH test_lists AS (
+    SELECT ARRAY[
+        test_bms_from_array(ARRAY[1,2,3]),
+        test_bms_from_array(ARRAY[4,5,6]),
+        test_bms_from_array(ARRAY[7,8,9]),
+        test_bms_make_singleton(2)  -- This should overlap with first set
+    ] as bms_list
+)
+SELECT 'overlap list complex' as test,
+       test_bms_overlap_list(test_bms_from_array(ARRAY[2,10]), bms_list) as result
+FROM test_lists;
+         test         | result 
+----------------------+--------
+ overlap list complex | f
+(1 row)
+
+SELECT 'overlap empty list' as test,
+       test_bms_overlap_list(test_bms_make_singleton(1), ARRAY[]::text[]) as result;
+        test        | result 
+--------------------+--------
+ overlap empty list | f
+(1 row)
+
+-- Test 23: Random operations stress test
+SELECT 'random operations' as test, test_random_operations(-1, 10000, 81920, 0) > 0 as result;
+       test        | result 
+-------------------+--------
+ random operations | t
+(1 row)
+
+-- ERROR CONDITION TESTS
+-- Test 24: Error conditions (these should produce ERRORs)
+SELECT test_bms_make_singleton(-1);
+ERROR:  negative bitmapset member not allowed
+SELECT test_bms_add_member(test_bms_make_singleton(1), -1);
+ERROR:  negative bitmapset member not allowed
+SELECT test_bms_is_member(NULL, -5);
+ERROR:  negative bitmapset member not allowed
+SELECT test_bms_add_member(NULL, -10);
+ERROR:  negative bitmapset member not allowed
+SELECT test_bms_del_member(NULL, -20);
+ERROR:  negative bitmapset member not allowed
+SELECT test_bms_add_range(NULL, -5, 10);
+ERROR:  negative bitmapset member not allowed
+SELECT test_bms_singleton_member(test_bms_from_array(ARRAY[1,2]));
+ERROR:  bitmapset has multiple members
+SELECT bms_values(test_bms_add_member(NULL, 1000));
+ bms_values 
+------------
+ (b 1000)
+(1 row)
+
+DROP EXTENSION test_bitmapset;
