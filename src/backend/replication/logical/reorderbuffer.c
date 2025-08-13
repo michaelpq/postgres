@@ -5136,7 +5136,7 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		struct varlena *varlena;
 
 		/* va_rawsize is the size of the original datum -- including header */
-		struct varatt_external toast_pointer;
+		varatt_external_oid toast_pointer;
 		struct varatt_indirect redirect_pointer;
 		struct varlena *new_datum = NULL;
 		struct varlena *reconstructed;
