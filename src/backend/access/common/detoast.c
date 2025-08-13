@@ -61,7 +61,7 @@ detoast_external_attr(struct varlena *attr)
 		 */
 		struct varatt_indirect redirect;
 
-		VARATT_EXTERNAL_GET_POINTER(redirect, attr);
+		VARATT_INDIRECT_GET_POINTER(redirect, attr);
 		attr = (struct varlena *) redirect.pointer;
 
 		/* nested indirect Datums aren't allowed */
@@ -138,7 +138,7 @@ detoast_attr(struct varlena *attr)
 		 */
 		struct varatt_indirect redirect;
 
-		VARATT_EXTERNAL_GET_POINTER(redirect, attr);
+		VARATT_INDIRECT_GET_POINTER(redirect, attr);
 		attr = (struct varlena *) redirect.pointer;
 
 		/* nested indirect Datums aren't allowed */
@@ -268,7 +268,7 @@ detoast_attr_slice(struct varlena *attr,
 	{
 		struct varatt_indirect redirect;
 
-		VARATT_EXTERNAL_GET_POINTER(redirect, attr);
+		VARATT_INDIRECT_GET_POINTER(redirect, attr);
 
 		/* nested indirect Datums aren't allowed */
 		Assert(!VARATT_IS_EXTERNAL_INDIRECT(redirect.pointer));
@@ -561,7 +561,7 @@ toast_raw_datum_size(Datum value)
 	{
 		struct varatt_indirect toast_pointer;
 
-		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+		VARATT_INDIRECT_GET_POINTER(toast_pointer, attr);
 
 		/* nested indirect Datums aren't allowed */
 		Assert(!VARATT_IS_EXTERNAL_INDIRECT(toast_pointer.pointer));
@@ -618,7 +618,7 @@ toast_datum_size(Datum value)
 	{
 		struct varatt_indirect toast_pointer;
 
-		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+		VARATT_INDIRECT_GET_POINTER(toast_pointer, attr);
 
 		/* nested indirect Datums aren't allowed */
 		Assert(!VARATT_IS_EXTERNAL_INDIRECT(attr));

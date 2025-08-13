@@ -13,17 +13,17 @@
 #define DETOAST_H
 
 /*
- * Macro to fetch the possibly-unaligned contents of an EXTERNAL datum
- * into a local "varatt_external_*" toast pointer, as supported
- * in toast_external.c and varatt.h.  This should be just a memcpy, but
- * some versions of gcc seem to produce broken code that assumes the datum
- * contents are aligned.  Introducing an explicit intermediate
- * "varattrib_1b_e *" variable seems to fix it.
+ * Macro to fetch the possibly-unaligned contents of an indirect datum
+ * into a local "varatt_indirect" toast pointer, as supported
+ * in varatt.h.  This should be just a memcpy, but some versions of gcc
+ * seem to produce broken code that assumes the datum contents are aligned.
+ * Introducing an explicit intermediate "varattrib_1b_e *" variable seems
+ * to fix it.
  */
-#define VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr) \
+#define VARATT_INDIRECT_GET_POINTER(toast_pointer, attr) \
 do { \
 	varattrib_1b_e *attre = (varattrib_1b_e *) (attr); \
-	Assert(VARATT_IS_EXTERNAL(attre)); \
+	Assert(VARATT_IS_EXTERNAL_INDIRECT(attre)); \
 	Assert(VARSIZE_EXTERNAL(attre) == sizeof(toast_pointer) + VARHDRSZ_EXTERNAL); \
 	memcpy(&(toast_pointer), VARDATA_EXTERNAL(attre), sizeof(toast_pointer)); \
 } while (0)
