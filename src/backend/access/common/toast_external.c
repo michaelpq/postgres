@@ -27,6 +27,25 @@ static void ondisk_oid_to_external_data(struct varlena *attr,
 static struct varlena *ondisk_oid_create_external_data(toast_external_data data);
 
 /*
+ * Fetch the possibly-unaligned contents of an on-disk external TOAST with
+ * OID values into a local "varatt_external_oid" pointer.
+ *
+ * This should be just a memcpy, but some versions of gcc seem to produce
+ * broken code that assumes the datum contents are aligned.  Introducing
+ * an explicit intermediate "varattrib_1b_e *" variable seems to fix it.
+ */
+static inline void
+varatt_external_oid_get_pointer(varatt_external_oid *toast_pointer,
+								struct varlena *attr)
+{
+	varattrib_1b_e *attre = (varattrib_1b_e *) attr;
+
+	Assert(VARATT_IS_EXTERNAL_ONDISK_OID(attre));
+	Assert(VARSIZE_EXTERNAL(attre) == sizeof(varatt_external_oid) + VARHDRSZ_EXTERNAL);
+	memcpy(toast_pointer, VARDATA_EXTERNAL(attre), sizeof(varatt_external_oid));
+}
+
+/*
  * Decompressed size of an on-disk varlena; but note argument is a struct
  * varatt_external_oid.
  */
@@ -173,7 +192,7 @@ ondisk_oid_to_external_data(struct varlena *attr, toast_external_data *data)
 {
 	varatt_external_oid external;
 
-	VARATT_EXTERNAL_GET_POINTER(external, attr);
+	varatt_external_oid_get_pointer(&external, attr);
 	data->rawsize = external.va_rawsize;
 
 	/*
