@@ -73,7 +73,7 @@ typedef enum SkipPages
  */
 typedef struct ToastedAttribute
 {
-	struct varatt_external toast_pointer;
+	varatt_external_oid toast_pointer;
 	BlockNumber blkno;			/* block in main table */
 	OffsetNumber offnum;		/* offset in main table */
 	AttrNumber	attnum;			/* attribute in main table */
@@ -1566,7 +1566,7 @@ check_toast_tuple(HeapTuple toasttup, HeapCheckContext *ctx,
 
 	toast_valueid = ta->toast_pointer.va_valueid;
 
-	max_chunk_size = TOAST_MAX_CHUNK_SIZE;
+	max_chunk_size = TOAST_OID_MAX_CHUNK_SIZE;
 	last_chunk_seq = (extsize - 1) / max_chunk_size;
 
 	/* Sanity-check the sequence number. */
@@ -1672,7 +1672,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	uint16		infomask;
 	Oid8		toast_pointer_valueid;
 	CompactAttribute *thisatt;
-	struct varatt_external toast_pointer;
+	varatt_external_oid toast_pointer;
 
 	infomask = ctx->tuphdr->t_infomask;
 	thisatt = TupleDescCompactAttr(RelationGetDescr(ctx->rel), ctx->attnum);
@@ -1731,7 +1731,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	{
 		uint8		va_tag = VARTAG_EXTERNAL(tp + ctx->offset);
 
-		if (va_tag != VARTAG_ONDISK)
+		if (va_tag != VARTAG_ONDISK_OID)
 		{
 			report_corruption(ctx,
 							  psprintf("toasted attribute has unexpected TOAST tag %u",
@@ -1876,7 +1876,7 @@ check_toasted_attribute(HeapCheckContext *ctx, ToastedAttribute *ta)
 	int32		expected_chunk_seq = 0;
 	int32		last_chunk_seq;
 	Oid8		toast_valueid;
-	int32		max_chunk_size = TOAST_MAX_CHUNK_SIZE;
+	int32		max_chunk_size = TOAST_OID_MAX_CHUNK_SIZE;
 
 	extsize = VARATT_EXTERNAL_GET_EXTSIZE(ta->toast_pointer);
 	last_chunk_seq = (extsize - 1) / max_chunk_size;

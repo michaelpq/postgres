@@ -225,7 +225,7 @@ detoast_attr_slice(struct varlena *attr,
 
 	if (VARATT_IS_EXTERNAL_ONDISK(attr))
 	{
-		struct varatt_external toast_pointer;
+		varatt_external_oid toast_pointer;
 
 		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
 
@@ -344,7 +344,7 @@ toast_fetch_datum(struct varlena *attr)
 {
 	Relation	toastrel;
 	struct varlena *result;
-	struct varatt_external toast_pointer;
+	varatt_external_oid toast_pointer;
 	int32		attrsize;
 
 	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
@@ -398,7 +398,7 @@ toast_fetch_datum_slice(struct varlena *attr, int32 sliceoffset,
 {
 	Relation	toastrel;
 	struct varlena *result;
-	struct varatt_external toast_pointer;
+	varatt_external_oid toast_pointer;
 	int32		attrsize;
 
 	if (!VARATT_IS_EXTERNAL_ONDISK(attr))
@@ -550,7 +550,7 @@ toast_raw_datum_size(Datum value)
 	if (VARATT_IS_EXTERNAL_ONDISK(attr))
 	{
 		/* va_rawsize is the size of the original datum -- including header */
-		struct varatt_external toast_pointer;
+		varatt_external_oid toast_pointer;
 
 		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
 		result = toast_pointer.va_rawsize;
@@ -610,7 +610,7 @@ toast_datum_size(Datum value)
 		 * compressed or not.  We do not count the size of the toast pointer
 		 * ... should we?
 		 */
-		struct varatt_external toast_pointer;
+		varatt_external_oid toast_pointer;
 
 		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
 		result = VARATT_EXTERNAL_GET_EXTSIZE(toast_pointer);

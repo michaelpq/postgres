@@ -4195,7 +4195,7 @@ pg_column_toast_chunk_id(PG_FUNCTION_ARGS)
 {
 	int			typlen;
 	struct varlena *attr;
-	struct varatt_external toast_pointer;
+	varatt_external_oid toast_pointer;
 
 	/* On first call, get the input type's typlen, and save at *fn_extra */
 	if (fcinfo->flinfo->fn_extra == NULL)
