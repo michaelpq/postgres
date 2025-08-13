@@ -4241,7 +4241,7 @@ pg_column_toast_chunk_id(PG_FUNCTION_ARGS)
 
 	toast_valueid = toast_external_info_get_valueid(attr);
 
-	PG_RETURN_OID(toast_valueid);
+	PG_RETURN_OID8(toast_valueid);
 }
 
 /*
