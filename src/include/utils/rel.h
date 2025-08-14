@@ -342,6 +342,7 @@ typedef enum StdRdOptToastValueType
 {
 	STDRD_OPTION_TOAST_VALUE_TYPE_INVALID = 0,
 	STDRD_OPTION_TOAST_VALUE_TYPE_OID,
+	STDRD_OPTION_TOAST_VALUE_TYPE_OID8,
 } StdRdOptToastValueType;
 
 typedef struct StdRdOptions
