@@ -18,8 +18,19 @@
 #include "postgres.h"
 
 #include "access/detoast.h"
+#include "access/genam.h"
 #include "access/heaptoast.h"
 #include "access/toast_external.h"
+#include "catalog/catalog.h"
+#include "miscadmin.h"
+#include "utils/fmgroids.h"
+#include "utils/lsyscache.h"
+
+
+/* Callbacks for VARTAG_ONDISK_OID8 */
+static void ondisk_oid8_to_external_data(struct varlena *attr,
+										 toast_external_data *data);
+static struct varlena *ondisk_oid8_create_external_data(toast_external_data data);
 
 /* Callbacks for VARTAG_ONDISK_OID */
 static void ondisk_oid_to_external_data(struct varlena *attr,
@@ -28,7 +39,7 @@ static struct varlena *ondisk_oid_create_external_data(toast_external_data data)
 
 /*
  * Fetch the possibly-unaligned contents of an on-disk external TOAST with
- * OID values into a local "varatt_external_oid" pointer.
+ * OID or OID8 values into a local "varatt_external_*" pointer.
  *
  * This should be just a memcpy, but some versions of gcc seem to produce
  * broken code that assumes the datum contents are aligned.  Introducing
@@ -45,9 +56,20 @@ varatt_external_oid_get_pointer(varatt_external_oid *toast_pointer,
 	memcpy(toast_pointer, VARDATA_EXTERNAL(attre), sizeof(varatt_external_oid));
 }
 
+static inline void
+varatt_external_oid8_get_pointer(varatt_external_oid8 *toast_pointer,
+								 struct varlena *attr)
+{
+	varattrib_1b_e *attre = (varattrib_1b_e *) attr;
+
+	Assert(VARATT_IS_EXTERNAL_ONDISK_OID8(attre));
+	Assert(VARSIZE_EXTERNAL(attre) == sizeof(varatt_external_oid8) + VARHDRSZ_EXTERNAL);
+	memcpy(toast_pointer, VARDATA_EXTERNAL(attre), sizeof(varatt_external_oid8));
+}
+
 /*
  * Decompressed size of an on-disk varlena; but note argument is a struct
- * varatt_external_oid.
+ * varatt_external_oid or varatt_external_oid8.
  */
 static inline Size
 varatt_external_oid_get_extsize(varatt_external_oid toast_pointer)
@@ -55,12 +77,24 @@ varatt_external_oid_get_extsize(varatt_external_oid toast_pointer)
 	return toast_pointer.va_extinfo & VARLENA_EXTSIZE_MASK;
 }
 
+static inline Size
+varatt_external_oid8_get_extsize(varatt_external_oid8 toast_pointer)
+{
+	return toast_pointer.va_extinfo & VARLENA_EXTSIZE_MASK;
+}
+
 /*
  * Compression method of an on-disk varlena; but note argument is a struct
- *  varatt_external_oid.
+ *  varatt_external_oid or varatt_external_oid8.
  */
 static inline uint32
 varatt_external_oid_get_compress_method(varatt_external_oid toast_pointer)
+{
+	return toast_pointer.va_extinfo >> VARLENA_EXTSIZE_BITS;
+}
+
+static inline uint32
+varatt_external_oid8_get_compress_method(varatt_external_oid8 toast_pointer)
 {
 	return toast_pointer.va_extinfo >> VARLENA_EXTSIZE_BITS;
 }
@@ -78,6 +112,19 @@ varatt_external_oid_is_compressed(varatt_external_oid toast_pointer)
 	return varatt_external_oid_get_extsize(toast_pointer) <
 		(Size) (toast_pointer.va_rawsize - VARHDRSZ);
 }
+
+static inline bool
+varatt_external_oid8_is_compressed(varatt_external_oid8 toast_pointer)
+{
+	return varatt_external_oid8_get_extsize(toast_pointer) <
+		(Size) (toast_pointer.va_rawsize - VARHDRSZ);
+}
+
+/*
+ * Size of an EXTERNAL datum that contains a standard TOAST pointer
+ * (oid8 value).
+ */
+#define TOAST_POINTER_OID8_SIZE (VARHDRSZ_EXTERNAL + sizeof(varatt_external_oid8))
 
 /*
  * Size of an EXTERNAL datum that contains a standard TOAST pointer (OID
@@ -99,6 +146,12 @@ varatt_external_oid_is_compressed(varatt_external_oid toast_pointer)
  * individual fields.
  */
 static const toast_external_info toast_external_infos[TOAST_EXTERNAL_INFO_SIZE] = {
+	[VARTAG_ONDISK_OID8] = {
+		.toast_pointer_size = TOAST_POINTER_OID8_SIZE,
+		.maximum_chunk_size = TOAST_OID_MAX_CHUNK_SIZE,
+		.to_external_data = ondisk_oid8_to_external_data,
+		.create_external_data = ondisk_oid8_create_external_data,
+	},
 	[VARTAG_ONDISK_OID] = {
 		.toast_pointer_size = TOAST_OID_POINTER_SIZE,
 		.maximum_chunk_size = TOAST_OID_MAX_CHUNK_SIZE,
@@ -150,22 +203,33 @@ toast_external_info_get_pointer_size(uint8 tag)
 uint8
 toast_external_assign_vartag(Oid toastrelid, Oid8 valueid)
 {
+	Oid		toast_typid;
+
 	/*
-	 * If dealing with a code path where a TOAST relation may not be assigned,
-	 * like heap_toast_insert_or_update(), just use the legacy
-	 * vartag_external.
+	 * If dealing with a code path where a TOAST relation may not be assigned
+	 * like heap_toast_insert_or_update(), just use the default with an OID
+	 * type.
+	 *
+	 * In bootstrap mode, we should not do any kind of syscache lookups,
+	 * so also rely on OID.
 	 */
-	if (!OidIsValid(toastrelid))
+	if (!OidIsValid(toastrelid) || IsBootstrapProcessingMode())
 		return VARTAG_ONDISK_OID;
 
 	/*
-	 * Currently there is only one type of vartag_external supported: 4-byte
-	 * value with OID for the chunk_id type.
+	 * Two types of vartag_external are currently supported: OID and OID8,
+	 * which depend on the type assigned to "chunk_id" for the TOAST table.
 	 *
-	 * Note: This routine will be extended to be able to use multiple
-	 * vartag_external within a single TOAST relation type, that may change
-	 * depending on the value used.
+	 * XXX: Should we assign from the start an OID vartag if dealing with
+	 * a TOAST relation with OID8 as value if the value assigned is less
+	 * than UINT_MAX?  This just takes the "safe" approach of assigning
+	 * the larger vartag in all cases, but this can be made cheaper
+	 * depending on the OID consumption.
 	 */
+	toast_typid = get_atttype(toastrelid, 1);
+	if (toast_typid == OID8OID)
+		return VARTAG_ONDISK_OID8;
+
 	return VARTAG_ONDISK_OID;
 }
 
@@ -173,6 +237,63 @@ toast_external_assign_vartag(Oid toastrelid, Oid8 valueid)
  * Helper routines able to translate the various varatt_external_* from/to
  * the in-memory representation toast_external_data used in the backend.
  */
+
+/* Callbacks for VARTAG_ONDISK_OID8 */
+static void
+ondisk_oid8_to_external_data(struct varlena *attr, toast_external_data *data)
+{
+	varatt_external_oid8	external;
+
+	varatt_external_oid8_get_pointer(&external, attr);
+	data->rawsize = external.va_rawsize;
+
+	/* External size and compression methods are stored in the same field */
+	if (varatt_external_oid8_is_compressed(external))
+	{
+		data->extsize = varatt_external_oid8_get_extsize(external);
+		data->compression_method = varatt_external_oid8_get_compress_method(external);
+	}
+	else
+	{
+		data->extsize = external.va_extinfo;
+		data->compression_method = TOAST_INVALID_COMPRESSION_ID;
+	}
+
+	data->valueid = (((uint64) external.va_valueid_hi) << 32) |
+		external.va_valueid_lo;
+	data->toastrelid = external.va_toastrelid;
+
+}
+
+static struct varlena *
+ondisk_oid8_create_external_data(toast_external_data data)
+{
+	struct varlena *result = NULL;
+	varatt_external_oid8 external;
+
+	external.va_rawsize = data.rawsize;
+
+	if (data.compression_method != TOAST_INVALID_COMPRESSION_ID)
+	{
+		/* Set size and compression method, in a single field. */
+		VARATT_EXTERNAL_SET_SIZE_AND_COMPRESS_METHOD(external,
+													 data.extsize,
+													 data.compression_method);
+	}
+	else
+		external.va_extinfo = data.extsize;
+
+	external.va_toastrelid = data.toastrelid;
+	external.va_valueid_hi = (((uint64) data.valueid) >> 32);
+	external.va_valueid_lo = (uint32) data.valueid;
+
+	result = (struct varlena *) palloc(TOAST_POINTER_OID8_SIZE);
+	SET_VARTAG_EXTERNAL(result, VARTAG_ONDISK_OID8);
+	memcpy(VARDATA_EXTERNAL(result), &external, sizeof(external));
+
+	return result;
+}
+
 
 /* Callbacks for VARTAG_ONDISK_OID */
 

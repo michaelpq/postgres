@@ -32,6 +32,7 @@
 #include "access/toast_helper.h"
 #include "access/toast_internals.h"
 #include "utils/fmgroids.h"
+#include "utils/syscache.h"
 
 
 /* ----------
