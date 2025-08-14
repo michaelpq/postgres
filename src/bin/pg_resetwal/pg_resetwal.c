@@ -68,7 +68,7 @@ static TransactionId set_oldest_xid = 0;
 static TransactionId set_xid = 0;
 static TransactionId set_oldest_commit_ts_xid = 0;
 static TransactionId set_newest_commit_ts_xid = 0;
-static Oid	set_oid = 0;
+static Oid8 set_oid = 0;
 static MultiXactId set_mxid = 0;
 static MultiXactOffset set_mxoff = (MultiXactOffset) -1;
 static TimeLineID minXlogTli = 0;
@@ -225,7 +225,7 @@ main(int argc, char *argv[])
 
 			case 'o':
 				errno = 0;
-				set_oid = strtoul(optarg, &endptr, 0);
+				set_oid = strtou64(optarg, &endptr, 0);
 				if (endptr == optarg || *endptr != '\0' || errno != 0)
 				{
 					pg_log_error("invalid argument for option %s", "-o");
@@ -755,7 +755,7 @@ PrintControlValues(bool guessed)
 	printf(_("Latest checkpoint's NextXID:          %u:%u\n"),
 		   EpochFromFullTransactionId(ControlFile.checkPointCopy.nextXid),
 		   XidFromFullTransactionId(ControlFile.checkPointCopy.nextXid));
-	printf(_("Latest checkpoint's NextOID:          %u\n"),
+	printf(_("Latest checkpoint's NextOID:          " OID8_FORMAT "\n"),
 		   ControlFile.checkPointCopy.nextOid);
 	printf(_("Latest checkpoint's NextMultiXactId:  %u\n"),
 		   ControlFile.checkPointCopy.nextMulti);
@@ -839,7 +839,7 @@ PrintNewControlValues(void)
 
 	if (set_oid != 0)
 	{
-		printf(_("NextOID:                              %u\n"),
+		printf(_("NextOID:                              " OID8_FORMAT "\n"),
 			   ControlFile.checkPointCopy.nextOid);
 	}
 
@@ -1208,7 +1208,7 @@ usage(void)
 	printf(_("  -e, --epoch=XIDEPOCH             set next transaction ID epoch\n"));
 	printf(_("  -l, --next-wal-file=WALFILE      set minimum starting location for new WAL\n"));
 	printf(_("  -m, --multixact-ids=MXID,MXID    set next and oldest multitransaction ID\n"));
-	printf(_("  -o, --next-oid=OID               set next OID\n"));
+	printf(_("  -o, --next-oid=OID8              set next OID (8 bytes)\n"));
 	printf(_("  -O, --multixact-offset=OFFSET    set next multitransaction offset\n"));
 	printf(_("  -u, --oldest-transaction-id=XID  set oldest transaction ID\n"));
 	printf(_("  -x, --next-transaction-id=XID    set next transaction ID\n"));
