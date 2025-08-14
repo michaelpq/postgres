@@ -4986,14 +4986,22 @@ ReorderBufferToastAppendChunk(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	TupleDesc	desc = RelationGetDescr(relation);
 	Oid8		chunk_id;
 	int32		chunk_seq;
+	Oid			toast_typid;
 
 	if (txn->toast_hash == NULL)
 		ReorderBufferToastInitHash(rb, txn);
+	toast_typid = TupleDescAttr(desc, 0)->atttypid;
 
 	Assert(IsToastRelation(relation));
 
 	newtup = change->data.tp.newtuple;
-	chunk_id = DatumGetObjectId(fastgetattr(newtup, 1, desc, &isnull));
+	/* This depends on the type of TOAST value dealt with. */
+	if (toast_typid == OIDOID)
+		chunk_id = DatumGetObjectId(fastgetattr(newtup, 1, desc, &isnull));
+	else if (toast_typid == INT8OID)
+		chunk_id = DatumGetUInt64(fastgetattr(newtup, 1, desc, &isnull));
+	else
+		Assert(false);
 	Assert(!isnull);
 	chunk_seq = DatumGetInt32(fastgetattr(newtup, 2, desc, &isnull));
 	Assert(!isnull);
