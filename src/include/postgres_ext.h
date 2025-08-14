@@ -41,7 +41,6 @@ typedef unsigned int Oid;
 #define atooid(x) ((Oid) strtoul((x), NULL, 10))
 /* the above needs <stdlib.h> */
 
-
 /*
  * Identifiers of error message fields.  Kept here to keep common
  * between frontend and backend, and also to export them to libpq

@@ -1,0 +1,196 @@
+--
+-- OID8
+--
+CREATE TABLE OID8_TBL(f1 oid8);
+INSERT INTO OID8_TBL(f1) VALUES ('1234');
+INSERT INTO OID8_TBL(f1) VALUES ('1235');
+INSERT INTO OID8_TBL(f1) VALUES ('987');
+INSERT INTO OID8_TBL(f1) VALUES ('-1040');
+INSERT INTO OID8_TBL(f1) VALUES ('99999999');
+INSERT INTO OID8_TBL(f1) VALUES ('5     ');
+INSERT INTO OID8_TBL(f1) VALUES ('   10  ');
+-- leading/trailing hard tab is also allowed
+INSERT INTO OID8_TBL(f1) VALUES ('	  15 	  ');
+-- bad inputs
+INSERT INTO OID8_TBL(f1) VALUES ('');
+ERROR:  invalid input syntax for type oid8: ""
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('    ');
+ERROR:  invalid input syntax for type oid8: "    "
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('    ');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('asdfasd');
+ERROR:  invalid input syntax for type oid8: "asdfasd"
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('asdfasd');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('99asdfasd');
+ERROR:  invalid input syntax for type oid8: "99asdfasd"
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('99asdfasd');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('5    d');
+ERROR:  invalid input syntax for type oid8: "5    d"
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('5    d');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('    5d');
+ERROR:  invalid input syntax for type oid8: "    5d"
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('    5d');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('5    5');
+ERROR:  invalid input syntax for type oid8: "5    5"
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('5    5');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES (' - 500');
+ERROR:  invalid input syntax for type oid8: " - 500"
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES (' - 500');
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('3908203590239580293850293850329485');
+ERROR:  value "3908203590239580293850293850329485" is out of range for type oid8
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('39082035902395802938502938...
+                                         ^
+INSERT INTO OID8_TBL(f1) VALUES ('-1204982019841029840928340329840934');
+ERROR:  value "-1204982019841029840928340329840934" is out of range for type oid8
+LINE 1: INSERT INTO OID8_TBL(f1) VALUES ('-1204982019841029840928340...
+                                         ^
+SELECT * FROM OID8_TBL;
+          f1          
+----------------------
+                 1234
+                 1235
+                  987
+ 18446744073709550576
+             99999999
+                    5
+                   10
+                   15
+(8 rows)
+
+-- Also try it with non-error-throwing API
+SELECT pg_input_is_valid('1234', 'oid8');
+ pg_input_is_valid 
+-------------------
+ t
+(1 row)
+
+SELECT pg_input_is_valid('01XYZ', 'oid8');
+ pg_input_is_valid 
+-------------------
+ f
+(1 row)
+
+SELECT * FROM pg_input_error_info('01XYZ', 'oid8');
+                   message                   | detail | hint | sql_error_code 
+---------------------------------------------+--------+------+----------------
+ invalid input syntax for type oid8: "01XYZ" |        |      | 22P02
+(1 row)
+
+SELECT pg_input_is_valid('3908203590239580293850293850329485', 'oid8');
+ pg_input_is_valid 
+-------------------
+ f
+(1 row)
+
+SELECT * FROM pg_input_error_info('-1204982019841029840928340329840934', 'oid8');
+                                  message                                  | detail | hint | sql_error_code 
+---------------------------------------------------------------------------+--------+------+----------------
+ value "-1204982019841029840928340329840934" is out of range for type oid8 |        |      | 22003
+(1 row)
+
+-- Operators
+SELECT o.* FROM OID8_TBL o WHERE o.f1 = 1234;
+  f1  
+------
+ 1234
+(1 row)
+
+SELECT o.* FROM OID8_TBL o WHERE o.f1 <> '1234';
+          f1          
+----------------------
+                 1235
+                  987
+ 18446744073709550576
+             99999999
+                    5
+                   10
+                   15
+(7 rows)
+
+SELECT o.* FROM OID8_TBL o WHERE o.f1 <= '1234';
+  f1  
+------
+ 1234
+  987
+    5
+   10
+   15
+(5 rows)
+
+SELECT o.* FROM OID8_TBL o WHERE o.f1 < '1234';
+ f1  
+-----
+ 987
+   5
+  10
+  15
+(4 rows)
+
+SELECT o.* FROM OID8_TBL o WHERE o.f1 >= '1234';
+          f1          
+----------------------
+                 1234
+                 1235
+ 18446744073709550576
+             99999999
+(4 rows)
+
+SELECT o.* FROM OID8_TBL o WHERE o.f1 > '1234';
+          f1          
+----------------------
+                 1235
+ 18446744073709550576
+             99999999
+(3 rows)
+
+-- Casts
+SELECT 1::int2::oid8;
+ oid8 
+------
+    1
+(1 row)
+
+SELECT 1::int4::oid8;
+ oid8 
+------
+    1
+(1 row)
+
+SELECT 1::int8::oid8;
+ oid8 
+------
+    1
+(1 row)
+
+SELECT 1::oid8::int8;
+ int8 
+------
+    1
+(1 row)
+
+SELECT 1::oid::oid8; -- ok
+ oid8 
+------
+    1
+(1 row)
+
+SELECT 1::oid8::oid; -- not ok
+ERROR:  cannot cast type oid8 to oid
+LINE 1: SELECT 1::oid8::oid;
+                      ^
+-- Aggregates
+SELECT min(f1), max(f1) FROM OID8_TBL;
+ min |         max          
+-----+----------------------
+   5 | 18446744073709550576
+(1 row)
+
+DROP TABLE OID8_TBL;
