@@ -42,7 +42,7 @@ typedef struct CheckPoint
 	bool		fullPageWrites; /* current full_page_writes */
 	int			wal_level;		/* current wal_level */
 	FullTransactionId nextXid;	/* next free transaction ID */
-	Oid			nextOid;		/* next free OID */
+	Oid8		nextOid;		/* next free OID */
 	MultiXactId nextMulti;		/* next free MultiXactId */
 	MultiXactOffset nextMultiOffset;	/* next free MultiXact offset */
 	TransactionId oldestXid;	/* cluster-wide minimum datfrozenxid */
