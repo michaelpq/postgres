@@ -81,6 +81,12 @@
 
 #define EXTERN_TUPLE_MAX_SIZE	MaximumBytesPerTuple(EXTERN_TUPLES_PER_PAGE)
 
+#define TOAST_OID8_MAX_CHUNK_SIZE	\
+	(EXTERN_TUPLE_MAX_SIZE -							\
+	 MAXALIGN(SizeofHeapTupleHeader) -					\
+	 (sizeof(uint32) * 2) -								\
+	 sizeof(int32) -									\
+	 VARHDRSZ)
 #define TOAST_OID_MAX_CHUNK_SIZE	\
 	(EXTERN_TUPLE_MAX_SIZE -							\
 	 MAXALIGN(SizeofHeapTupleHeader) -					\
@@ -89,7 +95,7 @@
 	 VARHDRSZ)
 
 /* Maximum size of chunk possible */
-#define TOAST_MAX_CHUNK_SIZE	TOAST_OID_MAX_CHUNK_SIZE
+#define TOAST_MAX_CHUNK_SIZE	Max(TOAST_OID_MAX_CHUNK_SIZE, TOAST_OID8_MAX_CHUNK_SIZE)
 
 /* ----------
  * heap_toast_insert_or_update -
