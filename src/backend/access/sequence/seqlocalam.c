@@ -19,6 +19,7 @@
 #include "access/multixact.h"
 #include "access/seqlocalam.h"
 #include "access/sequenceam.h"
+#include "access/sequence_page.h"
 #include "access/xact.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -83,27 +84,11 @@ static void fill_seq_fork_with_data(Relation rel, HeapTuple tuple,
 static Form_pg_seq_local_data
 read_seq_tuple(Relation rel, Buffer *buf, HeapTuple seqdatatuple)
 {
-	Page		page;
-	ItemId		lp;
 	seq_local_magic *sm;
 	Form_pg_seq_local_data seq;
 
-	*buf = ReadBuffer(rel, 0);
-	LockBuffer(*buf, BUFFER_LOCK_EXCLUSIVE);
-
-	page = BufferGetPage(*buf);
-	sm = (seq_local_magic *) PageGetSpecialPointer(page);
-
-	if (sm->magic != SEQ_LOCAL_MAGIC)
-		elog(ERROR, "bad magic number in sequence \"%s\": %08X",
-			 RelationGetRelationName(rel), sm->magic);
-
-	lp = PageGetItemId(page, FirstOffsetNumber);
-	Assert(ItemIdIsNormal(lp));
-
-	/* Note we currently only bother to set these two fields of *seqdatatuple */
-	seqdatatuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
-	seqdatatuple->t_len = ItemIdGetLength(lp);
+	/* Retrieve data from the sequence page */
+	SEQUENCE_PAGE_READ(Form_pg_seq_local_data, seq_local_magic, SEQ_LOCAL_MAGIC);
 
 	/*
 	 * Previous releases of Postgres neglected to prevent SELECT FOR UPDATE on
@@ -121,8 +106,6 @@ read_seq_tuple(Relation rel, Buffer *buf, HeapTuple seqdatatuple)
 		seqdatatuple->t_data->t_infomask |= HEAP_XMAX_INVALID;
 		MarkBufferDirtyHint(*buf, true);
 	}
-
-	seq = (Form_pg_seq_local_data) GETSTRUCT(seqdatatuple);
 
 	return seq;
 }
@@ -162,33 +145,8 @@ fill_seq_fork_with_data(Relation rel, HeapTuple tuple, ForkNumber forkNum)
 	seq_local_magic *sm;
 	OffsetNumber offnum;
 
-	/* Initialize first page of relation with special magic number */
-
-	buf = ExtendBufferedRel(BMR_REL(rel), forkNum, NULL,
-							EB_LOCK_FIRST | EB_SKIP_EXTENSION_LOCK);
-	Assert(BufferGetBlockNumber(buf) == 0);
-
-	page = BufferGetPage(buf);
-
-	PageInit(page, BufferGetPageSize(buf), sizeof(seq_local_magic));
-	sm = (seq_local_magic *) PageGetSpecialPointer(page);
-	sm->magic = SEQ_LOCAL_MAGIC;
-
-	/* Now insert sequence tuple */
-
-	/*
-	 * Since VACUUM does not process sequences, we have to force the tuple to
-	 * have xmin = FrozenTransactionId now.  Otherwise it would become
-	 * invisible to SELECTs after 2G transactions.  It is okay to do this
-	 * because if the current transaction aborts, no other xact will ever
-	 * examine the sequence tuple anyway.
-	 */
-	HeapTupleHeaderSetXmin(tuple->t_data, FrozenTransactionId);
-	HeapTupleHeaderSetXminFrozen(tuple->t_data);
-	HeapTupleHeaderSetCmin(tuple->t_data, FirstCommandId);
-	HeapTupleHeaderSetXmax(tuple->t_data, InvalidTransactionId);
-	tuple->t_data->t_infomask |= HEAP_XMAX_INVALID;
-	ItemPointerSet(&tuple->t_data->t_ctid, 0, FirstOffsetNumber);
+	/* Initialize first page of relation */
+	SEQUENCE_PAGE_INIT(seq_local_magic, SEQ_LOCAL_MAGIC);
 
 	/* check the comment above nextval_internal()'s equivalent call. */
 	if (RelationNeedsWAL(rel))
