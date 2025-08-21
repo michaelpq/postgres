@@ -2702,6 +2702,7 @@ SeqScanState
 SeqTable
 SeqTableData
 SeqType
+SequenceAmRoutine
 SequenceItem
 SerCommitSeqNo
 SerialControl
@@ -3771,6 +3772,7 @@ list_sort_comparator
 loc_chunk
 local_relopt
 local_relopts
+local_sequence_magic
 local_source
 local_ts_iter
 local_ts_radix_tree
@@ -4057,7 +4059,6 @@ scram_state_enum
 script_error_callback_arg
 security_class_t
 sem_t
-sepgsql_context_info_t
 sequence_magic
 set_conn_altsock_func
 set_conn_oauth_token_func
@@ -4284,6 +4285,7 @@ xl_heap_visible
 xl_invalid_page
 xl_invalid_page_key
 xl_invalidations
+xl_local_seq_rec
 xl_logical_message
 xl_multi_insert_tuple
 xl_multixact_create
@@ -4295,7 +4297,6 @@ xl_replorigin_drop
 xl_replorigin_set
 xl_restore_point
 xl_running_xacts
-xl_seq_rec
 xl_smgr_create
 xl_smgr_truncate
 xl_standby_lock
