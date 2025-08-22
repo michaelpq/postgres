@@ -102,7 +102,6 @@
 #include "port/pg_bitutils.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
-#include "utils/dynahash.h"
 #include "utils/memutils.h"
 
 
@@ -281,8 +280,6 @@ static bool init_htab(HTAB *hashp, int64 nelem);
 pg_noreturn static void hash_corrupted(HTAB *hashp);
 static uint32 hash_initial_lookup(HTAB *hashp, uint32 hashvalue,
 								  HASHBUCKET **bucketptr);
-static int64 next_pow2_int64(int64 num);
-static int	next_pow2_int(int64 num);
 static void register_seq_scan(HTAB *hashp);
 static void deregister_seq_scan(HTAB *hashp);
 static bool has_seq_scans(HTAB *hashp);
@@ -539,7 +536,7 @@ hash_create(const char *tabname, int64 nelem, const HASHCTL *info, int flags)
 		 * be less than INT_MAX (see init_htab()), so call the int version of
 		 * next_pow2.
 		 */
-		Assert(info->num_partitions == next_pow2_int(info->num_partitions));
+		Assert(info->num_partitions == pg_nextpower2_32_bound(info->num_partitions));
 
 		hctl->num_partitions = info->num_partitions;
 	}
@@ -547,7 +544,7 @@ hash_create(const char *tabname, int64 nelem, const HASHCTL *info, int flags)
 	if (flags & HASH_SEGMENT)
 	{
 		hctl->ssize = info->ssize;
-		hctl->sshift = my_log2(info->ssize);
+		hctl->sshift = pg_ceil_log2_64_bound(info->ssize);
 		/* ssize had better be a power of 2 */
 		Assert(hctl->ssize == (1L << hctl->sshift));
 	}
@@ -716,7 +713,7 @@ init_htab(HTAB *hashp, int64 nelem)
 	 * Allocate space for the next greater power of two number of buckets,
 	 * assuming a desired maximum load factor of 1.
 	 */
-	nbuckets = next_pow2_int(nelem);
+	nbuckets = pg_nextpower2_32_bound(nelem);
 
 	/*
 	 * In a partitioned table, nbuckets must be at least equal to
@@ -734,7 +731,7 @@ init_htab(HTAB *hashp, int64 nelem)
 	 * Figure number of directory segments needed, round up to a power of 2
 	 */
 	nsegs = (nbuckets - 1) / hctl->ssize + 1;
-	nsegs = next_pow2_int(nsegs);
+	nsegs = pg_nextpower2_32_bound(nsegs);
 
 	/*
 	 * Make sure directory is big enough. If pre-allocated directory is too
@@ -791,9 +788,9 @@ hash_estimate_size(int64 num_entries, Size entrysize)
 				elementAllocCnt;
 
 	/* estimate number of buckets wanted */
-	nBuckets = next_pow2_int64(num_entries);
+	nBuckets = pg_nextpower2_64_bound(num_entries);
 	/* # of segments needed for nBuckets */
-	nSegments = next_pow2_int64((nBuckets - 1) / DEF_SEGSIZE + 1);
+	nSegments = pg_nextpower2_64_bound((nBuckets - 1) / DEF_SEGSIZE + 1);
 	/* directory entries */
 	nDirEntries = DEF_DIRSIZE;
 	while (nDirEntries < nSegments)
@@ -834,9 +831,9 @@ hash_select_dirsize(int64 num_entries)
 				nDirEntries;
 
 	/* estimate number of buckets wanted */
-	nBuckets = next_pow2_int64(num_entries);
+	nBuckets = pg_nextpower2_64_bound(num_entries);
 	/* # of segments needed for nBuckets */
-	nSegments = next_pow2_int64((nBuckets - 1) / DEF_SEGSIZE + 1);
+	nSegments = pg_nextpower2_64_bound((nBuckets - 1) / DEF_SEGSIZE + 1);
 	/* directory entries */
 	nDirEntries = DEF_DIRSIZE;
 	while (nDirEntries < nSegments)
@@ -1810,37 +1807,6 @@ hash_corrupted(HTAB *hashp)
 		elog(PANIC, "hash table \"%s\" corrupted", hashp->tabname);
 	else
 		elog(FATAL, "hash table \"%s\" corrupted", hashp->tabname);
-}
-
-/* calculate ceil(log base 2) of num */
-int
-my_log2(int64 num)
-{
-	/*
-	 * guard against too-large input, which would be invalid for
-	 * pg_ceil_log2_*()
-	 */
-	if (num > PG_INT64_MAX / 2)
-		num = PG_INT64_MAX / 2;
-
-	return pg_ceil_log2_64(num);
-}
-
-/* calculate first power of 2 >= num, bounded to what will fit in a int64 */
-static int64
-next_pow2_int64(int64 num)
-{
-	/* my_log2's internal range check is sufficient */
-	return 1L << my_log2(num);
-}
-
-/* calculate first power of 2 >= num, bounded to what will fit in an int */
-static int
-next_pow2_int(int64 num)
-{
-	if (num > INT_MAX / 2)
-		num = INT_MAX / 2;
-	return 1 << my_log2(num);
 }
 
 

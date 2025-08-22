@@ -186,7 +186,7 @@ pg_rightmost_one_pos64(uint64 word)
  * 'num' mustn't be 0 or be above PG_UINT32_MAX / 2 + 1.
  */
 static inline uint32
-pg_nextpower2_32(uint32 num)
+pg_nextpower2_32(uint64 num)
 {
 	Assert(num > 0 && num <= PG_UINT32_MAX / 2 + 1);
 
@@ -198,7 +198,7 @@ pg_nextpower2_32(uint32 num)
 	if ((num & (num - 1)) == 0)
 		return num;				/* already power 2 */
 
-	return ((uint32) 1) << (pg_leftmost_one_pos32(num) + 1);
+	return ((uint32) 1) << (pg_leftmost_one_pos32((uint32) num) + 1);
 }
 
 /*
@@ -222,6 +222,34 @@ pg_nextpower2_64(uint64 num)
 		return num;				/* already power 2 */
 
 	return ((uint64) 1) << (pg_leftmost_one_pos64(num) + 1);
+}
+
+/*
+ * pg_nextpower2_32_bound
+ *		Returns the next higher power of 2 above 'num', or 'num' if it's
+ *		already a power of 2, with upper bound safeguard.
+ */
+static inline uint32
+pg_nextpower2_32_bound(uint64 num)
+{
+	if (num > PG_INT32_MAX / 2)
+		num = PG_INT32_MAX / 2;
+
+	return pg_nextpower2_32(num);
+}
+
+/*
+ * pg_nextpower2_64_bound
+ *		Returns the next higher power of 2 above 'num', or 'num' if it's
+ *		already a power of 2, with upper bound safeguard.
+ */
+static inline uint64
+pg_nextpower2_64_bound(uint64 num)
+{
+	if (num > PG_INT64_MAX / 2)
+		num = PG_INT64_MAX / 2;
+
+	return pg_nextpower2_64(num);
 }
 
 /*
@@ -270,6 +298,40 @@ pg_ceil_log2_32(uint32 num)
 static inline uint64
 pg_ceil_log2_64(uint64 num)
 {
+	if (num < 2)
+		return 0;
+	else
+		return pg_leftmost_one_pos64(num - 1) + 1;
+}
+
+/*
+ * pg_ceil_log2_64_bound
+ *		Returns equivalent of ceil(log2(num)), with overflow safeguard
+ *		for pg_leftmost_one_pos32.
+ */
+static inline uint32
+pg_ceil_log2_32_bound(uint64 num)
+{
+	if (num > PG_INT32_MAX / 2)
+		num = PG_INT32_MAX / 2;
+
+	if (num < 2)
+		return 0;
+	else
+		return pg_leftmost_one_pos32(num - 1) + 1;
+}
+
+/*
+ * pg_ceil_log2_64_bound
+ *		Returns equivalent of ceil(log2(num)), with overflow safeguard
+ *		for pg_leftmost_one_pos64.
+ */
+static inline uint64
+pg_ceil_log2_64_bound(uint64 num)
+{
+	if (num > PG_INT64_MAX / 2)
+		num = PG_INT64_MAX / 2;
+
 	if (num < 2)
 		return 0;
 	else

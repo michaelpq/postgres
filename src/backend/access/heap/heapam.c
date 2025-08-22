@@ -8617,8 +8617,8 @@ bottomup_sort_and_shrink_cmp(const void *arg1, const void *arg2)
 	 */
 	if (group1->ntids != group2->ntids)
 	{
-		uint32		ntids1 = pg_nextpower2_32((uint32) group1->ntids);
-		uint32		ntids2 = pg_nextpower2_32((uint32) group2->ntids);
+		uint32		ntids1 = pg_nextpower2_32((uint64) group1->ntids);
+		uint32		ntids2 = pg_nextpower2_32((uint64) group2->ntids);
 
 		if (ntids1 > ntids2)
 			return -1;
@@ -8745,7 +8745,7 @@ bottomup_sort_and_shrink(TM_IndexDeleteOp *delstate)
 			group->npromisingtids = 4;
 		else
 			group->npromisingtids =
-				pg_nextpower2_32((uint32) group->npromisingtids);
+				pg_nextpower2_32((uint64) group->npromisingtids);
 	}
 
 	/* Sort groups and rearrange caller's deltids array */
