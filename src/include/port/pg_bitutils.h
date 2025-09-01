@@ -277,6 +277,40 @@ pg_ceil_log2_64(uint64 num)
 }
 
 /*
+ * pg_ceil_log2_32_bound
+ *		Returns equivalent of ceil(log2(num)), with overflow safeguard
+ *		for pg_leftmost_one_pos32.
+ */
+static inline uint32
+pg_ceil_log2_32_bound(uint32 num)
+{
+	if (num > PG_INT32_MAX / 2)
+		num = PG_INT32_MAX / 2;
+
+	if (num < 2)
+		return 0;
+	else
+		return pg_leftmost_one_pos32(num - 1) + 1;
+}
+
+/*
+ * pg_ceil_log2_64_bound
+ *		Returns equivalent of ceil(log2(num)), with overflow safeguard
+ *		for pg_leftmost_one_pos64.
+ */
+static inline uint64
+pg_ceil_log2_64_bound(uint64 num)
+{
+	if (num > PG_INT64_MAX / 2)
+		num = PG_INT64_MAX / 2;
+
+	if (num < 2)
+		return 0;
+	else
+		return pg_leftmost_one_pos64(num - 1) + 1;
+}
+
+/*
  * With MSVC on x86_64 builds, try using native popcnt instructions via the
  * __popcnt and __popcnt64 intrinsics.  These don't work the same as GCC's
  * __builtin_popcount* intrinsic functions as they always emit popcnt

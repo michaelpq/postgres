@@ -102,7 +102,6 @@
 #include "port/pg_bitutils.h"
 #include "storage/shmem.h"
 #include "storage/spin.h"
-#include "utils/dynahash.h"
 #include "utils/memutils.h"
 
 
@@ -547,7 +546,7 @@ hash_create(const char *tabname, int64 nelem, const HASHCTL *info, int flags)
 	if (flags & HASH_SEGMENT)
 	{
 		hctl->ssize = info->ssize;
-		hctl->sshift = my_log2(info->ssize);
+		hctl->sshift = pg_ceil_log2_64_bound(info->ssize);
 		/* ssize had better be a power of 2 */
 		Assert(hctl->ssize == (1L << hctl->sshift));
 	}
@@ -1812,26 +1811,12 @@ hash_corrupted(HTAB *hashp)
 		elog(FATAL, "hash table \"%s\" corrupted", hashp->tabname);
 }
 
-/* calculate ceil(log base 2) of num */
-int
-my_log2(int64 num)
-{
-	/*
-	 * guard against too-large input, which would be invalid for
-	 * pg_ceil_log2_*()
-	 */
-	if (num > PG_INT64_MAX / 2)
-		num = PG_INT64_MAX / 2;
-
-	return pg_ceil_log2_64(num);
-}
-
 /* calculate first power of 2 >= num, bounded to what will fit in a int64 */
 static int64
 next_pow2_int64(int64 num)
 {
-	/* my_log2's internal range check is sufficient */
-	return 1L << my_log2(num);
+	/* pg_ceil_log2_64_bound's internal range check is sufficient */
+	return 1L << pg_ceil_log2_64_bound(num);
 }
 
 /* calculate first power of 2 >= num, bounded to what will fit in an int */
@@ -1840,7 +1825,7 @@ next_pow2_int(int64 num)
 {
 	if (num > INT_MAX / 2)
 		num = INT_MAX / 2;
-	return 1 << my_log2(num);
+	return 1 << pg_ceil_log2_32_bound(num);
 }
 
 
