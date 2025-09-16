@@ -148,6 +148,7 @@ static bool ignore_till_sync = false;
  * in order to reduce overhead for short-lived queries.
  */
 static CachedPlanSource *unnamed_stmt_psrc = NULL;
+static bool unnamed_portal = false;
 
 /* assorted command-line switches */
 static const char *userDoption = NULL;	/* -D switch */
@@ -182,6 +183,7 @@ static bool IsTransactionExitStmt(Node *parsetree);
 static bool IsTransactionExitStmtList(List *pstmts);
 static bool IsTransactionStmtList(List *pstmts);
 static void drop_unnamed_stmt(void);
+static void drop_unnamed_portal(void);
 static void log_disconnections(int code, Datum arg);
 static void enable_statement_timeout(void);
 static void disable_statement_timeout(void);
@@ -1025,6 +1027,12 @@ exec_simple_query(const char *query_string)
 	char		msec_str[32];
 
 	/*
+	 * Drop the unnamed portal before setting debug_query_string, to avoid
+	 * attributing messages from the drop (e.g., temp usage) to the new query.
+	 */
+	drop_unnamed_portal();
+
+	/*
 	 * Report query to various monitoring facilities.
 	 */
 	debug_query_string = query_string;
@@ -1677,6 +1685,12 @@ exec_bind_message(StringInfo input_message)
 	}
 
 	/*
+	 * Same as exec_simple_query, drop the unnamed portal before setting
+	 * debug_query_string.
+	 */
+	drop_unnamed_portal();
+
+	/*
 	 * Report query to various monitoring facilities.
 	 */
 	debug_query_string = psrc->query_string;
@@ -1757,9 +1771,13 @@ exec_bind_message(StringInfo input_message)
 	 * if the unnamed portal is specified.
 	 */
 	if (portal_name[0] == '\0')
+	{
 		portal = CreatePortal(portal_name, true, true);
+		unnamed_portal = true;
+	}
 	else
 		portal = CreatePortal(portal_name, false, false);
+
 
 	/*
 	 * Prepare to copy stuff into the portal's memory context.  We do all this
@@ -5235,4 +5253,21 @@ disable_statement_timeout(void)
 {
 	if (get_timeout_active(STATEMENT_TIMEOUT))
 		disable_timeout(STATEMENT_TIMEOUT, false);
+}
+
+/* Drop the unnamed portal if one exists */
+static void
+drop_unnamed_portal(void)
+{
+	Portal		portal;
+
+	if (!unnamed_portal)
+		return;
+
+	/* Get the portal and drop it */
+	portal = GetPortalByName("");
+	if (PortalIsValid(portal))
+		PortalDrop(portal, false);
+
+	unnamed_portal = false;
 }
