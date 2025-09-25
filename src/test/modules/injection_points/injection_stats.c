@@ -49,6 +49,7 @@ static const PgStat_KindInfo injection_stats = {
 	.shared_data_len = sizeof(((PgStatShared_InjectionPoint *) 0)->stats),
 	.pending_size = sizeof(PgStat_StatInjEntry),
 	.flush_pending_cb = injection_stats_flush_cb,
+	.track_entry_counts = true,
 };
 
 /*
@@ -194,6 +195,17 @@ injection_points_stats_numcalls(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 
 	PG_RETURN_INT64(entry->numcalls);
+}
+
+/*
+ * SQL function returning the number of entries allocated for injection
+ * points in the shared hashtable of pgstats.
+ */
+PG_FUNCTION_INFO_V1(injection_points_stats_count);
+Datum
+injection_points_stats_count(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT64(pgstat_get_entry_count(PGSTAT_KIND_INJECTION));
 }
 
 /* Only used by injection_points_stats_drop() */
