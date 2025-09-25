@@ -1487,6 +1487,12 @@ pgstat_register_kind(PgStat_Kind kind, const PgStat_KindInfo *kind_info)
 			ereport(ERROR,
 					(errmsg("custom cumulative statistics property is invalid"),
 					 errhint("Custom cumulative statistics require a shared memory size for fixed-numbered objects.")));
+		if (kind_info->track_entry_counts)
+		{
+			ereport(ERROR,
+					(errmsg("custom cumulative statistics property is invalid"),
+					 errhint("Custom cumulative statistics cannot use counter tracking for fixed-numbered objects.")));
+		}
 	}
 
 	/*
