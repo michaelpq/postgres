@@ -4198,6 +4198,8 @@ timeout_params
 timerCA
 tlist_vinfo
 toast_compress_header
+toast_external_data
+toast_external_info
 tokenize_error_callback_arg
 transferMode
 transfer_thread_arg

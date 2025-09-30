@@ -171,8 +171,10 @@ toast_tuple_init(ToastTupleContext *ttc)
  * The column must have attstorage EXTERNAL or EXTENDED if check_main is
  * false, and must have attstorage MAIN if check_main is true.
  *
- * The column must have a minimum size of MAXALIGN(TOAST_OID_POINTER_SIZE);
- * if not, no benefit is to be expected by compressing it.
+ * The column must have a minimum size of MAXALIGN(tcc_toast_pointer_size);
+ * if not, no benefit is to be expected by compressing it.  The TOAST
+ * pointer size is given by the caller, depending on the type of TOAST
+ * table we are dealing with.
  *
  * The return value is the index of the biggest suitable column, or
  * -1 if there is none.
@@ -184,9 +186,13 @@ toast_tuple_find_biggest_attribute(ToastTupleContext *ttc,
 	TupleDesc	tupleDesc = ttc->ttc_rel->rd_att;
 	int			numAttrs = tupleDesc->natts;
 	int			biggest_attno = -1;
-	int32		biggest_size = MAXALIGN(TOAST_OID_POINTER_SIZE);
+	int32		biggest_size = 0;
 	int32		skip_colflags = TOASTCOL_IGNORE;
 	int			i;
+
+	/* Define the lower-bound */
+	biggest_size = MAXALIGN(ttc->ttc_toast_pointer_size);
+	Assert(biggest_size != 0);
 
 	if (for_compression)
 		skip_colflags |= TOASTCOL_INCOMPRESSIBLE;
