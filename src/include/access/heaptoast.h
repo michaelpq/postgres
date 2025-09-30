@@ -88,6 +88,9 @@
 	 sizeof(int32) -									\
 	 VARHDRSZ)
 
+/* Maximum size of chunk possible */
+#define TOAST_MAX_CHUNK_SIZE	TOAST_OID_MAX_CHUNK_SIZE
+
 /* ----------
  * heap_toast_insert_or_update -
  *
