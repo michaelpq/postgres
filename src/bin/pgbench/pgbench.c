@@ -3359,6 +3359,19 @@ readCommandResponse(CState *st, MetaCommand meta, char *varprefix)
 								 PQresultErrorMessage(res));
 				break;
 
+			case PGRES_COPY_IN:
+			case PGRES_COPY_OUT:
+			case PGRES_COPY_BOTH:
+				pg_log_error("COPY is not supported in pgbench, aborting");
+
+				/*
+				 * We need to exit copy state. Otherwise, PQgetResult will
+				 * always return an empty PGresult from getCopyResult, leading
+				 * to an infinite loop during error cleanup
+				 */
+				PQendcopy(st->con);
+				goto error;
+
 			case PGRES_NONFATAL_ERROR:
 			case PGRES_FATAL_ERROR:
 				st->estatus = getSQLErrorStatus(PQresultErrorField(res,
