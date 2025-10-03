@@ -382,6 +382,17 @@ COMMIT;
 SELECT seq_scan, :'test_last_seq' = last_seq_scan AS seq_ok, idx_scan, :'test_last_idx' < last_idx_scan AS idx_ok
 FROM pg_stat_all_tables WHERE relid = 'test_last_scan'::regclass;
 
+-- also check from pg_stat_all_indexes
+SELECT indexrelid AS idx_relid FROM pg_stat_all_indexes WHERE relid = 'test_last_scan'::regclass \gset
+SELECT idx_scan, :'test_last_idx' < last_idx_scan AS idx_ok
+FROM pg_stat_all_indexes WHERE indexrelid = :idx_relid;
+
+-- check that the stats are reset
+SELECT pg_stat_reset_single_table_counters(:idx_relid);
+
+SELECT idx_scan
+FROM pg_stat_all_indexes WHERE indexrelid = :idx_relid;
+
 -----
 -- Test reset of some stats for shared table
 -----
