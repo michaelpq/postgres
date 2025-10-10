@@ -55,6 +55,7 @@
 #include "common/restricted_token.h"
 #include "common/string.h"
 #include "fe_utils/option_utils.h"
+#include "fe_utils/version.h"
 #include "getopt_long.h"
 #include "pg_getopt.h"
 #include "storage/large_object.h"
@@ -77,7 +78,7 @@ static int	WalSegSz;
 static int	set_wal_segsize;
 static int	set_char_signedness = -1;
 
-static void CheckDataVersion(void);
+static void CheckDataVersion(const char *datadir);
 static bool read_controlfile(void);
 static void GuessControlValues(void);
 static void PrintControlValues(bool guessed);
@@ -377,7 +378,7 @@ main(int argc, char *argv[])
 				 DataDir);
 
 	/* Check that data directory matches our server version */
-	CheckDataVersion();
+	CheckDataVersion(DataDir);
 
 	/*
 	 * Check for a postmaster lock file --- if there is one, refuse to
@@ -537,37 +538,20 @@ main(int argc, char *argv[])
  * to prevent simple user errors.
  */
 static void
-CheckDataVersion(void)
+CheckDataVersion(const char *datadir)
 {
-	const char *ver_file = "PG_VERSION";
-	FILE	   *ver_fd;
-	char		rawline[64];
+	char	   *version_str;
+	uint32		version = get_pg_version(datadir, &version_str);
 
-	if ((ver_fd = fopen(ver_file, "r")) == NULL)
-		pg_fatal("could not open file \"%s\" for reading: %m",
-				 ver_file);
-
-	/* version number has to be the first line read */
-	if (!fgets(rawline, sizeof(rawline), ver_fd))
-	{
-		if (!ferror(ver_fd))
-			pg_fatal("unexpected empty file \"%s\"", ver_file);
-		else
-			pg_fatal("could not read file \"%s\": %m", ver_file);
-	}
-
-	/* strip trailing newline and carriage return */
-	(void) pg_strip_crlf(rawline);
-
-	if (strcmp(rawline, PG_MAJORVERSION) != 0)
+	if (GET_PG_MAJORVERSION_NUM(version) != PG_MAJORVERSION_NUM)
 	{
 		pg_log_error("data directory is of wrong version");
 		pg_log_error_detail("File \"%s\" contains \"%s\", which is not compatible with this program's version \"%s\".",
-							ver_file, rawline, PG_MAJORVERSION);
+							"PG_VERSION",
+							version_str,
+							PG_MAJORVERSION);
 		exit(1);
 	}
-
-	fclose(ver_fd);
 }
 
 
