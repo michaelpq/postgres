@@ -5225,6 +5225,7 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 	Cost		total_cost;
 	Path	   *epq_path;		/* Path to create plan to be executed when
 								 * EvalPlanQual gets triggered. */
+	bool		need_epq = false;
 
 	/*
 	 * Skip if this join combination has been considered already.
@@ -5262,9 +5263,18 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 	 * calling foreign_join_ok(), since that function updates fpinfo and marks
 	 * it as pushable if the join is found to be pushable.
 	 */
-	if (root->parse->commandType == CMD_DELETE ||
-		root->parse->commandType == CMD_UPDATE ||
-		root->rowMarks)
+	for (PlannerInfo *proot = root; proot != NULL; proot = proot->parent_root)
+	{
+		if (proot->parse->commandType == CMD_DELETE ||
+			proot->parse->commandType == CMD_UPDATE ||
+			proot->rowMarks)
+		{
+			need_epq = true;
+			break;
+		}
+	}
+
+	if (need_epq)
 	{
 		epq_path = GetExistingLocalJoinPath(joinrel);
 		if (!epq_path)
