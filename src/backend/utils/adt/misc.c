@@ -188,6 +188,22 @@ pg_num_nonnulls(PG_FUNCTION_ARGS)
 
 
 /*
+ * error_on_null()
+ *	Check and fail if the input is the NULL value.
+ */
+Datum
+error_on_null(PG_FUNCTION_ARGS)
+{
+	if (PG_ARGISNULL(0))
+		ereport(ERROR,
+				(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+				 errmsg("null value not allowed")));
+
+	PG_RETURN_DATUM(PG_GETARG_DATUM(0));
+}
+
+
+/*
  * current_database()
  *	Expose the current database to the user
  */

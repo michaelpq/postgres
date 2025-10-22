@@ -631,6 +631,30 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
         <returnvalue>1</returnvalue>
        </para></entry>
       </row>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>error_on_null</primary>
+        </indexterm>
+        <function>error_on_null</function> ( <type>anyelement</type> )
+        <returnvalue>anyelement | error</returnvalue>
+       </para>
+       <para>
+        Produces an error if the input is the null value, and returns the input otherwise.
+       </para>
+       <para>
+        <literal>error_on_null(42)</literal>
+        <returnvalue>42</returnvalue>
+       </para>
+       <para>
+        <literal>error_on_null(row(null,null))</literal>
+        <returnvalue>(,)</returnvalue>
+       </para>
+       <para>
+        <literal>error_on_null(null)</literal>
+        <returnvalue>does not return</returnvalue>
+       </para></entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
