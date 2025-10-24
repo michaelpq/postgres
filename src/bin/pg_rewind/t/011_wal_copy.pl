@@ -76,6 +76,10 @@ ok(!defined($new_timeline_wal_seg_stat),
 $node_standby->stop();
 $node_primary->stop();
 
+# Cross-check how WAL segments are handled:
+# - The "corrupted" segment is copied.
+# - The segment of the new timeline is copied.
+# - The segment generated before target and source have diverged is skipped.
 command_checks_all(
 	[
 		'pg_rewind', '--debug',
@@ -86,7 +90,7 @@ command_checks_all(
 	0,
 	[qr//],
 	[
-		qr/WAL segment \"$wal_seg_skipped\" not copied to target/,
+		qr/pg_wal\/$wal_seg_skipped \(NONE\)/,
 		qr/pg_wal\/$corrupt_wal_seg \(COPY\)/,
 		qr/pg_wal\/$new_timeline_wal_seg \(COPY\)/,
 	],

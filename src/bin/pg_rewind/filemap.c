@@ -546,7 +546,9 @@ print_filemap(filemap_t *filemap)
 	for (i = 0; i < filemap->nentries; i++)
 	{
 		entry = filemap->entries[i];
+
 		if (entry->action != FILE_ACTION_NONE ||
+			entry->content_type == FILE_CONTENT_TYPE_WAL ||
 			entry->target_pages_to_overwrite.bitmapsize > 0)
 		{
 			pg_log_debug("%s (%s)", entry->path,
@@ -726,16 +728,16 @@ decide_wal_file_action(const char *fname, XLogSegNo last_common_segno,
 	/*
 	 * Avoid copying files before the last common segment.
 	 *
-	 * These files are assumed to exist on source and target which means they
-	 * should already be identical and before the last_common_segno.
+	 * These files exist on the source and the target services, so they
+	 * should be identical and located strictly before the segment that
+	 * contains the LSN where target and source servers have diverged.
 	 *
-	 * However we check last_common_segno and file_size again for sanity.
+	 * While we are on it, double-check the size of each file and copy the
+	 * file if they do not match, in case.
 	 */
-	if (file_segno < last_common_segno && source_size == target_size)
-	{
-		pg_log_debug("WAL segment \"%s\" not copied to target", fname);
+	if (file_segno < last_common_segno &&
+		source_size == target_size)
 		return FILE_ACTION_NONE;
-	}
 
 	return FILE_ACTION_COPY;
 }
