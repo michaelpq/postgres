@@ -39,8 +39,6 @@ RewindTest::primary_psql("SELECT pg_switch_wal()");
 RewindTest::primary_psql("CHECKPOINT");
 RewindTest::promote_standby;
 
-RewindTest::standby_psql("INSERT INTO t VALUES(2)");
-
 # New segment on a new timeline, expected to be copied.
 my $new_timeline_wal_seg = $node_standby->safe_psql('postgres',
 	'SELECT pg_walfile_name(pg_current_wal_lsn())');
