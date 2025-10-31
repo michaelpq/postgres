@@ -344,7 +344,20 @@ like(
 ##################################################
 
 $standby1->append_conf('postgresql.conf', "primary_conninfo = '$connstr_1'");
+
+# Capture the log position before reload to check for walreceiver termination
+$log_offset = -s $standby1->logfile;
+
 $standby1->reload;
+
+# Wait for walreceiver to be stopped and restarted after config reload.
+# When primary_conninfo changes, walreceiver should be terminated and
+# a new one spawned.
+$standby1->wait_for_log(
+	qr/FATAL: .* terminating walreceiver process due to administrator command/,
+	$log_offset);
+
+ok(1, 'walreceiver correctly terminated after primary_conninfo change');
 
 ($result, $stdout, $stderr) =
   $standby1->psql('postgres', "SELECT pg_sync_replication_slots();");
