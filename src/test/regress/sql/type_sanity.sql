@@ -370,18 +370,18 @@ WHERE relkind NOT IN ('r', 'i', 'S', 't', 'v', 'm', 'c', 'f', 'p', 'I') OR
     relpersistence NOT IN ('p', 'u', 't') OR
     relreplident NOT IN ('d', 'n', 'f', 'i');
 
--- All tables, indexes, partitioned indexes and matviews should have an
--- access method.
+-- All tables, indexes, partitioned indexes, matviews and sequences should have
+-- an access method.
 SELECT c1.oid, c1.relname
 FROM pg_class as c1
-WHERE c1.relkind NOT IN ('S', 'v', 'f', 'c', 'p') and
+WHERE c1.relkind NOT IN ('v', 'f', 'c', 'p') and
     c1.relam = 0;
 
--- Conversely, sequences, views, foreign tables, types and partitioned
--- tables shouldn't have them.
+-- Conversely, views, foreign tables, types and partitioned tables
+-- shouldn't have them.
 SELECT c1.oid, c1.relname
 FROM pg_class as c1
-WHERE c1.relkind IN ('S', 'v', 'f', 'c', 'p') and
+WHERE c1.relkind IN ('v', 'f', 'c', 'p') and
     c1.relam != 0;
 
 -- Indexes and partitioned indexes should have AMs of type 'i'.
