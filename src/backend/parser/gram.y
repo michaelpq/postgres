@@ -388,6 +388,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		copy_file_name
 				access_method_clause attr_name
 				table_access_method_clause name cursor_name file_name
+				sequence_access_method_clause
 				cluster_index_specification
 
 %type <list>	func_name handler_name qual_Op qual_all_Op subquery_Op
@@ -5010,23 +5011,26 @@ RefreshMatViewStmt:
 
 CreateSeqStmt:
 			CREATE OptTemp SEQUENCE qualified_name OptSeqOptList
+				sequence_access_method_clause
 				{
 					CreateSeqStmt *n = makeNode(CreateSeqStmt);
-
 					$4->relpersistence = $2;
 					n->sequence = $4;
 					n->options = $5;
+					n->accessMethod = $6;
 					n->ownerId = InvalidOid;
 					n->if_not_exists = false;
 					$$ = (Node *) n;
 				}
 			| CREATE OptTemp SEQUENCE IF_P NOT EXISTS qualified_name OptSeqOptList
+				sequence_access_method_clause
 				{
 					CreateSeqStmt *n = makeNode(CreateSeqStmt);
 
 					$7->relpersistence = $2;
 					n->sequence = $7;
 					n->options = $8;
+					n->accessMethod = $9;
 					n->ownerId = InvalidOid;
 					n->if_not_exists = true;
 					$$ = (Node *) n;
@@ -5061,6 +5065,11 @@ OptSeqOptList: SeqOptList							{ $$ = $1; }
 
 OptParenthesizedSeqOptList: '(' SeqOptList ')'		{ $$ = $2; }
 			| /*EMPTY*/								{ $$ = NIL; }
+		;
+
+sequence_access_method_clause:
+			USING name							{ $$ = $2; }
+			| /*EMPTY*/							{ $$ = NULL; }
 		;
 
 SeqOptList: SeqOptElem								{ $$ = list_make1($1); }
@@ -6066,6 +6075,7 @@ CreateAmStmt: CREATE ACCESS METHOD name TYPE_P am_type HANDLER handler_name
 
 am_type:
 			INDEX			{ $$ = AMTYPE_INDEX; }
+		|	SEQUENCE		{ $$ = AMTYPE_SEQUENCE; }
 		|	TABLE			{ $$ = AMTYPE_TABLE; }
 		;
 

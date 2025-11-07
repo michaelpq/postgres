@@ -691,6 +691,14 @@
   ifdef => 'DEBUG_NODE_TESTS_ENABLED',
 },
 
+{ name => 'default_sequence_access_method', type => 'string', context => 'PGC_USERSET', group => 'CLIENT_CONN_STATEMENT',
+  short_desc => 'Sets the default sequence access method for new sequences.',
+  flags => 'GUC_IS_NAME',
+  variable => 'default_sequence_access_method',
+  boot_val => 'DEFAULT_SEQUENCE_ACCESS_METHOD',
+  check_hook => 'check_default_sequence_access_method',
+},
+
 { name => 'default_statistics_target', type => 'int', context => 'PGC_USERSET', group => 'QUERY_TUNING_OTHER',
   short_desc => 'Sets the default statistics target.',
   long_desc => 'This applies to table columns that have not had a column-specific target set via ALTER TABLE SET STATISTICS.',
