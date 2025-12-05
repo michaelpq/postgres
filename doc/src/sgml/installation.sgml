@@ -1315,6 +1315,18 @@ build-postgresql:
        </listitem>
       </varlistentry>
 
+      <varlistentry id="configure-option-without-lz4">
+       <term><option>--without-lz4</option></term>
+       <listitem>
+        <para>
+         <indexterm>
+          <primary>lz4</primary>
+         </indexterm>
+         Prevents use of the <application>LZ4</application> library.
+        </para>
+       </listitem>
+      </varlistentry>
+
      </variablelist>
 
    </sect3>

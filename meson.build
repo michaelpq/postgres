@@ -1096,6 +1096,8 @@ if not lz4opt.disabled()
   if lz4.found()
     cdata.set('USE_LZ4', 1)
     cdata.set('HAVE_LIBLZ4', 1)
+  else
+    warning('did not find lz4')
   endif
 
 else
