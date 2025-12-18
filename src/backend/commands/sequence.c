@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include "access/htup_details.h"
+#include "access/seqlocalam.h"
 #include "access/multixact.h"
 #include "access/relation.h"
 #include "access/sequence.h"
@@ -31,7 +32,6 @@
 #include "catalog/storage_xlog.h"
 #include "commands/defrem.h"
 #include "commands/sequence.h"
-#include "commands/sequence_xlog.h"
 #include "commands/tablecmds.h"
 #include "funcapi.h"
 #include "miscadmin.h"
@@ -49,13 +49,6 @@
 #include "utils/syscache.h"
 #include "utils/varlena.h"
 
-
-/*
- * We don't want to log each fetching of a value from a sequence,
- * so we pre-log a few fetches in advance. In the event of
- * crash we can lose (skip over) as many values as we pre-logged.
- */
-#define SEQ_LOG_VALS	32
 
 /*
  * We store a SeqTable item for every sequence we have touched in the current
@@ -86,13 +79,9 @@ static HTAB *seqhashtab = NULL; /* hash table for SeqTable items */
  */
 static SeqTableData *last_used_seq = NULL;
 
-static void fill_seq_with_data(Relation rel, HeapTuple tuple);
-static void fill_seq_fork_with_data(Relation rel, HeapTuple tuple, ForkNumber forkNum);
 static Relation lock_and_open_sequence(SeqTable seq);
 static void create_seq_hashtable(void);
 static void init_sequence(Oid relid, SeqTable *p_elm, Relation *p_rel);
-static Form_pg_sequence_data read_seq_tuple(Relation rel,
-											Buffer *buf, HeapTuple seqdatatuple);
 static void init_params(ParseState *pstate, List *options, bool for_identity,
 						bool isInit,
 						Form_pg_sequence seqform,
@@ -123,14 +112,8 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	Relation	rel;
 	HeapTuple	tuple;
 	TupleDesc	tupDesc;
-	Datum		value[SEQ_COL_LASTCOL];
-	bool		null[SEQ_COL_LASTCOL];
-	List	   *elts = NIL;
-	List	   *atcmds = NIL;
-	ListCell   *lc;
 	Datum		pgs_values[Natts_pg_sequence];
 	bool		pgs_nulls[Natts_pg_sequence];
-	int			i;
 
 	/*
 	 * If if_not_exists was given and a relation with the same name already
@@ -163,35 +146,6 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 				&seqform, &last_value, &reset_state, &is_called,
 				&need_seq_rewrite, &owned_by);
 
-	/*
-	 * Create relation (and fill value[] and null[] for the tuple)
-	 */
-	for (i = SEQ_COL_FIRSTCOL; i <= SEQ_COL_LASTCOL; i++)
-	{
-		ColumnDef  *coldef = NULL;
-
-		switch (i)
-		{
-			case SEQ_COL_LASTVAL:
-				coldef = makeColumnDef("last_value", INT8OID, -1, InvalidOid);
-				value[i - 1] = Int64GetDatumFast(last_value);
-				break;
-			case SEQ_COL_LOG:
-				coldef = makeColumnDef("log_cnt", INT8OID, -1, InvalidOid);
-				value[i - 1] = Int64GetDatum((int64) 0);
-				break;
-			case SEQ_COL_CALLED:
-				coldef = makeColumnDef("is_called", BOOLOID, -1, InvalidOid);
-				value[i - 1] = BoolGetDatum(false);
-				break;
-		}
-
-		coldef->is_not_null = true;
-		null[i - 1] = false;
-
-		elts = lappend(elts, coldef);
-	}
-
 	stmt->relation = seq->sequence;
 	stmt->inhRelations = NIL;
 	stmt->constraints = NIL;
@@ -204,35 +158,20 @@ DefineSequence(ParseState *pstate, CreateSeqStmt *seq)
 	 */
 	stmt->tableElts = NIL;
 
+	/*
+	 * Initial relation has no attributes, these can be added later via the
+	 * "init" AM callback.
+	 */
+	stmt->tableElts = NIL;
+
 	address = DefineRelation(stmt, RELKIND_SEQUENCE, seq->ownerId, NULL, NULL);
 	seqoid = address.objectId;
 	Assert(seqoid != InvalidOid);
 
 	rel = sequence_open(seqoid, AccessExclusiveLock);
 
-	/* Add all the attributes to the sequence */
-	foreach(lc, elts)
-	{
-		AlterTableCmd *atcmd;
-
-		atcmd = makeNode(AlterTableCmd);
-		atcmd->subtype = AT_AddColumnToSequence;
-		atcmd->def = (Node *) lfirst(lc);
-		atcmds = lappend(atcmds, atcmd);
-	}
-
-	/*
-	 * No recursion needed.  Note that EventTriggerAlterTableStart() should
-	 * have been called.
-	 */
-	AlterTableInternal(RelationGetRelid(rel), atcmds, false);
-	CommandCounterIncrement();
-
-	tupDesc = RelationGetDescr(rel);
-
-	/* now initialize the sequence's data */
-	tuple = heap_form_tuple(tupDesc, value, null);
-	fill_seq_with_data(rel, tuple);
+	/* now initialize the sequence table structure and its data */
+	seq_local_init(rel, last_value, is_called);
 
 	/* process OWNED BY if given */
 	if (owned_by)
@@ -281,10 +220,6 @@ ResetSequence(Oid seq_relid)
 {
 	Relation	seq_rel;
 	SeqTable	elm;
-	Form_pg_sequence_data seq;
-	Buffer		buf;
-	HeapTupleData seqdatatuple;
-	HeapTuple	tuple;
 	HeapTuple	pgstuple;
 	Form_pg_sequence pgsform;
 	int64		startv;
@@ -295,7 +230,6 @@ ResetSequence(Oid seq_relid)
 	 * indeed a sequence.
 	 */
 	init_sequence(seq_relid, &elm, &seq_rel);
-	(void) read_seq_tuple(seq_rel, &buf, &seqdatatuple);
 
 	pgstuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(seq_relid));
 	if (!HeapTupleIsValid(pgstuple))
@@ -304,145 +238,14 @@ ResetSequence(Oid seq_relid)
 	startv = pgsform->seqstart;
 	ReleaseSysCache(pgstuple);
 
-	/*
-	 * Copy the existing sequence tuple.
-	 */
-	tuple = heap_copytuple(&seqdatatuple);
-
-	/* Now we're done with the old page */
-	UnlockReleaseBuffer(buf);
-
-	/*
-	 * Modify the copied tuple to execute the restart (compare the RESTART
-	 * action in AlterSequence)
-	 */
-	seq = (Form_pg_sequence_data) GETSTRUCT(tuple);
-	seq->last_value = startv;
-	seq->is_called = false;
-	seq->log_cnt = 0;
-
-	/*
-	 * Create a new storage file for the sequence.
-	 */
-	RelationSetNewRelfilenumber(seq_rel, seq_rel->rd_rel->relpersistence);
-
-	/*
-	 * Ensure sequence's relfrozenxid is at 0, since it won't contain any
-	 * unfrozen XIDs.  Same with relminmxid, since a sequence will never
-	 * contain multixacts.
-	 */
-	Assert(seq_rel->rd_rel->relfrozenxid == InvalidTransactionId);
-	Assert(seq_rel->rd_rel->relminmxid == InvalidMultiXactId);
-
-	/*
-	 * Insert the modified tuple into the new storage file.
-	 */
-	fill_seq_with_data(seq_rel, tuple);
+	/* Sequence state is forcibly reset here. */
+	seq_local_reset(seq_rel, startv, false, true);
 
 	/* Clear local cache so that we don't think we have cached numbers */
 	/* Note that we do not change the currval() state */
 	elm->cached = elm->last;
 
 	sequence_close(seq_rel, NoLock);
-}
-
-/*
- * Initialize a sequence's relation with the specified tuple as content
- *
- * This handles unlogged sequences by writing to both the main and the init
- * fork as necessary.
- */
-static void
-fill_seq_with_data(Relation rel, HeapTuple tuple)
-{
-	fill_seq_fork_with_data(rel, tuple, MAIN_FORKNUM);
-
-	if (rel->rd_rel->relpersistence == RELPERSISTENCE_UNLOGGED)
-	{
-		SMgrRelation srel;
-
-		srel = smgropen(rel->rd_locator, INVALID_PROC_NUMBER);
-		smgrcreate(srel, INIT_FORKNUM, false);
-		log_smgrcreate(&rel->rd_locator, INIT_FORKNUM);
-		fill_seq_fork_with_data(rel, tuple, INIT_FORKNUM);
-		FlushRelationBuffers(rel);
-		smgrclose(srel);
-	}
-}
-
-/*
- * Initialize a sequence's relation fork with the specified tuple as content
- */
-static void
-fill_seq_fork_with_data(Relation rel, HeapTuple tuple, ForkNumber forkNum)
-{
-	Buffer		buf;
-	Page		page;
-	sequence_magic *sm;
-	OffsetNumber offnum;
-
-	/* Initialize first page of relation with special magic number */
-
-	buf = ExtendBufferedRel(BMR_REL(rel), forkNum, NULL,
-							EB_LOCK_FIRST | EB_SKIP_EXTENSION_LOCK);
-	Assert(BufferGetBlockNumber(buf) == 0);
-
-	page = BufferGetPage(buf);
-
-	PageInit(page, BufferGetPageSize(buf), sizeof(sequence_magic));
-	sm = (sequence_magic *) PageGetSpecialPointer(page);
-	sm->magic = SEQ_MAGIC;
-
-	/* Now insert sequence tuple */
-
-	/*
-	 * Since VACUUM does not process sequences, we have to force the tuple to
-	 * have xmin = FrozenTransactionId now.  Otherwise it would become
-	 * invisible to SELECTs after 2G transactions.  It is okay to do this
-	 * because if the current transaction aborts, no other xact will ever
-	 * examine the sequence tuple anyway.
-	 */
-	HeapTupleHeaderSetXmin(tuple->t_data, FrozenTransactionId);
-	HeapTupleHeaderSetXminFrozen(tuple->t_data);
-	HeapTupleHeaderSetCmin(tuple->t_data, FirstCommandId);
-	HeapTupleHeaderSetXmax(tuple->t_data, InvalidTransactionId);
-	tuple->t_data->t_infomask |= HEAP_XMAX_INVALID;
-	ItemPointerSet(&tuple->t_data->t_ctid, 0, FirstOffsetNumber);
-
-	/* check the comment above nextval_internal()'s equivalent call. */
-	if (RelationNeedsWAL(rel))
-		GetTopTransactionId();
-
-	START_CRIT_SECTION();
-
-	MarkBufferDirty(buf);
-
-	offnum = PageAddItem(page, tuple->t_data, tuple->t_len, InvalidOffsetNumber, false, false);
-	if (offnum != FirstOffsetNumber)
-		elog(ERROR, "failed to add sequence tuple to page");
-
-	/* XLOG stuff */
-	if (RelationNeedsWAL(rel) || forkNum == INIT_FORKNUM)
-	{
-		xl_seq_rec	xlrec;
-		XLogRecPtr	recptr;
-
-		XLogBeginInsert();
-		XLogRegisterBuffer(0, buf, REGBUF_WILL_INIT);
-
-		xlrec.locator = rel->rd_locator;
-
-		XLogRegisterData(&xlrec, sizeof(xl_seq_rec));
-		XLogRegisterData(tuple->t_data, tuple->t_len);
-
-		recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG);
-
-		PageSetLSN(page, recptr);
-	}
-
-	END_CRIT_SECTION();
-
-	UnlockReleaseBuffer(buf);
 }
 
 /*
@@ -456,10 +259,7 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 	Oid			relid;
 	SeqTable	elm;
 	Relation	seqrel;
-	Buffer		buf;
-	HeapTupleData datatuple;
 	Form_pg_sequence seqform;
-	Form_pg_sequence_data newdataform;
 	bool		need_seq_rewrite;
 	List	   *owned_by;
 	ObjectAddress address;
@@ -468,7 +268,7 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 	bool		reset_state = false;
 	bool		is_called;
 	int64		last_value;
-	HeapTuple	newdatatuple;
+	XLogRecPtr	page_lsn;
 
 	/* Open and lock sequence, and check for ownership along the way. */
 	relid = RangeVarGetRelidExtended(stmt->sequence,
@@ -495,16 +295,8 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 
 	seqform = (Form_pg_sequence) GETSTRUCT(seqtuple);
 
-	/* lock page buffer and read tuple into new sequence structure */
-	(void) read_seq_tuple(seqrel, &buf, &datatuple);
-
-	/* copy the existing sequence data tuple, so it can be modified locally */
-	newdatatuple = heap_copytuple(&datatuple);
-	newdataform = (Form_pg_sequence_data) GETSTRUCT(newdatatuple);
-	last_value = newdataform->last_value;
-	is_called = newdataform->is_called;
-
-	UnlockReleaseBuffer(buf);
+	/* Read sequence data */
+	seq_local_get_state(seqrel, &last_value, &is_called, &page_lsn);
 
 	/* Check and set new values */
 	init_params(pstate, stmt->options, stmt->for_identity, false,
@@ -514,32 +306,10 @@ AlterSequence(ParseState *pstate, AlterSeqStmt *stmt)
 	/* If needed, rewrite the sequence relation itself */
 	if (need_seq_rewrite)
 	{
-		/* check the comment above nextval_internal()'s equivalent call. */
 		if (RelationNeedsWAL(seqrel))
 			GetTopTransactionId();
 
-		/*
-		 * Create a new storage file for the sequence, making the state
-		 * changes transactional.
-		 */
-		RelationSetNewRelfilenumber(seqrel, seqrel->rd_rel->relpersistence);
-
-		/*
-		 * Ensure sequence's relfrozenxid is at 0, since it won't contain any
-		 * unfrozen XIDs.  Same with relminmxid, since a sequence will never
-		 * contain multixacts.
-		 */
-		Assert(seqrel->rd_rel->relfrozenxid == InvalidTransactionId);
-		Assert(seqrel->rd_rel->relminmxid == InvalidMultiXactId);
-
-		/*
-		 * Insert the modified tuple into the new storage file.
-		 */
-		newdataform->last_value = last_value;
-		newdataform->is_called = is_called;
-		if (reset_state)
-			newdataform->log_cnt = 0;
-		fill_seq_with_data(seqrel, newdatatuple);
+		seq_local_reset(seqrel, last_value, is_called, reset_state);
 	}
 
 	/* Clear local cache so that we don't think we have cached numbers */
@@ -568,8 +338,6 @@ SequenceChangePersistence(Oid relid, char newrelpersistence)
 {
 	SeqTable	elm;
 	Relation	seqrel;
-	Buffer		buf;
-	HeapTupleData seqdatatuple;
 
 	/*
 	 * ALTER SEQUENCE acquires this lock earlier.  If we're processing an
@@ -584,10 +352,7 @@ SequenceChangePersistence(Oid relid, char newrelpersistence)
 	if (RelationNeedsWAL(seqrel))
 		GetTopTransactionId();
 
-	(void) read_seq_tuple(seqrel, &buf, &seqdatatuple);
-	RelationSetNewRelfilenumber(seqrel, newrelpersistence);
-	fill_seq_with_data(seqrel, &seqdatatuple);
-	UnlockReleaseBuffer(buf);
+	seq_local_change_persistence(seqrel, newrelpersistence);
 
 	sequence_close(seqrel, NoLock);
 }
@@ -650,24 +415,15 @@ nextval_internal(Oid relid, bool check_permissions)
 {
 	SeqTable	elm;
 	Relation	seqrel;
-	Buffer		buf;
-	Page		page;
 	HeapTuple	pgstuple;
 	Form_pg_sequence pgsform;
-	HeapTupleData seqdatatuple;
-	Form_pg_sequence_data seq;
 	int64		incby,
 				maxv,
 				minv,
 				cache,
-				log,
-				fetch,
 				last;
-	int64		result,
-				next,
-				rescnt = 0;
+	int64		result;
 	bool		cycle;
-	bool		logit = false;
 
 	/* open and lock sequence */
 	init_sequence(relid, &elm, &seqrel);
@@ -712,105 +468,9 @@ nextval_internal(Oid relid, bool check_permissions)
 	cycle = pgsform->seqcycle;
 	ReleaseSysCache(pgstuple);
 
-	/* lock page buffer and read tuple */
-	seq = read_seq_tuple(seqrel, &buf, &seqdatatuple);
-	page = BufferGetPage(buf);
-
-	last = next = result = seq->last_value;
-	fetch = cache;
-	log = seq->log_cnt;
-
-	if (!seq->is_called)
-	{
-		rescnt++;				/* return last_value if not is_called */
-		fetch--;
-	}
-
-	/*
-	 * Decide whether we should emit a WAL log record.  If so, force up the
-	 * fetch count to grab SEQ_LOG_VALS more values than we actually need to
-	 * cache.  (These will then be usable without logging.)
-	 *
-	 * If this is the first nextval after a checkpoint, we must force a new
-	 * WAL record to be written anyway, else replay starting from the
-	 * checkpoint would fail to advance the sequence past the logged values.
-	 * In this case we may as well fetch extra values.
-	 */
-	if (log < fetch || !seq->is_called)
-	{
-		/* forced log to satisfy local demand for values */
-		fetch = log = fetch + SEQ_LOG_VALS;
-		logit = true;
-	}
-	else
-	{
-		XLogRecPtr	redoptr = GetRedoRecPtr();
-
-		if (PageGetLSN(page) <= redoptr)
-		{
-			/* last update of seq was before checkpoint */
-			fetch = log = fetch + SEQ_LOG_VALS;
-			logit = true;
-		}
-	}
-
-	while (fetch)				/* try to fetch cache [+ log ] numbers */
-	{
-		/*
-		 * Check MAXVALUE for ascending sequences and MINVALUE for descending
-		 * sequences
-		 */
-		if (incby > 0)
-		{
-			/* ascending sequence */
-			if ((maxv >= 0 && next > maxv - incby) ||
-				(maxv < 0 && next + incby > maxv))
-			{
-				if (rescnt > 0)
-					break;		/* stop fetching */
-				if (!cycle)
-					ereport(ERROR,
-							(errcode(ERRCODE_SEQUENCE_GENERATOR_LIMIT_EXCEEDED),
-							 errmsg("nextval: reached maximum value of sequence \"%s\" (%" PRId64 ")",
-									RelationGetRelationName(seqrel),
-									maxv)));
-				next = minv;
-			}
-			else
-				next += incby;
-		}
-		else
-		{
-			/* descending sequence */
-			if ((minv < 0 && next < minv - incby) ||
-				(minv >= 0 && next + incby < minv))
-			{
-				if (rescnt > 0)
-					break;		/* stop fetching */
-				if (!cycle)
-					ereport(ERROR,
-							(errcode(ERRCODE_SEQUENCE_GENERATOR_LIMIT_EXCEEDED),
-							 errmsg("nextval: reached minimum value of sequence \"%s\" (%" PRId64 ")",
-									RelationGetRelationName(seqrel),
-									minv)));
-				next = maxv;
-			}
-			else
-				next += incby;
-		}
-		fetch--;
-		if (rescnt < cache)
-		{
-			log--;
-			rescnt++;
-			last = next;
-			if (rescnt == 1)	/* if it's first result - */
-				result = next;	/* it's what to return */
-		}
-	}
-
-	log -= fetch;				/* adjust for any unfetched numbers */
-	Assert(log >= 0);
+	/* retrieve next value from the access method */
+	result = seq_local_nextval(seqrel, incby, maxv, minv, cache, cycle,
+							   &last);
 
 	/* save info in local cache */
 	elm->increment = incby;
@@ -819,69 +479,6 @@ nextval_internal(Oid relid, bool check_permissions)
 	elm->last_valid = true;
 
 	last_used_seq = elm;
-
-	/*
-	 * If something needs to be WAL logged, acquire an xid, so this
-	 * transaction's commit will trigger a WAL flush and wait for syncrep.
-	 * It's sufficient to ensure the toplevel transaction has an xid, no need
-	 * to assign xids subxacts, that'll already trigger an appropriate wait.
-	 * (Have to do that here, so we're outside the critical section)
-	 */
-	if (logit && RelationNeedsWAL(seqrel))
-		GetTopTransactionId();
-
-	/* ready to change the on-disk (or really, in-buffer) tuple */
-	START_CRIT_SECTION();
-
-	/*
-	 * We must mark the buffer dirty before doing XLogInsert(); see notes in
-	 * SyncOneBuffer().  However, we don't apply the desired changes just yet.
-	 * This looks like a violation of the buffer update protocol, but it is in
-	 * fact safe because we hold exclusive lock on the buffer.  Any other
-	 * process, including a checkpoint, that tries to examine the buffer
-	 * contents will block until we release the lock, and then will see the
-	 * final state that we install below.
-	 */
-	MarkBufferDirty(buf);
-
-	/* XLOG stuff */
-	if (logit && RelationNeedsWAL(seqrel))
-	{
-		xl_seq_rec	xlrec;
-		XLogRecPtr	recptr;
-
-		/*
-		 * We don't log the current state of the tuple, but rather the state
-		 * as it would appear after "log" more fetches.  This lets us skip
-		 * that many future WAL records, at the cost that we lose those
-		 * sequence values if we crash.
-		 */
-		XLogBeginInsert();
-		XLogRegisterBuffer(0, buf, REGBUF_WILL_INIT);
-
-		/* set values that will be saved in xlog */
-		seq->last_value = next;
-		seq->is_called = true;
-		seq->log_cnt = 0;
-
-		xlrec.locator = seqrel->rd_locator;
-
-		XLogRegisterData(&xlrec, sizeof(xl_seq_rec));
-		XLogRegisterData(seqdatatuple.t_data, seqdatatuple.t_len);
-
-		recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG);
-
-		PageSetLSN(page, recptr);
-	}
-
-	/* Now update sequence tuple to the intended final state */
-	seq->last_value = last;		/* last fetched number */
-	seq->is_called = true;
-	seq->log_cnt = log;			/* how much is logged */
-
-	END_CRIT_SECTION();
-
-	UnlockReleaseBuffer(buf);
 
 	sequence_close(seqrel, NoLock);
 
@@ -972,9 +569,6 @@ SetSequence(Oid relid, int64 next, bool iscalled)
 {
 	SeqTable	elm;
 	Relation	seqrel;
-	Buffer		buf;
-	HeapTupleData seqdatatuple;
-	Form_pg_sequence_data seq;
 	HeapTuple	pgstuple;
 	Form_pg_sequence pgsform;
 	int64		maxv,
@@ -1008,9 +602,6 @@ SetSequence(Oid relid, int64 next, bool iscalled)
 	 */
 	PreventCommandIfParallelMode("setval()");
 
-	/* lock page buffer and read tuple */
-	seq = read_seq_tuple(seqrel, &buf, &seqdatatuple);
-
 	if ((next < minv) || (next > maxv))
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
@@ -1032,37 +623,8 @@ SetSequence(Oid relid, int64 next, bool iscalled)
 	if (RelationNeedsWAL(seqrel))
 		GetTopTransactionId();
 
-	/* ready to change the on-disk (or really, in-buffer) tuple */
-	START_CRIT_SECTION();
-
-	seq->last_value = next;		/* last fetched number */
-	seq->is_called = iscalled;
-	seq->log_cnt = 0;
-
-	MarkBufferDirty(buf);
-
-	/* XLOG stuff */
-	if (RelationNeedsWAL(seqrel))
-	{
-		xl_seq_rec	xlrec;
-		XLogRecPtr	recptr;
-		Page		page = BufferGetPage(buf);
-
-		XLogBeginInsert();
-		XLogRegisterBuffer(0, buf, REGBUF_WILL_INIT);
-
-		xlrec.locator = seqrel->rd_locator;
-		XLogRegisterData(&xlrec, sizeof(xl_seq_rec));
-		XLogRegisterData(seqdatatuple.t_data, seqdatatuple.t_len);
-
-		recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG);
-
-		PageSetLSN(page, recptr);
-	}
-
-	END_CRIT_SECTION();
-
-	UnlockReleaseBuffer(buf);
+	/* Call the access method callback */
+	seq_local_setval(seqrel, next, iscalled);
 
 	sequence_close(seqrel, NoLock);
 }
@@ -1202,62 +764,6 @@ init_sequence(Oid relid, SeqTable *p_elm, Relation *p_rel)
 	*p_rel = seqrel;
 }
 
-
-/*
- * Given an opened sequence relation, lock the page buffer and find the tuple
- *
- * *buf receives the reference to the pinned-and-ex-locked buffer
- * *seqdatatuple receives the reference to the sequence tuple proper
- *		(this arg should point to a local variable of type HeapTupleData)
- *
- * Function's return value points to the data payload of the tuple
- */
-static Form_pg_sequence_data
-read_seq_tuple(Relation rel, Buffer *buf, HeapTuple seqdatatuple)
-{
-	Page		page;
-	ItemId		lp;
-	sequence_magic *sm;
-	Form_pg_sequence_data seq;
-
-	*buf = ReadBuffer(rel, 0);
-	LockBuffer(*buf, BUFFER_LOCK_EXCLUSIVE);
-
-	page = BufferGetPage(*buf);
-	sm = (sequence_magic *) PageGetSpecialPointer(page);
-
-	if (sm->magic != SEQ_MAGIC)
-		elog(ERROR, "bad magic number in sequence \"%s\": %08X",
-			 RelationGetRelationName(rel), sm->magic);
-
-	lp = PageGetItemId(page, FirstOffsetNumber);
-	Assert(ItemIdIsNormal(lp));
-
-	/* Note we currently only bother to set these two fields of *seqdatatuple */
-	seqdatatuple->t_data = (HeapTupleHeader) PageGetItem(page, lp);
-	seqdatatuple->t_len = ItemIdGetLength(lp);
-
-	/*
-	 * Previous releases of Postgres neglected to prevent SELECT FOR UPDATE on
-	 * a sequence, which would leave a non-frozen XID in the sequence tuple's
-	 * xmax, which eventually leads to clog access failures or worse. If we
-	 * see this has happened, clean up after it.  We treat this like a hint
-	 * bit update, ie, don't bother to WAL-log it, since we can certainly do
-	 * this again if the update gets lost.
-	 */
-	Assert(!(seqdatatuple->t_data->t_infomask & HEAP_XMAX_IS_MULTI));
-	if (HeapTupleHeaderGetRawXmax(seqdatatuple->t_data) != InvalidTransactionId)
-	{
-		HeapTupleHeaderSetXmax(seqdatatuple->t_data, InvalidTransactionId);
-		seqdatatuple->t_data->t_infomask &= ~HEAP_XMAX_COMMITTED;
-		seqdatatuple->t_data->t_infomask |= HEAP_XMAX_INVALID;
-		MarkBufferDirtyHint(*buf, true);
-	}
-
-	seq = (Form_pg_sequence_data) GETSTRUCT(seqdatatuple);
-
-	return seq;
-}
 
 /*
  * init_params: process the options list of CREATE or ALTER SEQUENCE, and
@@ -1846,19 +1352,16 @@ pg_get_sequence_data(PG_FUNCTION_ARGS)
 		!RELATION_IS_OTHER_TEMP(seqrel) &&
 		(RelationIsPermanent(seqrel) || !RecoveryInProgress()))
 	{
-		Buffer		buf;
-		HeapTupleData seqtuple;
-		Form_pg_sequence_data seq;
-		Page		page;
+		bool		is_called;
+		int64		last_value;
+		XLogRecPtr	page_lsn;
 
-		seq = read_seq_tuple(seqrel, &buf, &seqtuple);
-		page = BufferGetPage(buf);
+		seq_local_get_state(seqrel, &last_value, &is_called,
+							&page_lsn);
 
-		values[0] = Int64GetDatum(seq->last_value);
-		values[1] = BoolGetDatum(seq->is_called);
-		values[2] = LSNGetDatum(PageGetLSN(page));
-
-		UnlockReleaseBuffer(buf);
+		values[0] = Int64GetDatum(last_value);
+		values[1] = BoolGetDatum(is_called);
+		values[2] = LSNGetDatum(page_lsn);
 	}
 	else
 		memset(isnull, true, sizeof(isnull));
@@ -1885,6 +1388,7 @@ pg_sequence_last_value(PG_FUNCTION_ARGS)
 	Relation	seqrel;
 	bool		is_called = false;
 	int64		result = 0;
+	XLogRecPtr	page_lsn = InvalidXLogRecPtr;
 
 	/* open and lock sequence */
 	init_sequence(relid, &elm, &seqrel);
@@ -1902,17 +1406,9 @@ pg_sequence_last_value(PG_FUNCTION_ARGS)
 		!RELATION_IS_OTHER_TEMP(seqrel) &&
 		(RelationIsPermanent(seqrel) || !RecoveryInProgress()))
 	{
-		Buffer		buf;
-		HeapTupleData seqtuple;
-		Form_pg_sequence_data seq;
-
-		seq = read_seq_tuple(seqrel, &buf, &seqtuple);
-
-		is_called = seq->is_called;
-		result = seq->last_value;
-
-		UnlockReleaseBuffer(buf);
+		seq_local_get_state(seqrel, &result, &is_called, &page_lsn);
 	}
+
 	sequence_close(seqrel, NoLock);
 
 	if (is_called)

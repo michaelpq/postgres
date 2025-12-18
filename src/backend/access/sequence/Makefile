@@ -12,6 +12,8 @@ subdir = src/backend/access/sequence
 top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS = sequence.o
+OBJS = seqlocalam.o \
+	seqlocal_xlog.o \
+	sequence.o
 
 include $(top_srcdir)/src/backend/common.mk
