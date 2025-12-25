@@ -983,10 +983,10 @@ BufFileTruncateFileSet(BufFile *file, int fileno, pgoff_t offset)
 	{
 		/* No need to reset the current pos if the new pos is greater. */
 		if (newOffset <= file->curOffset + file->pos)
-			file->pos = newOffset - file->curOffset;
+			file->pos = (int64) newOffset - file->curOffset;
 
 		/* Adjust the nbytes for the current buffer. */
-		file->nbytes = newOffset - file->curOffset;
+		file->nbytes = (int64) newOffset - file->curOffset;
 	}
 	else if (newFile == file->curFile &&
 			 newOffset < file->curOffset)
