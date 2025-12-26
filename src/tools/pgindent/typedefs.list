@@ -2917,6 +2917,7 @@ StartReplicationCmd
 StartupStatusEnum
 StatEntry
 StatExtEntry
+StatApproxReadStreamPrivate
 StateFileChunk
 StatisticExtInfo
 StatsBuildData
