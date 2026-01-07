@@ -4,4 +4,5 @@ backend_sources += files(
   'seqlocalam.c',
   'seqlocal_xlog.c',
   'sequence.c',
+  'sequenceamapi.c',
 )

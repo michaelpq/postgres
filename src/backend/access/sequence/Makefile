@@ -14,6 +14,7 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS = seqlocalam.o \
 	seqlocal_xlog.o \
-	sequence.o
+	sequence.o \
+	sequenceamapi.o
 
 include $(top_srcdir)/src/backend/common.mk
