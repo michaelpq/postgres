@@ -1564,6 +1564,679 @@ RESET ROLE;
 REVOKE MAINTAIN ON stats_import.test FROM regress_test_extstat_clear;
 REVOKE ALL ON SCHEMA stats_import FROM regress_test_extstat_clear;
 DROP ROLE regress_test_extstat_clear;
+-- Tests for pg_restore_extended_stats().
+--  Invalid argument values.
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', NULL,
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+ERROR:  argument "schemaname" must not be null
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', NULL,
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+ERROR:  argument "relname" must not be null
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', NULL,
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+ERROR:  argument "statistics_schemaname" must not be null
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', NULL,
+  'inherited', false);
+ERROR:  argument "statistics_name" must not be null
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', NULL);
+ERROR:  argument "inherited" must not be null
+-- Missing objects
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'schema_not_exist',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+ERROR:  schema "schema_not_exist" does not exist
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'table_not_exist',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+ERROR:  relation "stats_import.table_not_exist" does not exist
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'schema_not_exist',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+WARNING:  could not find schema "test_stat_clone"
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'ext_stats_not_exist',
+  'inherited', false);
+WARNING:  could not find extended statistics object "stats_import"."ext_stats_not_exist"
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- Incorrect relation/extended stats combination
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+WARNING:  could not restore extended statistics object "stats_import"."test_stat_clone": incorrect relation "stats_import"."test" specified
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- Set n_distinct using at attnum (1) that is not in the statistics
+-- object
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'n_distinct', '[{"attributes" : [3,-1], "ndistinct" : 4},
+                  {"attributes" : [3,-2], "ndistinct" : 4},
+                  {"attributes" : [-1,-2], "ndistinct" : 3},
+                  {"attributes" : [2,3,-1], "ndistinct" : 4},
+                  {"attributes" : [2,3,-2], "ndistinct" : 4},
+                  {"attributes" : [2,-1,-2], "ndistinct" : 4},
+                  {"attributes" : [3,-1,-2], "ndistinct" : 4},
+                  {"attributes" : [1,2,3,-1,-2], "ndistinct" : 4}]'::pg_ndistinct);
+WARNING:  could not validate "pg_ndistinct" object: invalid attribute number 1 found
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- Set n_distinct using at attnum that is 0
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'n_distinct', '[{"attributes" : [3,-1], "ndistinct" : 4},
+                  {"attributes" : [3,-2], "ndistinct" : 4},
+                  {"attributes" : [-1,-2], "ndistinct" : 3},
+                  {"attributes" : [2,3,-1], "ndistinct" : 4},
+                  {"attributes" : [2,3,-2], "ndistinct" : 4},
+                  {"attributes" : [2,-1,-2], "ndistinct" : 4},
+                  {"attributes" : [0,2,3,-1,-2], "ndistinct" : 4}]'::pg_ndistinct);
+ERROR:  malformed pg_ndistinct: "[{"attributes" : [3,-1], "ndistinct" : 4},
+                  {"attributes" : [3,-2], "ndistinct" : 4},
+                  {"attributes" : [-1,-2], "ndistinct" : 3},
+                  {"attributes" : [2,3,-1], "ndistinct" : 4},
+                  {"attributes" : [2,3,-2], "ndistinct" : 4},
+                  {"attributes" : [2,-1,-2], "ndistinct" : 4},
+                  {"attributes" : [0,2,3,-1,-2], "ndistinct" : 4}]"
+LINE 7:   'n_distinct', '[{"attributes" : [3,-1], "ndistinct" : 4},
+                        ^
+DETAIL:  Invalid "attributes" element has been found: 0.
+-- Set n_distinct using at attnum that is outside the expression bounds
+-- (below -2)
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'n_distinct', '[{"attributes" : [3,-1], "ndistinct" : 4},
+                  {"attributes" : [3,-2], "ndistinct" : 4},
+                  {"attributes" : [-1,-2], "ndistinct" : 3},
+                  {"attributes" : [3,-1,-4], "ndistinct" : 4},
+                  {"attributes" : [3,-2,-4], "ndistinct" : 4},
+                  {"attributes" : [-1,-2,-4], "ndistinct" : 4},
+                  {"attributes" : [3,-1,-2,-4], "ndistinct" : 4}]'::pg_ndistinct);
+WARNING:  could not validate "pg_ndistinct" object: invalid attribute number -4 found
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- Check that MAINTAIN is required when restoring statistics.
+CREATE ROLE regress_test_extstat_restore;
+GRANT ALL ON SCHEMA stats_import TO regress_test_extstat_restore;
+SET ROLE regress_test_extstat_restore;
+-- No data restore, but it does not matter as this fails on a permission
+-- failure.
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false);
+ERROR:  permission denied for table test_clone
+RESET ROLE;
+GRANT MAINTAIN ON stats_import.test_clone TO regress_test_extstat_clear;
+ERROR:  role "regress_test_extstat_clear" does not exist
+SET ROLE regress_test_extstat_clear;
+ERROR:  role "regress_test_extstat_clear" does not exist
+-- This works, check the lock on the relation while on it.
+BEGIN;
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'n_distinct', '[{"attributes" : [2,3], "ndistinct" : 4},
+                  {"attributes" : [2,-1], "ndistinct" : 4},
+                  {"attributes" : [3,-1], "ndistinct" : 4},
+                  {"attributes" : [3,-2], "ndistinct" : 4},
+                  {"attributes" : [-1,-2], "ndistinct" : 3},
+                  {"attributes" : [2,3,-1], "ndistinct" : 4},
+                  {"attributes" : [2,3,-2], "ndistinct" : 4},
+                  {"attributes" : [2,-1,-2], "ndistinct" : 4},
+                  {"attributes" : [2,3,-1,-2], "ndistinct" : 4}]'::pg_ndistinct);
+ pg_restore_extended_stats 
+---------------------------
+ t
+(1 row)
+
+SELECT mode FROM pg_locks WHERE locktype = 'relation' AND
+  relation = 'stats_import.test_clone'::regclass AND
+  pid = pg_backend_pid();
+           mode           
+--------------------------
+ ShareUpdateExclusiveLock
+(1 row)
+
+COMMIT;
+RESET ROLE;
+REVOKE MAINTAIN ON stats_import.test_clone FROM regress_test_extstat_restore;
+REVOKE ALL ON SCHEMA stats_import FROM regress_test_extstat_restore;
+DROP ROLE regress_test_extstat_restore;
+SELECT replace(e.n_distinct,   '}, ', E'},\n') AS n_distinct,
+  e.dependencies,
+  e.most_common_vals, e.most_common_val_nulls,
+  e.most_common_freqs, e.most_common_base_freqs
+FROM pg_stats_ext AS e
+WHERE e.statistics_schemaname = 'stats_import'
+AND e.statistics_name = 'test_stat_clone'
+AND e.inherited = false
+\gx
+-[ RECORD 1 ]----------+------------------------------------------------
+n_distinct             | [{"attributes": [2, 3], "ndistinct": 4},       +
+                       | {"attributes": [2, -1], "ndistinct": 4},       +
+                       | {"attributes": [3, -1], "ndistinct": 4},       +
+                       | {"attributes": [3, -2], "ndistinct": 4},       +
+                       | {"attributes": [-1, -2], "ndistinct": 3},      +
+                       | {"attributes": [2, 3, -1], "ndistinct": 4},    +
+                       | {"attributes": [2, 3, -2], "ndistinct": 4},    +
+                       | {"attributes": [2, -1, -2], "ndistinct": 4},   +
+                       | {"attributes": [2, 3, -1, -2], "ndistinct": 4}]
+dependencies           | 
+most_common_vals       | 
+most_common_val_nulls  | 
+most_common_freqs      | 
+most_common_base_freqs | 
+
+-- set dependencies using at attnum (1) that is not in the statistics object
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'dependencies', '[{"attributes": [2], "dependency": 1, "degree": 1.000000}]'::pg_dependencies);
+WARNING:  could not validate "pg_dependencies" object: invalid attribute number 1 found
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- set dependencies using at attnum that is 0
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'dependencies', '[{"attributes": [0], "dependency": -1, "degree": 1.000000}]'::pg_dependencies);
+ERROR:  malformed pg_dependencies: "[{"attributes": [0], "dependency": -1, "degree": 1.000000}]"
+LINE 7:   'dependencies', '[{"attributes": [0], "dependency": -1, "d...
+                          ^
+DETAIL:  Invalid "attributes" element has been found: 0.
+-- set dependencies using at attnum that is outside the expression bounds(below -2)
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'dependencies', '[{"attributes": [2], "dependency": -3, "degree": 1.000000}]'::pg_dependencies);
+WARNING:  could not validate "pg_dependencies" object: invalid attribute number -3 found
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- ok
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'dependencies', '[{"attributes": [2], "dependency": 3, "degree": 1.000000},
+                    {"attributes": [2], "dependency": -1, "degree": 1.000000},
+                    {"attributes": [2], "dependency": -2, "degree": 1.000000},
+                    {"attributes": [3], "dependency": 2, "degree": 1.000000},
+                    {"attributes": [3], "dependency": -1, "degree": 1.000000},
+                    {"attributes": [3], "dependency": -2, "degree": 1.000000},
+                    {"attributes": [-1], "dependency": 2, "degree": 0.500000},
+                    {"attributes": [-1], "dependency": 3, "degree": 0.500000},
+                    {"attributes": [-1], "dependency": -2, "degree": 1.000000},
+                    {"attributes": [-2], "dependency": 2, "degree": 0.500000},
+                    {"attributes": [-2], "dependency": 3, "degree": 0.500000},
+                    {"attributes": [-2], "dependency": -1, "degree": 1.000000},
+                    {"attributes": [2,3], "dependency": -1, "degree": 1.000000},
+                    {"attributes": [2,3], "dependency": -2, "degree": 1.000000},
+                    {"attributes": [2,-1], "dependency": 3, "degree": 1.000000},
+                    {"attributes": [2,-1], "dependency": -2, "degree": 1.000000},
+                    {"attributes": [2,-2], "dependency": 3, "degree": 1.000000},
+                    {"attributes": [2,-2], "dependency": -1, "degree": 1.000000},
+                    {"attributes": [3,-1], "dependency": 2, "degree": 1.000000},
+                    {"attributes": [3,-1], "dependency": -2, "degree": 1.000000},
+                    {"attributes": [3,-2], "dependency": 2, "degree": 1.000000},
+                    {"attributes": [3,-2], "dependency": -1, "degree": 1.000000},
+                    {"attributes": [-1,-2], "dependency": 2, "degree": 0.500000},
+                    {"attributes": [-1,-2], "dependency": 3, "degree": 0.500000},
+                    {"attributes": [2,3,-2], "dependency": -1, "degree": 1.000000},
+                    {"attributes": [2,-1,-2], "dependency": 3, "degree": 1.000000},
+                    {"attributes": [3,-1,-2], "dependency": 2, "degree": 1.000000}]'::pg_dependencies);
+ pg_restore_extended_stats 
+---------------------------
+ t
+(1 row)
+
+SELECT
+    replace(e.n_distinct,   '}, ', E'},\n') AS n_distinct,
+    replace(e.dependencies, '}, ', E'},\n') AS dependencies,
+    e.most_common_vals, e.most_common_val_nulls,
+    e.most_common_freqs, e.most_common_base_freqs
+FROM pg_stats_ext AS e
+WHERE e.statistics_schemaname = 'stats_import'
+AND e.statistics_name = 'test_stat_clone'
+AND e.inherited = false
+\gx
+-[ RECORD 1 ]----------+------------------------------------------------------------------
+n_distinct             | [{"attributes": [2, 3], "ndistinct": 4},                         +
+                       | {"attributes": [2, -1], "ndistinct": 4},                         +
+                       | {"attributes": [3, -1], "ndistinct": 4},                         +
+                       | {"attributes": [3, -2], "ndistinct": 4},                         +
+                       | {"attributes": [-1, -2], "ndistinct": 3},                        +
+                       | {"attributes": [2, 3, -1], "ndistinct": 4},                      +
+                       | {"attributes": [2, 3, -2], "ndistinct": 4},                      +
+                       | {"attributes": [2, -1, -2], "ndistinct": 4},                     +
+                       | {"attributes": [2, 3, -1, -2], "ndistinct": 4}]
+dependencies           | [{"attributes": [2], "dependency": 3, "degree": 1.000000},       +
+                       | {"attributes": [2], "dependency": -1, "degree": 1.000000},       +
+                       | {"attributes": [2], "dependency": -2, "degree": 1.000000},       +
+                       | {"attributes": [3], "dependency": 2, "degree": 1.000000},        +
+                       | {"attributes": [3], "dependency": -1, "degree": 1.000000},       +
+                       | {"attributes": [3], "dependency": -2, "degree": 1.000000},       +
+                       | {"attributes": [-1], "dependency": 2, "degree": 0.500000},       +
+                       | {"attributes": [-1], "dependency": 3, "degree": 0.500000},       +
+                       | {"attributes": [-1], "dependency": -2, "degree": 1.000000},      +
+                       | {"attributes": [-2], "dependency": 2, "degree": 0.500000},       +
+                       | {"attributes": [-2], "dependency": 3, "degree": 0.500000},       +
+                       | {"attributes": [-2], "dependency": -1, "degree": 1.000000},      +
+                       | {"attributes": [2, 3], "dependency": -1, "degree": 1.000000},    +
+                       | {"attributes": [2, 3], "dependency": -2, "degree": 1.000000},    +
+                       | {"attributes": [2, -1], "dependency": 3, "degree": 1.000000},    +
+                       | {"attributes": [2, -1], "dependency": -2, "degree": 1.000000},   +
+                       | {"attributes": [2, -2], "dependency": 3, "degree": 1.000000},    +
+                       | {"attributes": [2, -2], "dependency": -1, "degree": 1.000000},   +
+                       | {"attributes": [3, -1], "dependency": 2, "degree": 1.000000},    +
+                       | {"attributes": [3, -1], "dependency": -2, "degree": 1.000000},   +
+                       | {"attributes": [3, -2], "dependency": 2, "degree": 1.000000},    +
+                       | {"attributes": [3, -2], "dependency": -1, "degree": 1.000000},   +
+                       | {"attributes": [-1, -2], "dependency": 2, "degree": 0.500000},   +
+                       | {"attributes": [-1, -2], "dependency": 3, "degree": 0.500000},   +
+                       | {"attributes": [2, 3, -2], "dependency": -1, "degree": 1.000000},+
+                       | {"attributes": [2, -1, -2], "dependency": 3, "degree": 1.000000},+
+                       | {"attributes": [3, -1, -2], "dependency": 2, "degree": 1.000000}]
+most_common_vals       | 
+most_common_val_nulls  | 
+most_common_freqs      | 
+most_common_base_freqs | 
+
+-- if any one mcv param specified, all four must be specified (part 1)
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'most_common_vals', '{{four,NULL,0,NULL},{one,"(1,1.1,ONE,01-01-2001,\"{\"\"xkey\"\": \"\"xval\"\"}\")",1,2},{tre,"(3,3.3,TRE,03-03-2003,)",-1,3},{two,"(2,2.2,TWO,02-02-2002,\"[true, 4, \"\"six\"\"]\")",1,2}}'::text[]);
+WARNING:  must specify parameters "most_common_vals", "most_common_val_nulls", "most_common_freqs", and "most_common_base_freqs" for extended statistics object
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- if any one mcv param specified, all four must be specified (part 2)
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'most_common_val_nulls', '{{f,t,f,t},{f,f,f,f},{f,f,f,f},{f,f,f,f}}'::boolean[]);
+WARNING:  must specify parameters "most_common_vals", "most_common_val_nulls", "most_common_freqs", and "most_common_base_freqs" for extended statistics object
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- if any one mcv param specified, all four must be specified (part 3)
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'most_common_freqs', '{0.25,0.25,0.25,0.25}'::double precision[]);
+WARNING:  must specify parameters "most_common_vals", "most_common_val_nulls", "most_common_freqs", and "most_common_base_freqs" for extended statistics object
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- if any one mcv param specified, all four must be specified (part 4)
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'most_common_base_freqs', '{0.00390625,0.015625,0.00390625,0.015625}'::double precision[]);
+WARNING:  must specify parameters "most_common_vals", "most_common_val_nulls", "most_common_freqs", and "most_common_base_freqs" for extended statistics object
+ pg_restore_extended_stats 
+---------------------------
+ f
+(1 row)
+
+-- ok
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'most_common_vals', '{{four,NULL,0,NULL},{one,"(1,1.1,ONE,01-01-2001,\"{\"\"xkey\"\": \"\"xval\"\"}\")",1,2},{tre,"(3,3.3,TRE,03-03-2003,)",-1,3},{two,"(2,2.2,TWO,02-02-2002,\"[true, 4, \"\"six\"\"]\")",1,2}}'::text[],
+  'most_common_val_nulls', '{{f,t,f,t},{f,f,f,f},{f,f,f,f},{f,f,f,f}}'::boolean[],
+  'most_common_freqs', '{0.25,0.25,0.25,0.25}'::double precision[],
+  'most_common_base_freqs', '{0.00390625,0.015625,0.00390625,0.015625}'::double precision[]);
+ pg_restore_extended_stats 
+---------------------------
+ t
+(1 row)
+
+SELECT replace(e.n_distinct,   '}, ', E'},\n') AS n_distinct,
+    replace(e.dependencies, '}, ', E'},\n') AS dependencies,
+    e.most_common_vals, e.most_common_val_nulls,
+    e.most_common_freqs, e.most_common_base_freqs
+  FROM pg_stats_ext AS e
+  WHERE e.statistics_schemaname = 'stats_import' AND
+    e.statistics_name = 'test_stat_clone' AND
+    e.inherited = false
+\gx
+-[ RECORD 1 ]----------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+n_distinct             | [{"attributes": [2, 3], "ndistinct": 4},                                                                                                                                                   +
+                       | {"attributes": [2, -1], "ndistinct": 4},                                                                                                                                                   +
+                       | {"attributes": [3, -1], "ndistinct": 4},                                                                                                                                                   +
+                       | {"attributes": [3, -2], "ndistinct": 4},                                                                                                                                                   +
+                       | {"attributes": [-1, -2], "ndistinct": 3},                                                                                                                                                  +
+                       | {"attributes": [2, 3, -1], "ndistinct": 4},                                                                                                                                                +
+                       | {"attributes": [2, 3, -2], "ndistinct": 4},                                                                                                                                                +
+                       | {"attributes": [2, -1, -2], "ndistinct": 4},                                                                                                                                               +
+                       | {"attributes": [2, 3, -1, -2], "ndistinct": 4}]
+dependencies           | [{"attributes": [2], "dependency": 3, "degree": 1.000000},                                                                                                                                 +
+                       | {"attributes": [2], "dependency": -1, "degree": 1.000000},                                                                                                                                 +
+                       | {"attributes": [2], "dependency": -2, "degree": 1.000000},                                                                                                                                 +
+                       | {"attributes": [3], "dependency": 2, "degree": 1.000000},                                                                                                                                  +
+                       | {"attributes": [3], "dependency": -1, "degree": 1.000000},                                                                                                                                 +
+                       | {"attributes": [3], "dependency": -2, "degree": 1.000000},                                                                                                                                 +
+                       | {"attributes": [-1], "dependency": 2, "degree": 0.500000},                                                                                                                                 +
+                       | {"attributes": [-1], "dependency": 3, "degree": 0.500000},                                                                                                                                 +
+                       | {"attributes": [-1], "dependency": -2, "degree": 1.000000},                                                                                                                                +
+                       | {"attributes": [-2], "dependency": 2, "degree": 0.500000},                                                                                                                                 +
+                       | {"attributes": [-2], "dependency": 3, "degree": 0.500000},                                                                                                                                 +
+                       | {"attributes": [-2], "dependency": -1, "degree": 1.000000},                                                                                                                                +
+                       | {"attributes": [2, 3], "dependency": -1, "degree": 1.000000},                                                                                                                              +
+                       | {"attributes": [2, 3], "dependency": -2, "degree": 1.000000},                                                                                                                              +
+                       | {"attributes": [2, -1], "dependency": 3, "degree": 1.000000},                                                                                                                              +
+                       | {"attributes": [2, -1], "dependency": -2, "degree": 1.000000},                                                                                                                             +
+                       | {"attributes": [2, -2], "dependency": 3, "degree": 1.000000},                                                                                                                              +
+                       | {"attributes": [2, -2], "dependency": -1, "degree": 1.000000},                                                                                                                             +
+                       | {"attributes": [3, -1], "dependency": 2, "degree": 1.000000},                                                                                                                              +
+                       | {"attributes": [3, -1], "dependency": -2, "degree": 1.000000},                                                                                                                             +
+                       | {"attributes": [3, -2], "dependency": 2, "degree": 1.000000},                                                                                                                              +
+                       | {"attributes": [3, -2], "dependency": -1, "degree": 1.000000},                                                                                                                             +
+                       | {"attributes": [-1, -2], "dependency": 2, "degree": 0.500000},                                                                                                                             +
+                       | {"attributes": [-1, -2], "dependency": 3, "degree": 0.500000},                                                                                                                             +
+                       | {"attributes": [2, 3, -2], "dependency": -1, "degree": 1.000000},                                                                                                                          +
+                       | {"attributes": [2, -1, -2], "dependency": 3, "degree": 1.000000},                                                                                                                          +
+                       | {"attributes": [3, -1, -2], "dependency": 2, "degree": 1.000000}]
+most_common_vals       | {{four,NULL,0,NULL},{one,"(1,1.1,ONE,01-01-2001,\"{\"\"xkey\"\": \"\"xval\"\"}\")",1,2},{tre,"(3,3.3,TRE,03-03-2003,)",-1,3},{two,"(2,2.2,TWO,02-02-2002,\"[true, 4, \"\"six\"\"]\")",1,2}}
+most_common_val_nulls  | {{f,t,f,t},{f,f,f,f},{f,f,f,f},{f,f,f,f}}
+most_common_freqs      | {0.25,0.25,0.25,0.25}
+most_common_base_freqs | {0.00390625,0.015625,0.00390625,0.015625}
+
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_clone',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_stat_clone',
+  'inherited', false,
+  'exprs', '{{0,4,-0.75,"{1}","{0.5}","{-1,0}",-0.6,NULL,NULL,NULL},{0.25,4,-0.5,"{2}","{0.5}",NULL,1,NULL,NULL,NULL}}'::text[]);
+ pg_restore_extended_stats 
+---------------------------
+ t
+(1 row)
+
+SELECT e.inherited, e.null_frac, e.avg_width, e.n_distinct, e.most_common_vals,
+  e.most_common_freqs, e.histogram_bounds, e.correlation,
+  e.most_common_elems, e.most_common_elem_freqs, e.elem_count_histogram
+  FROM pg_stats_ext_exprs AS e
+  WHERE e.statistics_schemaname = 'stats_import' AND
+    e.statistics_name = 'test_stat_clone' AND
+    e.inherited = false
+\gx
+-[ RECORD 1 ]----------+-------
+inherited              | f
+null_frac              | 0
+avg_width              | 4
+n_distinct             | -0.75
+most_common_vals       | {1}
+most_common_freqs      | {0.5}
+histogram_bounds       | {-1,0}
+correlation            | -0.6
+most_common_elems      | 
+most_common_elem_freqs | 
+elem_count_histogram   | 
+-[ RECORD 2 ]----------+-------
+inherited              | f
+null_frac              | 0.25
+avg_width              | 4
+n_distinct             | -0.5
+most_common_vals       | {2}
+most_common_freqs      | {0.5}
+histogram_bounds       | 
+correlation            | 1
+most_common_elems      | 
+most_common_elem_freqs | 
+elem_count_histogram   | 
+
+SELECT pg_catalog.pg_clear_extended_stats(
+  schemaname => 'stats_import',
+  relname => 'test_clone',
+  statistics_schemaname => 'stats_import',
+  statistics_name => 'test_stat_clone',
+  inherited => false);
+ pg_clear_extended_stats 
+-------------------------
+ 
+(1 row)
+
+--
+-- Copy stats from test_stat to test_stat_clone
+--
+SELECT e.statistics_name,
+  pg_catalog.pg_restore_extended_stats(
+    'schemaname', e.statistics_schemaname::text,
+    'relname', 'test_clone',
+    'statistics_schemaname', e.statistics_schemaname::text,
+    'statistics_name', 'test_stat_clone',
+    'inherited', e.inherited,
+    'n_distinct', e.n_distinct,
+    'dependencies', e.dependencies,
+    'most_common_vals', e.most_common_vals,
+    'most_common_val_nulls', e.most_common_val_nulls,
+    'most_common_freqs', e.most_common_freqs,
+    'most_common_base_freqs', e.most_common_base_freqs,
+    'exprs', x.exprs)
+FROM pg_stats_ext AS e
+CROSS JOIN LATERAL (
+  SELECT array_agg(
+        ARRAY[ee.null_frac::text, ee.avg_width::text,
+              ee.n_distinct::text, ee.most_common_vals::text,
+              ee.most_common_freqs::text, ee.histogram_bounds::text,
+              ee.correlation::text, ee.most_common_elems::text,
+              ee.most_common_elem_freqs::text,
+              ee.elem_count_histogram::text])
+    FROM pg_stats_ext_exprs AS ee
+    WHERE ee.statistics_schemaname = e.statistics_schemaname AND
+      ee.statistics_name = e.statistics_name AND
+      ee.inherited = e.inherited
+    ) AS x(exprs)
+WHERE e.statistics_schemaname = 'stats_import'
+AND e.statistics_name = 'test_stat';
+ statistics_name | pg_restore_extended_stats 
+-----------------+---------------------------
+(0 rows)
+
+SELECT o.inherited,
+       o.n_distinct, o.dependencies, o.most_common_vals,
+       o.most_common_val_nulls, o.most_common_freqs,
+       o.most_common_base_freqs
+  FROM pg_stats_ext AS o
+  WHERE o.statistics_schemaname = 'stats_import' AND
+    o.statistics_name = 'test_stat'
+EXCEPT
+SELECT n.inherited,
+       n.n_distinct, n.dependencies, n.most_common_vals,
+       n.most_common_val_nulls, n.most_common_freqs,
+       n.most_common_base_freqs
+  FROM pg_stats_ext AS n
+  WHERE n.statistics_schemaname = 'stats_import' AND
+    n.statistics_name = 'test_stat_clone';
+ inherited | n_distinct | dependencies | most_common_vals | most_common_val_nulls | most_common_freqs | most_common_base_freqs 
+-----------+------------+--------------+------------------+-----------------------+-------------------+------------------------
+(0 rows)
+
+SELECT n.inherited,
+       n.n_distinct, n.dependencies, n.most_common_vals,
+       n.most_common_val_nulls, n.most_common_freqs,
+       n.most_common_base_freqs
+  FROM pg_stats_ext AS n
+  WHERE n.statistics_schemaname = 'stats_import' AND
+    n.statistics_name = 'test_stat_clone'
+EXCEPT
+SELECT o.inherited,
+       o.n_distinct, o.dependencies, o.most_common_vals,
+       o.most_common_val_nulls, o.most_common_freqs,
+       o.most_common_base_freqs
+  FROM pg_stats_ext AS o
+  WHERE o.statistics_schemaname = 'stats_import' AND
+    o.statistics_name = 'test_stat';
+ inherited | n_distinct | dependencies | most_common_vals | most_common_val_nulls | most_common_freqs | most_common_base_freqs 
+-----------+------------+--------------+------------------+-----------------------+-------------------+------------------------
+(0 rows)
+
+SELECT o.inherited,
+       o.null_frac, o.avg_width, o.n_distinct,
+       o.most_common_vals::text AS most_common_vals,
+       o.most_common_freqs,
+       o.histogram_bounds::text AS histogram_bounds,
+       o.correlation,
+       o.most_common_elems::text AS most_common_elems,
+       o.most_common_elem_freqs, o.elem_count_histogram
+  FROM pg_stats_ext_exprs AS o
+  WHERE o.statistics_schemaname = 'stats_import' AND
+    o.statistics_name = 'test_stat'
+EXCEPT
+SELECT n.inherited,
+       n.null_frac, n.avg_width, n.n_distinct,
+       n.most_common_vals::text AS most_common_vals,
+       n.most_common_freqs,
+       n.histogram_bounds::text AS histogram_bounds,
+       n.correlation,
+       n.most_common_elems::text AS most_common_elems,
+       n.most_common_elem_freqs, n.elem_count_histogram
+  FROM pg_stats_ext_exprs AS n
+  WHERE n.statistics_schemaname = 'stats_import' AND
+    n.statistics_name = 'test_stat_clone';
+ inherited | null_frac | avg_width | n_distinct | most_common_vals | most_common_freqs | histogram_bounds | correlation | most_common_elems | most_common_elem_freqs | elem_count_histogram 
+-----------+-----------+-----------+------------+------------------+-------------------+------------------+-------------+-------------------+------------------------+----------------------
+(0 rows)
+
+SELECT n.inherited,
+       n.null_frac, n.avg_width, n.n_distinct,
+       n.most_common_vals::text AS most_common_vals,
+       n.most_common_freqs,
+       n.histogram_bounds::text AS histogram_bounds,
+       n.correlation,
+       n.most_common_elems::text AS most_common_elems,
+       n.most_common_elem_freqs, n.elem_count_histogram
+  FROM pg_stats_ext_exprs AS n
+  WHERE n.statistics_schemaname = 'stats_import' AND
+    n.statistics_name = 'test_stat_clone'
+EXCEPT
+SELECT o.inherited,
+       o.null_frac, o.avg_width, o.n_distinct,
+       o.most_common_vals::text AS most_common_vals,
+       o.most_common_freqs,
+       o.histogram_bounds::text AS histogram_bounds,
+       o.correlation,
+       o.most_common_elems::text AS most_common_elems,
+       o.most_common_elem_freqs, o.elem_count_histogram
+  FROM pg_stats_ext_exprs AS o
+  WHERE o.statistics_schemaname = 'stats_import' AND
+    o.statistics_name = 'test_stat';
+ inherited | null_frac | avg_width | n_distinct | most_common_vals | most_common_freqs | histogram_bounds | correlation | most_common_elems | most_common_elem_freqs | elem_count_histogram 
+-----------+-----------+-----------+------------+------------------+-------------------+------------------+-------------+-------------------+------------------------+----------------------
+(0 rows)
+
 DROP SCHEMA stats_import CASCADE;
 NOTICE:  drop cascades to 6 other objects
 DETAIL:  drop cascades to type stats_import.complex_type

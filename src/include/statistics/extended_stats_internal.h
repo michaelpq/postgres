@@ -135,4 +135,9 @@ extern Selectivity mcv_clause_selectivity_or(PlannerInfo *root,
 											 Selectivity *overlap_basesel,
 											 Selectivity *totalsel);
 
+extern Datum import_mcvlist(HeapTuple tup, int elevel, int numattrs,
+							Oid *atttypids, int32 *atttypmods, Oid *atttypcolls,
+							int nitems, Datum *mcv_elems, bool *mcv_nulls,
+							bool *mcv_elem_nulls, float8 *freqs, float8 *base_freqs);
+
 #endif							/* EXTENDED_STATS_INTERNAL_H */

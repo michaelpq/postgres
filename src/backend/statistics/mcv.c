@@ -2171,3 +2171,147 @@ mcv_clause_selectivity_or(PlannerInfo *root, StatisticExtInfo *stat,
 
 	return s;
 }
+
+/*
+  * The MCV is an array of records, but this is expected as 4 separate arrays.
+  * It is not possible to have a generic input function for pg_mcv_list
+  * because the most_common_values is a composite type with element types
+  * defined by the specific statistics object.
+  */
+Datum
+import_mcvlist(HeapTuple tup, int elevel, int numattrs, Oid *atttypids,
+			   int32 *atttypmods, Oid *atttypcolls, int nitems,
+			   Datum *mcv_elems, bool *mcv_nulls,
+			   bool *mcv_elem_nulls, float8 *freqs, float8 *base_freqs)
+{
+	MCVList    *mcvlist;
+	bytea	   *bytes;
+
+	HeapTuple  *vatuples;
+	VacAttrStats **vastats;
+
+	/*
+	 * Allocate the MCV list structure, set the global parameters.
+	 */
+	mcvlist = (MCVList *) palloc0(offsetof(MCVList, items) +
+								  (sizeof(MCVItem) * nitems));
+
+	mcvlist->magic = STATS_MCV_MAGIC;
+	mcvlist->type = STATS_MCV_TYPE_BASIC;
+	mcvlist->ndimensions = numattrs;
+	mcvlist->nitems = nitems;
+
+	/* Set the values for the 1-D arrays and allocate space for the 2-D arrays */
+	for (int i = 0; i < nitems; i++)
+	{
+		MCVItem    *item = &mcvlist->items[i];
+
+		item->frequency = freqs[i];
+		item->base_frequency = base_freqs[i];
+		item->values = (Datum *) palloc0_array(Datum, numattrs);
+		item->isnull = (bool *) palloc0_array(bool, numattrs);
+	}
+
+	/* Walk through each dimension */
+	for (int j = 0; j < numattrs; j++)
+	{
+		FmgrInfo	finfo;
+		Oid			ioparam;
+		Oid			infunc;
+		int			index = j;
+
+		getTypeInputInfo(atttypids[j], &infunc, &ioparam);
+		fmgr_info(infunc, &finfo);
+
+		/* store info about data type OIDs */
+		mcvlist->types[j] = atttypids[j];
+
+		for (int i = 0; i < nitems; i++)
+		{
+			MCVItem    *item = &mcvlist->items[i];
+
+			/* These should be in agreement, but just to be safe check both */
+			if (mcv_elem_nulls[index] || mcv_nulls[index])
+			{
+				item->values[j] = (Datum) 0;
+				item->isnull[j] = true;
+			}
+			else
+			{
+				char	   *s = TextDatumGetCString(mcv_elems[index]);
+				ErrorSaveContext escontext = {T_ErrorSaveContext};
+
+				if (!InputFunctionCallSafe(&finfo, s, ioparam, atttypmods[j],
+										   (Node *) &escontext, &item->values[j]))
+				{
+					ereport(elevel,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							 errmsg("MCV elemement \"%s\" does not match expected input type.", s)));
+					return (Datum) 0;
+				}
+
+				pfree(s);
+			}
+
+			index += numattrs;
+		}
+	}
+
+	/*
+	 * The function statext_mcv_serialize() requires an array of pointers to
+	 * VacAttrStats records, but only a few fields within those records have
+	 * to be filled out.
+	 */
+	vastats = (VacAttrStats **) palloc0_array(VacAttrStats *, numattrs);
+	vatuples = (HeapTuple *) palloc0_array(HeapTuple, numattrs);
+
+	for (int i = 0; i < numattrs; i++)
+	{
+		Oid			typid = atttypids[i];
+		HeapTuple	typtuple;
+
+		typtuple = SearchSysCacheCopy1(TYPEOID, ObjectIdGetDatum(typid));
+
+		if (!HeapTupleIsValid(typtuple))
+			elog(ERROR, "cache lookup failed for type %u", typid);
+
+		vatuples[i] = typtuple;
+
+		vastats[i] = palloc0_object(VacAttrStats);
+
+		vastats[i]->attrtype = (Form_pg_type) GETSTRUCT(typtuple);
+		vastats[i]->attrtypid = typid;
+		vastats[i]->attrcollid = atttypcolls[i];
+	}
+
+	bytes = statext_mcv_serialize(mcvlist, vastats);
+
+	for (int i = 0; i < numattrs; i++)
+	{
+		pfree(vatuples[i]);
+		pfree(vastats[i]);
+	}
+	pfree((void *) vatuples);
+	pfree((void *) vastats);
+
+	if (bytes == NULL)
+	{
+		ereport(elevel,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("Unable to import mcv list")));
+		return (Datum) 0;
+	}
+
+	for (int i = 0; i < nitems; i++)
+	{
+		MCVItem    *item = &mcvlist->items[i];
+
+		pfree(item->values);
+		pfree(item->isnull);
+	}
+	pfree(mcvlist);
+	pfree(mcv_elems);
+	pfree(mcv_nulls);
+
+	return PointerGetDatum(bytes);
+}
