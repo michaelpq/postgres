@@ -2246,7 +2246,7 @@ import_mcvlist(HeapTuple tup, int elevel, int numattrs, Oid *atttypids,
 				{
 					ereport(elevel,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							 errmsg("MCV elemement \"%s\" does not match expected input type.", s)));
+							 errmsg("could not parse MCV element \"%s\": incorrect input type", s)));
 					return (Datum) 0;
 				}
 
@@ -2298,7 +2298,7 @@ import_mcvlist(HeapTuple tup, int elevel, int numattrs, Oid *atttypids,
 	{
 		ereport(elevel,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("Unable to import mcv list")));
+				 errmsg("could not import MCV list")));
 		return (Datum) 0;
 	}
 
