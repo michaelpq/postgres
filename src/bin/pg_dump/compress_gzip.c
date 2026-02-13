@@ -58,7 +58,7 @@ DeflateCompressorInit(CompressorState *cs)
 	z_streamp	zp;
 
 	gzipcs = pg_malloc0_object(GzipCompressorState);
-	zp = gzipcs->zp = (z_streamp) pg_malloc_object(z_stream);
+	zp = gzipcs->zp = pg_malloc_object(z_stream);
 	zp->zalloc = Z_NULL;
 	zp->zfree = Z_NULL;
 	zp->opaque = Z_NULL;
@@ -178,7 +178,7 @@ ReadDataFromArchiveGzip(ArchiveHandle *AH, CompressorState *cs)
 	char	   *buf;
 	size_t		buflen;
 
-	zp = (z_streamp) pg_malloc_object(z_stream);
+	zp = pg_malloc_object(z_stream);
 	zp->zalloc = Z_NULL;
 	zp->zfree = Z_NULL;
 	zp->opaque = Z_NULL;
