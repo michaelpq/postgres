@@ -652,9 +652,10 @@ ginbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	MarkBufferDirty(RootBuffer);
 
 
+	END_CRIT_SECTION();
+
 	UnlockReleaseBuffer(MetaBuffer);
 	UnlockReleaseBuffer(RootBuffer);
-	END_CRIT_SECTION();
 
 	/* count the root as first entry page */
 	buildstate.buildStats.nEntryPages++;
