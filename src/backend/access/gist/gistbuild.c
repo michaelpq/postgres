@@ -305,9 +305,9 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 		MarkBufferDirty(buffer);
 		PageSetLSN(page, GistBuildLSN);
 
-		UnlockReleaseBuffer(buffer);
-
 		END_CRIT_SECTION();
+
+		UnlockReleaseBuffer(buffer);
 
 		/* Scan the table, inserting all the tuples to the index. */
 		reltuples = table_index_build_scan(heap, index, indexInfo, true, true,
