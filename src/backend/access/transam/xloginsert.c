@@ -38,6 +38,7 @@
 #include "pg_trace.h"
 #include "replication/origin.h"
 #include "storage/bufmgr.h"
+#include "storage/read_stream.h"
 #include "storage/proc.h"
 #include "utils/memutils.h"
 #include "utils/pgstat_internal.h"
@@ -1296,6 +1297,8 @@ log_newpage_range(Relation rel, ForkNumber forknum,
 {
 	int			flags;
 	BlockNumber blkno;
+	BlockRangeReadStreamPrivate p;
+	ReadStream *stream;
 
 	flags = REGBUF_FORCE_IMAGE;
 	if (page_std)
@@ -1307,6 +1310,23 @@ log_newpage_range(Relation rel, ForkNumber forknum,
 	 * for each batch.
 	 */
 	XLogEnsureRecordSpace(XLR_MAX_BLOCK_ID - 1, 0);
+
+	/* Set up a streaming read for the range of blocks */
+	p.current_blocknum = startblk;
+	p.last_exclusive = endblk;
+
+	/*
+	 * It is safe to use batchmode as block_range_read_stream_cb takes no
+	 * locks.
+	 */
+	stream = read_stream_begin_relation(READ_STREAM_MAINTENANCE |
+										READ_STREAM_USE_BATCHING,
+										NULL,
+										rel,
+										forknum,
+										block_range_read_stream_cb,
+										&p,
+										0);
 
 	blkno = startblk;
 	while (blkno < endblk)
@@ -1322,8 +1342,7 @@ log_newpage_range(Relation rel, ForkNumber forknum,
 		nbufs = 0;
 		while (nbufs < XLR_MAX_BLOCK_ID && blkno < endblk)
 		{
-			Buffer		buf = ReadBufferExtended(rel, forknum, blkno,
-												 RBM_NORMAL, NULL);
+			Buffer		buf = read_stream_next_buffer(stream, NULL);
 
 			LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
 
@@ -1363,6 +1382,9 @@ log_newpage_range(Relation rel, ForkNumber forknum,
 		for (i = 0; i < nbufs; i++)
 			UnlockReleaseBuffer(bufpack[i]);
 	}
+
+	Assert(read_stream_next_buffer(stream, NULL) == InvalidBuffer);
+	read_stream_end(stream);
 }
 
 /*
