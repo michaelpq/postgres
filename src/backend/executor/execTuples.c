@@ -512,7 +512,7 @@ tts_minimal_init(TupleTableSlot *slot)
 
 	/*
 	 * Initialize the heap tuple pointer to access attributes of the minimal
-	 * tuple contained in the slot as if its a heap tuple.
+	 * tuple contained in the slot as if it's a heap tuple.
 	 */
 	mslot->tuple = &mslot->minhdr;
 }
