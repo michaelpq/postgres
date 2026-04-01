@@ -3747,7 +3747,7 @@ endforeach
 # find and report conflicting files
 foreach build_path : potentially_conflicting_files
   build_path = host_system == 'windows' ? fs.as_posix(build_path) : build_path
-  # str.replace is in 0.56
+  # str.replace is in meson 0.58
   src_path = meson.current_source_dir() / build_path.split(meson.current_build_dir() / '')[1]
   if fs.exists(src_path) or fs.is_symlink(src_path)
     conflicting_files += src_path
