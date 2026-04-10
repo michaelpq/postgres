@@ -1091,7 +1091,7 @@ array_in_safe(FmgrInfo *array_in, const char *s, Oid typid, int32 typmod,
  * still return a legit tuple datum.
  *
  * Set pg_statistic_ok to true if all of the values found in the container
- * were imported without issue.  pg_statistic_ok is swicthed to "true" once
+ * were imported without issue.  pg_statistic_ok is switched to "true" once
  * the full pg_statistic tuple has been built and validated.
  */
 static Datum
