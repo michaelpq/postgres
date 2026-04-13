@@ -1,0 +1,49 @@
+--
+-- Tests for PGLZ compression
+--
+
+-- directory paths and dlsuffix are passed to us in environment variables
+\getenv libdir PG_LIBDIR
+\getenv dlsuffix PG_DLSUFFIX
+
+\set regresslib :libdir '/regress' :dlsuffix
+
+CREATE FUNCTION test_pglz_compress(bytea)
+  RETURNS bytea
+  AS :'regresslib' LANGUAGE C STRICT;
+CREATE FUNCTION test_pglz_decompress(bytea, int4, bool)
+  RETURNS bytea
+  AS :'regresslib' LANGUAGE C STRICT;
+
+-- Round-trip with pglz: compress then decompress.
+SELECT test_pglz_decompress(test_pglz_compress(
+    decode(repeat('abcd', 100), 'escape')), 400, false) =
+    decode(repeat('abcd', 100), 'escape') AS roundtrip_ok;
+SELECT test_pglz_decompress(test_pglz_compress(
+    decode(repeat('abcd', 100), 'escape')), 400, true) =
+    decode(repeat('abcd', 100), 'escape') AS roundtrip_ok;
+
+-- Decompression with rawsize too large, fails to fill the destination
+-- buffer.
+SELECT test_pglz_decompress(test_pglz_compress(
+    decode(repeat('abcd', 100), 'escape')), 500, true);
+
+-- Decompression with rawsize too small, fails with source not fully
+-- consumed.
+SELECT test_pglz_decompress(test_pglz_compress(
+    decode(repeat('abcd', 100), 'escape')), 100, true);
+
+-- Corrupted compressed data.  The control byte is set with match tag bit,
+-- but only 1 byte follows.
+SELECT test_pglz_decompress('\x01ff'::bytea, 1024, false);
+SELECT test_pglz_decompress('\x01ff'::bytea, 1024, true);
+
+-- Corrupted compressed data.  Control byte with match tag bit set, where
+-- no data follows.
+SELECT length(test_pglz_decompress('\x01'::bytea, 1024, false)) AS ctrl_only_len;
+SELECT test_pglz_decompress('\x01'::bytea, 1024, true);
+
+-- Corrupted compressed data.  The match tag encodes len=18 (aka the
+-- extension byte is needed) but there is no data.
+SELECT test_pglz_decompress('\x010f01'::bytea, 1024, false);
+SELECT test_pglz_decompress('\x010f01'::bytea, 1024, true);
