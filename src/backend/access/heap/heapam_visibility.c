@@ -192,7 +192,7 @@ SetHintBitsExt(HeapTupleHeader tuple, Buffer buffer,
 }
 
 /*
- * Simple wrapper around SetHintBitExt(), use when operating on a single
+ * Simple wrapper around SetHintBitsExt(), use when operating on a single
  * tuple.
  */
 static inline void
