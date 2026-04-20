@@ -2305,26 +2305,10 @@ process_pm_child_exit(void)
 			}
 
 			/*
-			 * Unexpected exit of startup process (including FATAL exit)
-			 * during PM_STARTUP is treated as catastrophic. There are no
-			 * other processes running yet, so we can just exit.
-			 */
-			if (pmState == PM_STARTUP &&
-				StartupStatus != STARTUP_SIGNALED &&
-				!EXIT_STATUS_0(exitstatus))
-			{
-				LogChildExit(LOG, _("startup process"),
-							 pid, exitstatus);
-				ereport(LOG,
-						(errmsg("aborting startup due to startup process failure")));
-				ExitPostmaster(1);
-			}
-
-			/*
-			 * After PM_STARTUP, any unexpected exit (including FATAL exit) of
-			 * the startup process is catastrophic, so kill other children,
-			 * and set StartupStatus so we don't try to reinitialize after
-			 * they're gone.  Exception: if StartupStatus is STARTUP_SIGNALED,
+			 * Any unexpected exit (including FATAL exit) of the startup
+			 * process is catastrophic, so kill other children, and set
+			 * StartupStatus so we don't try to reinitialize after they're
+			 * gone.  Exception: if StartupStatus is STARTUP_SIGNALED,
 			 * then we previously sent the startup process a SIGQUIT; so
 			 * that's probably the reason it died, and we do want to try to
 			 * restart in that case.
@@ -2780,12 +2764,9 @@ HandleFatalError(QuitSignalReason reason, bool consider_sigabrt)
 			/* shouldn't have any children */
 			Assert(false);
 			break;
-		case PM_STARTUP:
-			/* should have been handled in process_pm_child_exit */
-			Assert(false);
-			break;
 
 			/* wait for children to die */
+		case PM_STARTUP:
 		case PM_RECOVERY:
 		case PM_HOT_STANDBY:
 		case PM_RUN:
