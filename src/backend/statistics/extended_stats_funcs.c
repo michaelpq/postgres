@@ -571,7 +571,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 
 	/*
 	 * Either of these statistic types requires that we supply a semi-filled
-	 * VacAttrStatP array.
+	 * VacAttrStatsP array.
 	 *
 	 * It is not possible to use the existing lookup_var_attr_stats() and
 	 * examine_attribute() because these functions will skip attributes where
@@ -586,7 +586,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 
 		/*
 		 * The leading stxkeys are attribute numbers up through numattnums.
-		 * These keys must be in ascending AttNumber order, but we do not rely
+		 * These keys must be in ascending AttrNumber order, but we do not rely
 		 * on that.
 		 */
 		for (int i = 0; i < numattnums; i++)
@@ -724,7 +724,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		/*
 		 * Generate the expressions array.
 		 *
-		 * The attytypids, attytypmods, and atttypcolls arrays have all the
+		 * The atttypids, atttypmods, and atttypcolls arrays have all the
 		 * regular attributes listed first, so we can pass those arrays with a
 		 * start point after the last regular attribute.  There are numexprs
 		 * elements remaining.
@@ -1307,10 +1307,6 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 	 * if they aren't then we need to reject that stakind completely.
 	 * Currently we go a step further and reject the expression array
 	 * completely.
-	 *
-	 * Once it is established that the pairs are in NULL/NOT-NULL alignment,
-	 * we can test either expr_nulls[] value to see if the stakind has
-	 * value(s) that we can set or not.
 	 */
 
 	if (found[MOST_COMMON_VALS_ELEM])
