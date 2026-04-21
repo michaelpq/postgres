@@ -114,7 +114,7 @@ pgpa_output_advice(StringInfo buf, pgpa_plan_walker_context *walker,
 	context.wrap_column = 76;
 
 	/*
-	 * Each piece of JOIN_ORDER() advice fully describes the join order for a
+	 * Each piece of JOIN_ORDER() advice fully describes the join order for
 	 * a single unrolled join. Merging is not permitted, because that would
 	 * change the meaning, e.g. SEQ_SCAN(a b c d) means simply that sequential
 	 * scans should be used for all of those relations, and is thus equivalent
