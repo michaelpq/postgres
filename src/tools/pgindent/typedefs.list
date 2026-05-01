@@ -3198,7 +3198,8 @@ TimingClockSourceType
 TmFromChar
 TmToChar
 ToastAttrInfo
-ToastCompressionId
+ToastCompressionGucValue
+ToastCompressionRegistryEntry
 ToastTupleContext
 ToastedAttribute
 TocEntry

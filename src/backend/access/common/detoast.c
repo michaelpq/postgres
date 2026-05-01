@@ -252,7 +252,7 @@ detoast_attr_slice(varlena *attr,
 			 * able to decompress the required slice.
 			 */
 			if (VARATT_EXTERNAL_GET_COMPRESS_METHOD(toast_pointer) ==
-				TOAST_PGLZ_COMPRESSION_ID)
+				TOAST_COMPRESS_PGLZ)
 				max_size = pglz_maximum_compressed_size(slicelimit, max_size);
 
 			/*
@@ -470,7 +470,7 @@ toast_fetch_datum_slice(varlena *attr, int32 sliceoffset,
 static varlena *
 toast_decompress_datum(varlena *attr)
 {
-	ToastCompressionId cmid;
+	uint32		cmid;
 
 	Assert(VARATT_IS_COMPRESSED(attr));
 
@@ -481,9 +481,9 @@ toast_decompress_datum(varlena *attr)
 	cmid = TOAST_COMPRESS_METHOD(attr);
 	switch (cmid)
 	{
-		case TOAST_PGLZ_COMPRESSION_ID:
+		case TOAST_COMPRESS_PGLZ:
 			return pglz_decompress_datum(attr);
-		case TOAST_LZ4_COMPRESSION_ID:
+		case TOAST_COMPRESS_LZ4:
 			return lz4_decompress_datum(attr);
 		default:
 			elog(ERROR, "invalid compression method id %d", cmid);
@@ -502,7 +502,7 @@ toast_decompress_datum(varlena *attr)
 static varlena *
 toast_decompress_datum_slice(varlena *attr, int32 slicelength)
 {
-	ToastCompressionId cmid;
+	uint32		cmid;
 
 	Assert(VARATT_IS_COMPRESSED(attr));
 
@@ -524,9 +524,9 @@ toast_decompress_datum_slice(varlena *attr, int32 slicelength)
 	cmid = TOAST_COMPRESS_METHOD(attr);
 	switch (cmid)
 	{
-		case TOAST_PGLZ_COMPRESSION_ID:
+		case TOAST_COMPRESS_PGLZ:
 			return pglz_decompress_datum_slice(attr, slicelength);
-		case TOAST_LZ4_COMPRESSION_ID:
+		case TOAST_COMPRESS_LZ4:
 			return lz4_decompress_datum_slice(attr, slicelength);
 		default:
 			elog(ERROR, "invalid compression method id %d", cmid);

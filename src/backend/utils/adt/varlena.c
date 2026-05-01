@@ -4205,7 +4205,7 @@ pg_column_compression(PG_FUNCTION_ARGS)
 {
 	int			typlen;
 	char	   *result;
-	ToastCompressionId cmid;
+	uint32		cmid;
 
 	/* On first call, get the input type's typlen, and save at *fn_extra */
 	if (fcinfo->flinfo->fn_extra == NULL)
@@ -4230,16 +4230,16 @@ pg_column_compression(PG_FUNCTION_ARGS)
 	/* get the compression method id stored in the compressed varlena */
 	cmid = toast_get_compression_id((varlena *)
 									DatumGetPointer(PG_GETARG_DATUM(0)));
-	if (cmid == TOAST_INVALID_COMPRESSION_ID)
+	if (cmid == TOAST_COMPRESS_INVALID)
 		PG_RETURN_NULL();
 
 	/* convert compression method id to compression method name */
 	switch (cmid)
 	{
-		case TOAST_PGLZ_COMPRESSION_ID:
+		case TOAST_COMPRESS_PGLZ:
 			result = "pglz";
 			break;
-		case TOAST_LZ4_COMPRESSION_ID:
+		case TOAST_COMPRESS_LZ4:
 			result = "lz4";
 			break;
 		default:

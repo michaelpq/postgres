@@ -46,6 +46,15 @@ typedef struct varatt_external
 #define VARLENA_EXTSIZE_MASK	((1U << VARLENA_EXTSIZE_BITS) - 1)
 
 /*
+ * On-disk compression method IDs stored in the high bits of va_tcinfo
+ * and va_extinfo.  Only 2 bits are available, so at most 4 values should
+ * be used here.
+ */
+#define TOAST_COMPRESS_PGLZ		0
+#define TOAST_COMPRESS_LZ4		1
+#define TOAST_COMPRESS_INVALID	2
+
+/*
  * varatt_indirect is a "TOAST pointer" representing an out-of-line
  * Datum that's stored in memory, not in an external toast relation.
  * The creator of such a Datum is entirely responsible that the referenced
@@ -519,8 +528,8 @@ VARATT_EXTERNAL_GET_COMPRESS_METHOD(varatt_external toast_pointer)
 /* This has to remain a macro; beware multiple evaluations! */
 #define VARATT_EXTERNAL_SET_SIZE_AND_COMPRESS_METHOD(toast_pointer, len, cm) \
 	do { \
-		Assert((cm) == TOAST_PGLZ_COMPRESSION_ID || \
-			   (cm) == TOAST_LZ4_COMPRESSION_ID); \
+		Assert((cm) == TOAST_COMPRESS_PGLZ || \
+			   (cm) == TOAST_COMPRESS_LZ4); \
 		((toast_pointer).va_extinfo = \
 			(len) | ((uint32) (cm) << VARLENA_EXTSIZE_BITS)); \
 	} while (0)

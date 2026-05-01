@@ -47,7 +47,7 @@ toast_compress_datum(Datum value, char cmethod)
 {
 	varlena    *tmp = NULL;
 	int32		valsize;
-	ToastCompressionId cmid = TOAST_INVALID_COMPRESSION_ID;
+	uint32		cmid = TOAST_COMPRESS_INVALID;
 
 	Assert(!VARATT_IS_EXTERNAL(DatumGetPointer(value)));
 	Assert(!VARATT_IS_COMPRESSED(DatumGetPointer(value)));
@@ -56,20 +56,21 @@ toast_compress_datum(Datum value, char cmethod)
 
 	/* If the compression method is not valid, use the current default */
 	if (!CompressionMethodIsValid(cmethod))
-		cmethod = default_toast_compression;
+		cmethod = ToastCompressionGucToMethod(default_toast_compression);
 
 	/*
-	 * Call appropriate compression routine for the compression method.
+	 * Translate the compression method char to the on-disk compression ID
+	 * via the Method Registry, then dispatch to the appropriate compression
+	 * routine.
 	 */
+	cmid = MethodToCompressionId(cmethod);
 	switch (cmethod)
 	{
 		case TOAST_PGLZ_COMPRESSION:
 			tmp = pglz_compress_datum((const varlena *) DatumGetPointer(value));
-			cmid = TOAST_PGLZ_COMPRESSION_ID;
 			break;
 		case TOAST_LZ4_COMPRESSION:
 			tmp = lz4_compress_datum((const varlena *) DatumGetPointer(value));
-			cmid = TOAST_LZ4_COMPRESSION_ID;
 			break;
 		default:
 			elog(ERROR, "invalid compression method %c", cmethod);
@@ -91,7 +92,7 @@ toast_compress_datum(Datum value, char cmethod)
 	if (VARSIZE(tmp) < valsize - 2)
 	{
 		/* successful compression */
-		Assert(cmid != TOAST_INVALID_COMPRESSION_ID);
+		Assert(cmid != TOAST_COMPRESS_INVALID);
 		TOAST_COMPRESS_SET_SIZE_AND_COMPRESS_METHOD(tmp, valsize, cmid);
 		return PointerGetDatum(tmp);
 	}

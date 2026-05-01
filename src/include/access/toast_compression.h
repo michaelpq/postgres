@@ -16,30 +16,21 @@
 /*
  * GUC support.
  *
- * default_toast_compression is an integer for purposes of the GUC machinery,
+ * default_toast_compression is an integer for purposes of the GUC machinery.
  * but the value is one of the char values defined below, as they appear in
- * pg_attribute.attcompression, e.g. TOAST_PGLZ_COMPRESSION.
+ * pg_attribute.attcompression, e.g. TOAST_PGLZ_COMPRESSION.  The on-disk
+ * compression ID values (TOAST_COMPRESS_*) are defined in varatt.h.
  */
 extern PGDLLIMPORT int default_toast_compression;
 
 /*
- * Built-in compression method ID.  The toast compression header will store
- * this in the first 2 bits of the raw length.  These built-in compression
- * method IDs are directly mapped to the built-in compression methods.
- *
- * Don't use these values for anything other than understanding the meaning
- * of the raw bits from a varlena; in particular, if the goal is to identify
- * a compression method, use the constants TOAST_PGLZ_COMPRESSION, etc.
- * below. We might someday support more than 4 compression methods, but
- * we can never have more than 4 values in this enum, because there are
- * only 2 bits available in the places where this is stored.
+ * Values for GUC default_toast_compression.
  */
-typedef enum ToastCompressionId
+typedef enum ToastCompressionGucValue
 {
-	TOAST_PGLZ_COMPRESSION_ID = 0,
-	TOAST_LZ4_COMPRESSION_ID = 1,
-	TOAST_INVALID_COMPRESSION_ID = 2,
-} ToastCompressionId;
+	TOAST_PGLZ_COMPRESSION_GUC = 0,
+	TOAST_LZ4_COMPRESSION_GUC = 1,
+} ToastCompressionGucValue;
 
 /*
  * Built-in compression methods.  pg_attribute will store these in the
@@ -57,9 +48,9 @@ typedef enum ToastCompressionId
  * compiled-in, use it, otherwise use pglz.
  */
 #ifdef USE_LZ4
-#define DEFAULT_TOAST_COMPRESSION	TOAST_LZ4_COMPRESSION
+#define DEFAULT_TOAST_COMPRESSION	TOAST_LZ4_COMPRESSION_GUC
 #else
-#define DEFAULT_TOAST_COMPRESSION	TOAST_PGLZ_COMPRESSION
+#define DEFAULT_TOAST_COMPRESSION	TOAST_PGLZ_COMPRESSION_GUC
 #endif
 
 /* pglz compression/decompression routines */
@@ -75,8 +66,16 @@ extern varlena *lz4_decompress_datum_slice(const varlena *value,
 										   int32 slicelength);
 
 /* other stuff */
-extern ToastCompressionId toast_get_compression_id(varlena *attr);
+extern uint32 toast_get_compression_id(varlena *attr);
 extern char CompressionNameToMethod(const char *compression);
 extern const char *GetCompressionMethodName(char method);
+
+/*
+ * Registry translation functions.  "cmid" is the on-disk varatt value.
+ */
+extern char ToastCompressionGucToMethod(ToastCompressionGucValue guc_value);
+extern uint32 MethodToCompressionId(char method);
+extern char CompressionIdToMethod(uint32 cmid);
+extern bool CompressionIdIsValid(uint32 cmid);
 
 #endif							/* TOAST_COMPRESSION_H */
