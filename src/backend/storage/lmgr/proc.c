@@ -924,7 +924,10 @@ static void
 ProcKill(int code, Datum arg)
 {
 	PGPROC	   *proc;
+	PGPROC	   *leader;
 	dlist_head *procgloballist;
+	bool		push_leader;
+	bool		push_self;
 
 	Assert(MyProc != NULL);
 
@@ -961,69 +964,121 @@ ProcKill(int code, Datum arg)
 	ConditionVariableCancelSleep();
 
 	/*
-	 * Detach from any lock group of which we are a member.  If the leader
-	 * exits before all other group members, its PGPROC will remain allocated
-	 * until the last group process exits; that process must return the
-	 * leader's PGPROC to the appropriate list.
+	 * Reset MyLatch to the process local one and disown the shared latch.
+	 * DisownLatch must happen before our PGPROC can appear on a freelist: a
+	 * newly-forked backend that pops our slot and calls OwnLatch() would
+	 * PANIC on a still-owned latch.  The lock-group block below preserves
+	 * that order -- see its comment.
+	 *
+	 * pgstat_reset_wait_event_storage() is intentionally deferred until after
+	 * the lock-group block (and any injection points inside it) so that
+	 * wait_event_info remains visible in our PGPROC slot while we may be
+	 * observed there.  It is safe to defer because our slot is not yet on any
+	 * freelist at this point.
 	 */
-	if (MyProc->lockGroupLeader != NULL)
+	SwitchBackToLocalLatch();
+	DisownLatch(&MyProc->procLatch);
+
+	proc = MyProc;
+	procgloballist = proc->procgloballist;
+
+	/*
+	 * Detach from any lock group of which we are a member, deciding under
+	 * leader_lwlock whether we (and possibly the leader) need to be pushed
+	 * onto a freelist.  The actual pushes happen below, under
+	 * ProcGlobal->freeProcsLock.
+	 *
+	 * Holding leader_lwlock across the decisions is what makes this safe:
+	 *
+	 * (a) The leader's "should I self-push?" choice and a follower's "should
+	 * I push the leader?" choice are both made inside the same leader_lwlock
+	 * critical section, so they cannot interleave.  (That interleaving was
+	 * the source of a double push.)
+	 *
+	 * (b) A follower only sets push_leader when it observes an empty group
+	 * after removing itself.  That can only happen if the leader has already
+	 * passed its own lwlock-held dlist_delete, which in turn happened after
+	 * the leader's DisownLatch above.  So by the time any pusher runs, the
+	 * PGPROC it is about to push has already disowned its latch.
+	 */
+	push_leader = false;
+	push_self = true;
+	leader = NULL;
+
+	if (proc->lockGroupLeader != NULL)
 	{
-		PGPROC	   *leader = MyProc->lockGroupLeader;
-		LWLock	   *leader_lwlock = LockHashPartitionLockByProc(leader);
+		LWLock	   *leader_lwlock;
+
+		leader = proc->lockGroupLeader;
+		leader_lwlock = LockHashPartitionLockByProc(leader);
 
 		LWLockAcquire(leader_lwlock, LW_EXCLUSIVE);
 		Assert(!dlist_is_empty(&leader->lockGroupMembers));
-		dlist_delete(&MyProc->lockGroupLink);
+		dlist_delete(&proc->lockGroupLink);
 		if (dlist_is_empty(&leader->lockGroupMembers))
 		{
 			leader->lockGroupLeader = NULL;
-			if (leader != MyProc)
+			if (leader != proc)
 			{
-				procgloballist = leader->procgloballist;
-
-				/* Leader exited first; return its PGPROC. */
-				SpinLockAcquire(&ProcGlobal->freeProcsLock);
-				dlist_push_head(procgloballist, &leader->freeProcsLink);
-				SpinLockRelease(&ProcGlobal->freeProcsLock);
+				/*
+				 * We are the last follower and the leader exited earlier; its
+				 * PGPROC is still allocated and must be pushed here.
+				 */
+				push_leader = true;
+				proc->lockGroupLeader = NULL;
 			}
+			/* else: leader == proc; the clear above covered us */
 		}
-		else if (leader != MyProc)
-			MyProc->lockGroupLeader = NULL;
+		else if (leader != proc)
+		{
+			/* Non-last follower; leader still present in the group. */
+			proc->lockGroupLeader = NULL;
+		}
+		else
+		{
+			/*
+			 * We are the leader and followers remain.  Skip our own push;
+			 * the last follower to exit will push us.  Leave
+			 * proc->lockGroupLeader set until that point so InitProcess's
+			 * freshly-picked-up invariant (lockGroupLeader == NULL) is
+			 * re-established only when the PGPROC is actually free.
+			 */
+			push_self = false;
+		}
 		LWLockRelease(leader_lwlock);
+		/*
+		 * Test hooks for src/test/modules/prockill_race.  Synchronize
+		 * concurrent ProcKill paths in a lock group; two names are used so
+		 * a controller can attach a PID-scoped "wait" action per name.
+		 */
+		INJECTION_POINT("prockill-after-lockgroup-leader", NULL);
+		INJECTION_POINT("prockill-after-lockgroup-follower", NULL);
 	}
 
 	/*
-	 * Reset MyLatch to the process local one.  This is so that signal
-	 * handlers et al can continue using the latch after the shared latch
-	 * isn't ours anymore.
-	 *
-	 * Similarly, stop reporting wait events to MyProc->wait_event_info.
-	 *
-	 * After that clear MyProc and disown the shared latch.
+	 * Stop reporting wait events to MyProc->wait_event_info now that we are
+	 * done with any injection-point waits.  Do this before zeroing MyProc so
+	 * pgstat internals do not try to dereference it.
 	 */
-	SwitchBackToLocalLatch();
 	pgstat_reset_wait_event_storage();
 
-	proc = MyProc;
 	MyProc = NULL;
 	MyProcNumber = INVALID_PROC_NUMBER;
-	DisownLatch(&proc->procLatch);
 
 	/* Mark the proc no longer in use */
 	proc->pid = 0;
 	proc->vxid.procNumber = INVALID_PROC_NUMBER;
 	proc->vxid.lxid = InvalidTransactionId;
 
-	procgloballist = proc->procgloballist;
 	SpinLockAcquire(&ProcGlobal->freeProcsLock);
-
-	/*
-	 * If we're still a member of a locking group, that means we're a leader
-	 * which has somehow exited before its children.  The last remaining child
-	 * will release our PGPROC.  Otherwise, release it now.
-	 */
-	if (proc->lockGroupLeader == NULL)
+	if (push_leader)
 	{
+		/* Return leader PGPROC (and semaphore) to appropriate freelist */
+		dlist_push_head(leader->procgloballist, &leader->freeProcsLink);
+	}
+	if (push_self)
+	{
+		Assert(proc->lockGroupLeader == NULL);
 		/* Since lockGroupLeader is NULL, lockGroupMembers should be empty. */
 		Assert(dlist_is_empty(&proc->lockGroupMembers));
 
