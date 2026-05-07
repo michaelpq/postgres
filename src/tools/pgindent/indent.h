@@ -51,3 +51,4 @@ void	pr_comment(void);
 void	set_defaults(void);
 void	set_option(char *);
 void	set_profile(const char *);
+void	add_typedefs_from_file(const char *);

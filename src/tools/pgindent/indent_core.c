@@ -53,6 +53,8 @@ static char sccsid[] = "@(#)indent.c	5.17 (Berkeley) 6/7/93";
 #include "indent_codes.h"
 #include "indent.h"
 
+#define INDENT_VERSION	"2.1.2"
+
 static void bakcopy(void);
 static void indent_declaration(int cur_dec_ind, int tabs_to_var);
 
@@ -83,7 +85,6 @@ main(int argc, char **argv)
     int         type_code;	/* the type of token, returned by lexi */
 
     int         last_else = 0;	/* true iff last keyword was an else */
-    const char *profile_name = NULL;
     struct parser_state transient_state; /* a copy for lookup */
 
 
@@ -147,76 +148,86 @@ main(int argc, char **argv)
     tabs_to_var = 0;
 
     /*--------------------------------------------------*\
+    |   	HARDCODED POSTGRESQL INDENT STYLE	 |
+    \*--------------------------------------------------*/
+
+    /*
+     * Set all formatting parameters to the fixed PostgreSQL style.
+     * This replaces the old set_defaults() + set_option() approach.
+     */
+    blanklines_after_declarations = true;   /* -bad */
+    blanklines_after_procs = true;          /* -bap */
+    blanklines_before_blockcomments = true;  /* -bbb */
+    ps.leave_comma = false;                 /* -bc */
+    btype_2 = false;                        /* -bl */
+    ps.case_indent = 1.0;                   /* -cli1 */
+    else_endif_com_ind = 33;                /* -cp33 */
+    comment_delimiter_on_blankline = true;   /* -cdb */
+    cuddle_else = false;                    /* -nce */
+    ps.unindent_displace = 0;               /* -d0 */
+    ps.decl_indent = 12;                    /* -di12 */
+    format_col1_comments = false;           /* -nfc1 */
+    ps.ind_size = 4;                        /* -i4 */
+    max_col = 79;                           /* -l79 */
+    lineup_to_parens = true;                /* -lp */
+    lineup_to_parens_always = true;         /* -lpl */
+    ps.indent_parameters = false;           /* -nip */
+    space_after_cast = true;                /* -sac */
+    postgres_tab_rules = true;              /* -tpg */
+    tabsize = 4;                            /* -ts4 */
+
+    /* Defaults that pg_bsd_indent would normally set via set_defaults() */
+    ps.com_ind = 33;
+    star_comment_cont = true;
+    format_block_comments = true;
+    procnames_start_line = true;
+    ps.else_if = true;
+    function_brace_split = true;
+    use_tabs = true;
+    ps.local_decl_indent = -1;
+    ps.decl_com_ind = 0;
+    block_comment_max_col = 0;
+    continuation_indent = 0;
+    verbose = 0;
+
+    /*--------------------------------------------------*\
     |   		COMMAND LINE SCAN		 |
     \*--------------------------------------------------*/
 
-#ifdef undef
-    max_col = 78;		/* -l78 */
-    lineup_to_parens = 1;	/* -lp */
-    lineup_to_parens_always = 0;	/* -nlpl */
-    ps.ljust_decl = 0;		/* -ndj */
-    ps.com_ind = 33;		/* -c33 */
-    star_comment_cont = 1;	/* -sc */
-    ps.ind_size = 8;		/* -i8 */
-    verbose = 0;
-    ps.decl_indent = 16;	/* -di16 */
-    ps.local_decl_indent = -1;	/* if this is not set to some nonnegative value
-				 * by an arg, we will set this equal to
-				 * ps.decl_ind */
-    ps.indent_parameters = 1;	/* -ip */
-    ps.decl_com_ind = 0;	/* if this is not set to some positive value
-				 * by an arg, we will set this equal to
-				 * ps.com_ind */
-    btype_2 = 1;		/* -br */
-    cuddle_else = 1;		/* -ce */
-    ps.unindent_displace = 0;	/* -d0 */
-    ps.case_indent = 0;		/* -cli0 */
-    format_block_comments = 1;	/* -fcb */
-    format_col1_comments = 1;	/* -fc1 */
-    procnames_start_line = 1;	/* -psl */
-    proc_calls_space = 0;	/* -npcs */
-    comment_delimiter_on_blankline = 1;	/* -cdb */
-    ps.leave_comma = 1;		/* -nbc */
-#endif
-
-    for (i = 1; i < argc; ++i)
-	if (strcmp(argv[i], "-npro") == 0)
-	    break;
-	else if (argv[i][0] == '-' && argv[i][1] == 'P' && argv[i][2] != '\0')
-	    profile_name = argv[i];	/* non-empty -P (set profile) */
-    set_defaults();
-    if (i >= argc)
-	set_profile(profile_name);
-
     for (i = 1; i < argc; ++i) {
-
-	/*
-	 * look thru args (if any) for changes to defaults
-	 */
-	if (argv[i][0] != '-') {/* no flag on parameter */
-	    if (input == NULL) {	/* we must have the input file */
-		in_name = argv[i];	/* remember name of input file */
+	if (argv[i][0] != '-') {
+	    if (input == NULL) {
+		in_name = argv[i];
 		input = fopen(in_name, "r");
-		if (input == NULL)	/* check for open error */
+		if (input == NULL)
 			err(1, "%s", in_name);
 		continue;
 	    }
-	    else if (output == NULL) {	/* we have the output file */
-		out_name = argv[i];	/* remember name of output file */
-		if (strcmp(in_name, out_name) == 0) {	/* attempt to overwrite
-							 * the file */
+	    else if (output == NULL) {
+		out_name = argv[i];
+		if (strcmp(in_name, out_name) == 0)
 		    errx(1, "input and output files must be different");
-		}
 		output = fopen(out_name, "wb");
-		if (output == NULL)	/* check for create error */
+		if (output == NULL)
 			err(1, "%s", out_name);
 		continue;
 	    }
 	    errx(1, "unknown parameter: %s", argv[i]);
 	}
-	else
-	    set_option(argv[i]);
-    }				/* end of for */
+	else if (argv[i][1] == 'T' && argv[i][2] != '\0') {
+	    add_typename(&argv[i][2]);
+	}
+	else if (argv[i][1] == 'U' && argv[i][2] != '\0') {
+	    add_typedefs_from_file(&argv[i][2]);
+	}
+	else if (strcmp(argv[i], "--version") == 0) {
+	    printf("pgindent (PostgreSQL) %s\n", INDENT_VERSION);
+	    exit(0);
+	}
+	else {
+	    errx(1, "unknown parameter: %s", argv[i]);
+	}
+    }
     if (input == NULL)
 	input = stdin;
     if (output == NULL) {
