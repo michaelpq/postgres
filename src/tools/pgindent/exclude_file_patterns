@@ -54,9 +54,22 @@ src/pl/plperl/ppport\.h$
 src/pl/plperl/SPI\.c$
 src/pl/plperl/Util\.c$
 #
-# pg_bsd_indent has its own, idiosyncratic indentation style.
-# We'll stick to that to permit comparison with the FreeBSD upstream.
-src/tools/pg_bsd_indent/.*
+# The consolidated pgindent tool includes modules inherited from
+# pg_bsd_indent that retain its idiosyncratic style for upstream comparison.
+# Only those inherited files are excluded; new modules (main.c, discover.c,
+# filter.c, typedefs.c, preprocess.c, postprocess.c, pgindent.h) conform
+# to pgindent style.
+src/tools/pgindent/indent_core\.c$
+src/tools/pgindent/io\.c$
+src/tools/pgindent/lexi\.c$
+src/tools/pgindent/parse\.c$
+src/tools/pgindent/pr_comment\.c$
+src/tools/pgindent/err\.c$
+src/tools/pgindent/err\.h$
+src/tools/pgindent/args\.c$
+src/tools/pgindent/indent\.h$
+src/tools/pgindent/indent_globs\.h$
+src/tools/pgindent/indent_codes\.h$
 #
 # Exclude any temporary installations that may be in the tree.
 /tmp_check/

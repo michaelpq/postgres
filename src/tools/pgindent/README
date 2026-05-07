@@ -1,9 +1,12 @@
 pgindent'ing the PostgreSQL source tree
 =======================================
 
-pgindent is used to maintain uniform layout style in our C and Perl code,
-and should be run for every commit. There are additional code beautification
-tasks which should be performed at least once per release cycle.
+pgindent is a self-contained C program used to maintain uniform layout style
+in our C code, and should be run for every commit. There are additional code
+beautification tasks which should be performed at least once per release cycle.
+
+The indentation engine (derived from FreeBSD's indent) is built into pgindent,
+so no separate binary needs to be installed.
 
 You might find this blog post interesting:
 http://adpgtech.blogspot.com/2015/05/running-pgindent-on-non-core-code-or.html
@@ -11,12 +14,15 @@ http://adpgtech.blogspot.com/2015/05/running-pgindent-on-non-core-code-or.html
 
 PREREQUISITES:
 
-1) Install pg_bsd_indent in your PATH.  Its source code is in the
-   sibling directory src/tools/pg_bsd_indent; see the directions
-   in that directory's README file.
+1) Build pgindent.  From the top of the source tree:
 
-2) Install perltidy.  Please be sure it is version 20230309 (older and newer
-   versions make different formatting choices, and we want consistency).
+	make -C src/tools/pgindent
+
+   The resulting binary is src/tools/pgindent/pgindent.
+
+2) Install perltidy (only needed for Perl code formatting via pgperltidy).
+   Please be sure it is version 20230309 (older and newer versions make
+   different formatting choices, and we want consistency).
    You can get the correct version from
    https://cpan.metacpan.org/authors/id/S/SH/SHANCOCK/
    To install, follow the usual install process for a Perl module
@@ -137,10 +143,7 @@ you're at it.
 BSD indent
 ----------
 
-We have standardized on FreeBSD's indent, and renamed it pg_bsd_indent.
-pg_bsd_indent does differ slightly from FreeBSD's version, mostly in
-being more easily portable to non-BSD platforms.  Find it in the
-sibling directory src/tools/pg_bsd_indent.
+The pgindent indentation engine is derived from FreeBSD's indent program.
 
 GNU indent, version 2.2.6, has several problems, and is not recommended.
 These bugs become pretty major when you are doing >500k lines of code.
