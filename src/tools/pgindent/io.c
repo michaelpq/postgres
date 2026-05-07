@@ -32,7 +32,7 @@
 #if 0
 #ifndef lint
 static char sccsid[] = "@(#)io.c	8.1 (Berkeley) 6/6/93";
-#endif /* not lint */
+#endif							/* not lint */
 #endif
 
 #include "c.h"
@@ -45,216 +45,240 @@ static char sccsid[] = "@(#)io.c	8.1 (Berkeley) 6/6/93";
 #include "indent_globs.h"
 #include "indent.h"
 
-int         comment_open;
-static int  paren_target;
+int			comment_open;
+static int	paren_target;
 
-static char *lookahead_buf;	/* malloc'd buffer, or NULL initially */
-static char *lookahead_buf_end;	/* end+1 of allocated space */
+static char *lookahead_buf;		/* malloc'd buffer, or NULL initially */
+static char *lookahead_buf_end; /* end+1 of allocated space */
 static char *lookahead_start;	/* => next char for fill_buffer() to fetch */
-static char *lookahead_ptr;	/* => next char for lookahead() to fetch */
-static char *lookahead_end;	/* last+1 valid char in lookahead_buf */
-static char *lookahead_bp_save;	/* lookahead position in bp_save, if any */
+static char *lookahead_ptr;		/* => next char for lookahead() to fetch */
+static char *lookahead_end;		/* last+1 valid char in lookahead_buf */
+static char *lookahead_bp_save; /* lookahead position in bp_save, if any */
 
-static int pad_output(int current, int target);
+static int	pad_output(int current, int target);
 
 void
 dump_line(void)
-{				/* dump_line is the routine that actually
-				 * effects the printing of the new source. It
-				 * prints the label section, followed by the
-				 * code section with the appropriate nesting
-				 * level, followed by any comments */
-    int cur_col,
-                target_col = 1;
-    static int  not_first_line;
+{								/* dump_line is the routine that actually
+								 * effects the printing of the new source. It
+								 * prints the label section, followed by the
+								 * code section with the appropriate nesting
+								 * level, followed by any comments */
+	int			cur_col,
+				target_col = 1;
+	static int	not_first_line;
 
-    if (ps.procname[0]) {
-	ps.ind_level = 0;
-	ps.procname[0] = 0;
-    }
-    if (s_code == e_code && s_lab == e_lab && s_com == e_com) {
-	if (suppress_blanklines > 0)
-	    suppress_blanklines--;
-	else {
-	    ps.bl_line = true;
-	    n_real_blanklines++;
+	if (ps.procname[0])
+	{
+		ps.ind_level = 0;
+		ps.procname[0] = 0;
 	}
-    }
-    else if (!inhibit_formatting) {
-	suppress_blanklines = 0;
-	ps.bl_line = false;
-	if (prefix_blankline_requested && not_first_line) {
-	    if (swallow_optional_blanklines) {
-		if (n_real_blanklines == 1)
-		    n_real_blanklines = 0;
-	    }
-	    else {
-		if (n_real_blanklines == 0)
-		    n_real_blanklines = 1;
-	    }
-	}
-	while (--n_real_blanklines >= 0)
-	    putc('\n', output);
-	n_real_blanklines = 0;
-	if (ps.ind_level == 0)
-	    ps.ind_stmt = 0;	/* this is a class A kludge. don't do
-				 * additional statement indentation if we are
-				 * at bracket level 0 */
-
-	if (e_lab != s_lab || e_code != s_code)
-	    ++code_lines;	/* keep count of lines with code */
-
-
-	if (e_lab != s_lab) {	/* print lab, if any */
-	    if (comment_open) {
-		comment_open = 0;
-		fprintf(output, ".*/\n");
-	    }
-	    while (e_lab > s_lab && (e_lab[-1] == ' ' || e_lab[-1] == '\t'))
-		e_lab--;
-	    *e_lab = '\0';
-	    cur_col = pad_output(1, compute_label_target());
-	    if (s_lab[0] == '#' && (strncmp(s_lab, "#else", 5) == 0
-				    || strncmp(s_lab, "#endif", 6) == 0)) {
-		char *s = s_lab;
-		if (e_lab[-1] == '\n') e_lab--;
-		do putc(*s++, output);
-		while (s < e_lab && 'a' <= *s && *s<='z');
-		while ((*s == ' ' || *s == '\t') && s < e_lab)
-		    s++;
-		if (s < e_lab)
-		    fprintf(output, s[0]=='/' && s[1]=='*' ? "\t%.*s" : "\t/* %.*s */",
-			    (int)(e_lab - s), s);
-	    }
-	    else fprintf(output, "%.*s", (int)(e_lab - s_lab), s_lab);
-	    cur_col = count_spaces(cur_col, s_lab);
-	}
-	else
-	    cur_col = 1;	/* there is no label section */
-
-	ps.pcase = false;
-
-	if (s_code != e_code) {	/* print code section, if any */
-	    char *p;
-
-	    if (comment_open) {
-		comment_open = 0;
-		fprintf(output, ".*/\n");
-	    }
-	    target_col = compute_code_target();
-	    {
-		int i;
-
-		for (i = 0; i < ps.p_l_follow; i++)
-		    if (ps.paren_indents[i] >= 0)
-			ps.paren_indents[i] = -(ps.paren_indents[i] + target_col);
-	    }
-	    cur_col = pad_output(cur_col, target_col);
-	    for (p = s_code; p < e_code; p++)
-		if (*p == (char) 0200)
-		    fprintf(output, "%d", target_col * 7);
+	if (s_code == e_code && s_lab == e_lab && s_com == e_com)
+	{
+		if (suppress_blanklines > 0)
+			suppress_blanklines--;
 		else
-		    putc(*p, output);
-	    cur_col = count_spaces(cur_col, s_code);
+		{
+			ps.bl_line = true;
+			n_real_blanklines++;
+		}
 	}
-	if (s_com != e_com) {		/* print comment, if any */
-	    int target = ps.com_col;
-	    char *com_st = s_com;
+	else if (!inhibit_formatting)
+	{
+		suppress_blanklines = 0;
+		ps.bl_line = false;
+		if (prefix_blankline_requested && not_first_line)
+		{
+			if (swallow_optional_blanklines)
+			{
+				if (n_real_blanklines == 1)
+					n_real_blanklines = 0;
+			}
+			else
+			{
+				if (n_real_blanklines == 0)
+					n_real_blanklines = 1;
+			}
+		}
+		while (--n_real_blanklines >= 0)
+			putc('\n', output);
+		n_real_blanklines = 0;
+		if (ps.ind_level == 0)
+			ps.ind_stmt = 0;	/* this is a class A kludge. don't do
+								 * additional statement indentation if we are
+								 * at bracket level 0 */
 
-	    target += ps.comment_delta;
-	    while (*com_st == '\t')	/* consider original indentation in
-				     * case this is a box comment */
-		com_st++, target += tabsize;
-	    while (target <= 0)
-		if (*com_st == ' ')
-		    target++, com_st++;
-		else if (*com_st == '\t')
-		    target = tabsize * (1 + (target - 1) / tabsize) + 1, com_st++;
+		if (e_lab != s_lab || e_code != s_code)
+			++code_lines;		/* keep count of lines with code */
+
+
+		if (e_lab != s_lab)
+		{						/* print lab, if any */
+			if (comment_open)
+			{
+				comment_open = 0;
+				fprintf(output, ".*/\n");
+			}
+			while (e_lab > s_lab && (e_lab[-1] == ' ' || e_lab[-1] == '\t'))
+				e_lab--;
+			*e_lab = '\0';
+			cur_col = pad_output(1, compute_label_target());
+			if (s_lab[0] == '#' && (strncmp(s_lab, "#else", 5) == 0
+									|| strncmp(s_lab, "#endif", 6) == 0))
+			{
+				char	   *s = s_lab;
+
+				if (e_lab[-1] == '\n')
+					e_lab--;
+				do
+					putc(*s++, output);
+				while (s < e_lab && 'a' <= *s && *s <= 'z');
+				while ((*s == ' ' || *s == '\t') && s < e_lab)
+					s++;
+				if (s < e_lab)
+					fprintf(output, s[0] == '/' && s[1] == '*' ? "\t%.*s" : "\t/* %.*s */",
+							(int) (e_lab - s), s);
+			}
+			else
+				fprintf(output, "%.*s", (int) (e_lab - s_lab), s_lab);
+			cur_col = count_spaces(cur_col, s_lab);
+		}
 		else
-		    target = 1;
-	    if (cur_col > target) {	/* if comment can't fit on this line,
-				     * put it on next line */
-		putc('\n', output);
-		cur_col = 1;
+			cur_col = 1;		/* there is no label section */
+
+		ps.pcase = false;
+
+		if (s_code != e_code)
+		{						/* print code section, if any */
+			char	   *p;
+
+			if (comment_open)
+			{
+				comment_open = 0;
+				fprintf(output, ".*/\n");
+			}
+			target_col = compute_code_target();
+			{
+				int			i;
+
+				for (i = 0; i < ps.p_l_follow; i++)
+					if (ps.paren_indents[i] >= 0)
+						ps.paren_indents[i] = -(ps.paren_indents[i] + target_col);
+			}
+			cur_col = pad_output(cur_col, target_col);
+			for (p = s_code; p < e_code; p++)
+				if (*p == (char) 0200)
+					fprintf(output, "%d", target_col * 7);
+				else
+					putc(*p, output);
+			cur_col = count_spaces(cur_col, s_code);
+		}
+		if (s_com != e_com)
+		{						/* print comment, if any */
+			int			target = ps.com_col;
+			char	   *com_st = s_com;
+
+			target += ps.comment_delta;
+			while (*com_st == '\t') /* consider original indentation in case
+									 * this is a box comment */
+				com_st++, target += tabsize;
+			while (target <= 0)
+				if (*com_st == ' ')
+					target++, com_st++;
+				else if (*com_st == '\t')
+					target = tabsize * (1 + (target - 1) / tabsize) + 1, com_st++;
+				else
+					target = 1;
+			if (cur_col > target)
+			{					/* if comment can't fit on this line, put it
+								 * on next line */
+				putc('\n', output);
+				cur_col = 1;
+				++ps.out_lines;
+			}
+			while (e_com > com_st && isspace((unsigned char) e_com[-1]))
+				e_com--;
+			(void) pad_output(cur_col, target);
+			fwrite(com_st, e_com - com_st, 1, output);
+			ps.comment_delta = ps.n_comment_delta;
+			++ps.com_lines;		/* count lines with comments */
+		}
+		if (ps.use_ff)
+			putc('\014', output);
+		else
+			putc('\n', output);
 		++ps.out_lines;
-	    }
-	    while (e_com > com_st && isspace((unsigned char)e_com[-1]))
-		e_com--;
-	    (void)pad_output(cur_col, target);
-	    fwrite(com_st, e_com - com_st, 1, output);
-	    ps.comment_delta = ps.n_comment_delta;
-	    ++ps.com_lines;	/* count lines with comments */
+		if (ps.just_saw_decl == 1 && blanklines_after_declarations)
+		{
+			prefix_blankline_requested = 1;
+			ps.just_saw_decl = 0;
+		}
+		else
+			prefix_blankline_requested = postfix_blankline_requested;
+		postfix_blankline_requested = 0;
 	}
-	if (ps.use_ff)
-	    putc('\014', output);
-	else
-	    putc('\n', output);
-	++ps.out_lines;
-	if (ps.just_saw_decl == 1 && blanklines_after_declarations) {
-	    prefix_blankline_requested = 1;
-	    ps.just_saw_decl = 0;
-	}
-	else
-	    prefix_blankline_requested = postfix_blankline_requested;
-	postfix_blankline_requested = 0;
-    }
-    ps.decl_on_line = ps.in_decl;	/* if we are in the middle of a
-					 * declaration, remember that fact for
-					 * proper comment indentation */
-    /* next line should be indented if we have not completed this stmt, and
-     * either we are not in a declaration or we are in an initialization
-     * assignment; but not if we're within braces in an initialization,
-     * because that scenario is handled by other rules. */
-    ps.ind_stmt = ps.in_stmt &&
-	(!ps.in_decl || (ps.block_init && ps.block_init_level <= 0));
-    ps.use_ff = false;
-    ps.dumped_decl_indent = 0;
-    *(e_lab = s_lab) = '\0';	/* reset buffers */
-    *(e_code = s_code) = '\0';
-    *(e_com = s_com = combuf + 1) = '\0';
-    ps.ind_level = ps.i_l_follow;
-    ps.paren_level = ps.p_l_follow;
-    if (ps.paren_level > 0)
-	paren_target = -ps.paren_indents[ps.paren_level - 1];
-    not_first_line = 1;
+	ps.decl_on_line = ps.in_decl;	/* if we are in the middle of a
+									 * declaration, remember that fact for
+									 * proper comment indentation */
+
+	/*
+	 * next line should be indented if we have not completed this stmt, and
+	 * either we are not in a declaration or we are in an initialization
+	 * assignment; but not if we're within braces in an initialization,
+	 * because that scenario is handled by other rules.
+	 */
+	ps.ind_stmt = ps.in_stmt &&
+		(!ps.in_decl || (ps.block_init && ps.block_init_level <= 0));
+	ps.use_ff = false;
+	ps.dumped_decl_indent = 0;
+	*(e_lab = s_lab) = '\0';	/* reset buffers */
+	*(e_code = s_code) = '\0';
+	*(e_com = s_com = combuf + 1) = '\0';
+	ps.ind_level = ps.i_l_follow;
+	ps.paren_level = ps.p_l_follow;
+	if (ps.paren_level > 0)
+		paren_target = -ps.paren_indents[ps.paren_level - 1];
+	not_first_line = 1;
 }
 
 int
 compute_code_target(void)
 {
-    int target_col = ps.ind_size * ps.ind_level + 1;
+	int			target_col = ps.ind_size * ps.ind_level + 1;
 
-    if (ps.paren_level)
-	if (!lineup_to_parens)
-	    target_col += continuation_indent
-		* (2 * continuation_indent == ps.ind_size ? 1 : ps.paren_level);
-	else if (lineup_to_parens_always)
-	    target_col = paren_target;
-	else {
-	    int w;
-	    int t = paren_target;
+	if (ps.paren_level)
+		if (!lineup_to_parens)
+			target_col += continuation_indent
+				* (2 * continuation_indent == ps.ind_size ? 1 : ps.paren_level);
+		else if (lineup_to_parens_always)
+			target_col = paren_target;
+		else
+		{
+			int			w;
+			int			t = paren_target;
 
-	    if ((w = count_spaces(t, s_code) - max_col) > 0
-		    && count_spaces(target_col, s_code) <= max_col) {
-		t -= w + 1;
-		if (t > target_col)
-		    target_col = t;
-	    }
-	    else
-		target_col = t;
-	}
-    else if (ps.ind_stmt)
-	target_col += continuation_indent;
-    return target_col;
+			if ((w = count_spaces(t, s_code) - max_col) > 0
+				&& count_spaces(target_col, s_code) <= max_col)
+			{
+				t -= w + 1;
+				if (t > target_col)
+					target_col = t;
+			}
+			else
+				target_col = t;
+		}
+	else if (ps.ind_stmt)
+		target_col += continuation_indent;
+	return target_col;
 }
 
 int
 compute_label_target(void)
 {
-    return
-	ps.pcase ? (int) (case_ind * ps.ind_size) + 1
-	: *s_lab == '#' ? 1
-	: ps.ind_size * (ps.ind_level - label_offset) + 1;
+	return
+		ps.pcase ? (int) (case_ind * ps.ind_size) + 1
+		: *s_lab == '#' ? 1
+		: ps.ind_size * (ps.ind_level - label_offset) + 1;
 }
 
 /*
@@ -274,42 +298,47 @@ compute_label_target(void)
 int
 lookahead(void)
 {
-    /* First read whatever's in bp_save area */
-    if (lookahead_bp_save != NULL && lookahead_bp_save < be_save)
-	return (unsigned char) *lookahead_bp_save++;
-    /* Else, we have to examine and probably fill the main lookahead buffer */
-    while (lookahead_ptr >= lookahead_end) {
-	int	    i = getc(input);
+	/* First read whatever's in bp_save area */
+	if (lookahead_bp_save != NULL && lookahead_bp_save < be_save)
+		return (unsigned char) *lookahead_bp_save++;
+	/* Else, we have to examine and probably fill the main lookahead buffer */
+	while (lookahead_ptr >= lookahead_end)
+	{
+		int			i = getc(input);
 
-	if (i == EOF)
-	    return i;
-	if (i == '\0')
-	    continue;		/* fill_buffer drops nulls, and so do we */
+		if (i == EOF)
+			return i;
+		if (i == '\0')
+			continue;			/* fill_buffer drops nulls, and so do we */
 
-	if (lookahead_end >= lookahead_buf_end) {
-	    /* Need to allocate or enlarge lookahead_buf */
-	    char       *new_buf;
-	    size_t	req;
+		if (lookahead_end >= lookahead_buf_end)
+		{
+			/* Need to allocate or enlarge lookahead_buf */
+			char	   *new_buf;
+			size_t		req;
 
-	    if (lookahead_buf == NULL) {
-		req = 64;
-		new_buf = malloc(req);
-	    } else {
-		req = (lookahead_buf_end - lookahead_buf) * 2;
-		new_buf = realloc(lookahead_buf, req);
-	    }
-	    if (new_buf == NULL)
-		errx(1, "too much lookahead required");
-	    lookahead_start = new_buf + (lookahead_start - lookahead_buf);
-	    lookahead_ptr = new_buf + (lookahead_ptr - lookahead_buf);
-	    lookahead_end = new_buf + (lookahead_end - lookahead_buf);
-	    lookahead_buf = new_buf;
-	    lookahead_buf_end = new_buf + req;
+			if (lookahead_buf == NULL)
+			{
+				req = 64;
+				new_buf = malloc(req);
+			}
+			else
+			{
+				req = (lookahead_buf_end - lookahead_buf) * 2;
+				new_buf = realloc(lookahead_buf, req);
+			}
+			if (new_buf == NULL)
+				errx(1, "too much lookahead required");
+			lookahead_start = new_buf + (lookahead_start - lookahead_buf);
+			lookahead_ptr = new_buf + (lookahead_ptr - lookahead_buf);
+			lookahead_end = new_buf + (lookahead_end - lookahead_buf);
+			lookahead_buf = new_buf;
+			lookahead_buf_end = new_buf + req;
+		}
+
+		*lookahead_end++ = i;
 	}
-
-	*lookahead_end++ = i;
-    }
-    return (unsigned char) *lookahead_ptr++;
+	return (unsigned char) *lookahead_ptr++;
 }
 
 /*
@@ -319,10 +348,10 @@ lookahead(void)
 void
 lookahead_reset(void)
 {
-    /* Reset the main lookahead buffer */
-    lookahead_ptr = lookahead_start;
-    /* If bp_save isn't NULL, we need to scan that first */
-    lookahead_bp_save = bp_save;
+	/* Reset the main lookahead buffer */
+	lookahead_ptr = lookahead_start;
+	/* If bp_save isn't NULL, we need to scan that first */
+	lookahead_bp_save = bp_save;
 }
 
 /*
@@ -344,96 +373,112 @@ lookahead_reset(void)
  */
 void
 fill_buffer(void)
-{				/* this routine reads stuff from the input */
-    char *p;
-    int i;
-    FILE *f = input;
+{								/* this routine reads stuff from the input */
+	char	   *p;
+	int			i;
+	FILE	   *f = input;
 
-    if (bp_save != NULL) {	/* there is a partly filled input buffer left */
-	buf_ptr = bp_save;	/* do not read anything, just switch buffers */
-	buf_end = be_save;
-	bp_save = be_save = NULL;
-	lookahead_bp_save = NULL;
-	if (buf_ptr < buf_end)
-	    return;		/* only return if there is really something in
-				 * this buffer */
-    }
-    for (p = in_buffer;;) {
-	if (p >= in_buffer_limit) {
-	    int size = (in_buffer_limit - in_buffer) * 2 + 10;
-	    int offset = p - in_buffer;
-	    in_buffer = realloc(in_buffer, size);
-	    if (in_buffer == NULL)
-		errx(1, "input line too long");
-	    p = in_buffer + offset;
-	    in_buffer_limit = in_buffer + size - 2;
+	if (bp_save != NULL)
+	{							/* there is a partly filled input buffer left */
+		buf_ptr = bp_save;		/* do not read anything, just switch buffers */
+		buf_end = be_save;
+		bp_save = be_save = NULL;
+		lookahead_bp_save = NULL;
+		if (buf_ptr < buf_end)
+			return;				/* only return if there is really something in
+								 * this buffer */
 	}
-	if (lookahead_start < lookahead_end) {
-	    i = (unsigned char) *lookahead_start++;
-	} else {
-	    lookahead_start = lookahead_ptr = lookahead_end = lookahead_buf;
-	    if ((i = getc(f)) == EOF) {
-		*p++ = ' ';
-		*p++ = '\n';
-		had_eof = true;
-		break;
-	    }
-	}
-	if (i != '\0')
-	    *p++ = i;
-	if (i == '\n')
-	    break;
-    }
-    buf_ptr = in_buffer;
-    buf_end = p;
-    if (p - in_buffer > 2 && p[-2] == '/' && p[-3] == '*') {
-	if (in_buffer[3] == 'I' && strncmp(in_buffer, "/**INDENT**", 11) == 0)
-	    fill_buffer();	/* flush indent error message */
-	else {
-	    int         com = 0;
+	for (p = in_buffer;;)
+	{
+		if (p >= in_buffer_limit)
+		{
+			int			size = (in_buffer_limit - in_buffer) * 2 + 10;
+			int			offset = p - in_buffer;
 
-	    p = in_buffer;
-	    while (*p == ' ' || *p == '\t')
-		p++;
-	    if (*p == '/' && p[1] == '*') {
-		p += 2;
-		while (*p == ' ' || *p == '\t')
-		    p++;
-		if (p[0] == 'I' && p[1] == 'N' && p[2] == 'D' && p[3] == 'E'
-			&& p[4] == 'N' && p[5] == 'T') {
-		    p += 6;
-		    while (*p == ' ' || *p == '\t')
-			p++;
-		    if (*p == '*')
-			com = 1;
-		    else if (*p == 'O') {
-			if (*++p == 'N')
-			    p++, com = 1;
-			else if (*p == 'F' && *++p == 'F')
-			    p++, com = 2;
-		    }
-		    while (*p == ' ' || *p == '\t')
-			p++;
-		    if (p[0] == '*' && p[1] == '/' && p[2] == '\n' && com) {
-			if (s_com != e_com || s_lab != e_lab || s_code != e_code)
-			    dump_line();
-			if (!(inhibit_formatting = com - 1)) {
-			    n_real_blanklines = 0;
-			    postfix_blankline_requested = 0;
-			    prefix_blankline_requested = 0;
-			    suppress_blanklines = 1;
-			}
-		    }
+			in_buffer = realloc(in_buffer, size);
+			if (in_buffer == NULL)
+				errx(1, "input line too long");
+			p = in_buffer + offset;
+			in_buffer_limit = in_buffer + size - 2;
 		}
-	    }
+		if (lookahead_start < lookahead_end)
+		{
+			i = (unsigned char) *lookahead_start++;
+		}
+		else
+		{
+			lookahead_start = lookahead_ptr = lookahead_end = lookahead_buf;
+			if ((i = getc(f)) == EOF)
+			{
+				*p++ = ' ';
+				*p++ = '\n';
+				had_eof = true;
+				break;
+			}
+		}
+		if (i != '\0')
+			*p++ = i;
+		if (i == '\n')
+			break;
 	}
-    }
-    if (inhibit_formatting) {
-	p = in_buffer;
-	do
-	    putc(*p, output);
-	while (*p++ != '\n');
-    }
+	buf_ptr = in_buffer;
+	buf_end = p;
+	if (p - in_buffer > 2 && p[-2] == '/' && p[-3] == '*')
+	{
+		if (in_buffer[3] == 'I' && strncmp(in_buffer, "/**INDENT**", 11) == 0)
+			fill_buffer();		/* flush indent error message */
+		else
+		{
+			int			com = 0;
+
+			p = in_buffer;
+			while (*p == ' ' || *p == '\t')
+				p++;
+			if (*p == '/' && p[1] == '*')
+			{
+				p += 2;
+				while (*p == ' ' || *p == '\t')
+					p++;
+				if (p[0] == 'I' && p[1] == 'N' && p[2] == 'D' && p[3] == 'E'
+					&& p[4] == 'N' && p[5] == 'T')
+				{
+					p += 6;
+					while (*p == ' ' || *p == '\t')
+						p++;
+					if (*p == '*')
+						com = 1;
+					else if (*p == 'O')
+					{
+						if (*++p == 'N')
+							p++, com = 1;
+						else if (*p == 'F' && *++p == 'F')
+							p++, com = 2;
+					}
+					while (*p == ' ' || *p == '\t')
+						p++;
+					if (p[0] == '*' && p[1] == '/' && p[2] == '\n' && com)
+					{
+						if (s_com != e_com || s_lab != e_lab || s_code != e_code)
+							dump_line();
+						if (!(inhibit_formatting = com - 1))
+						{
+							n_real_blanklines = 0;
+							postfix_blankline_requested = 0;
+							prefix_blankline_requested = 0;
+							suppress_blanklines = 1;
+						}
+					}
+				}
+			}
+		}
+	}
+	if (inhibit_formatting)
+	{
+		p = in_buffer;
+		do
+			putc(*p, output);
+		while (*p++ != '\n');
+	}
 }
 
 /*
@@ -466,31 +511,35 @@ fill_buffer(void)
  */
 static int
 pad_output(int current, int target)
-			        /* writes tabs and blanks (if necessary) to
-				 * get the current output position up to the
-				 * target column */
-    /* current: the current column value */
-    /* target: position we want it at */
+
+ /*
+  * writes tabs and blanks (if necessary) to get the current output position
+  * up to the target column
+  */
+ /* current: the current column value */
+ /* target: position we want it at */
 {
-    int curr;			/* internal column pointer */
+	int			curr;			/* internal column pointer */
 
-    if (current >= target)
-	return (current);	/* line is already long enough */
-    curr = current;
-    if (use_tabs) {
-	int tcur;
+	if (current >= target)
+		return (current);		/* line is already long enough */
+	curr = current;
+	if (use_tabs)
+	{
+		int			tcur;
 
-	while ((tcur = tabsize * (1 + (curr - 1) / tabsize) + 1) <= target) {
-	    putc((!postgres_tab_rules ||
-		  tcur != curr + 1 ||
-		  target >= tcur + tabsize) ? '\t' : ' ', output);
-	    curr = tcur;
+		while ((tcur = tabsize * (1 + (curr - 1) / tabsize) + 1) <= target)
+		{
+			putc((!postgres_tab_rules ||
+				  tcur != curr + 1 ||
+				  target >= tcur + tabsize) ? '\t' : ' ', output);
+			curr = tcur;
+		}
 	}
-    }
-    while (curr++ < target)
-	putc(' ', output);	/* pad with final blanks */
+	while (curr++ < target)
+		putc(' ', output);		/* pad with final blanks */
 
-    return (target);
+	return (target);
 }
 
 /*
@@ -520,86 +569,93 @@ count_spaces_until(int cur, char *buffer, char *end)
  * printing the text in buffer starting at column "current"
  */
 {
-    char *buf;		/* used to look thru buffer */
+	char	   *buf;			/* used to look thru buffer */
 
-    for (buf = buffer; *buf != '\0' && buf != end; ++buf) {
-	switch (*buf) {
+	for (buf = buffer; *buf != '\0' && buf != end; ++buf)
+	{
+		switch (*buf)
+		{
 
-	case '\n':
-	case 014:		/* form feed */
-	    cur = 1;
-	    break;
+			case '\n':
+			case 014:			/* form feed */
+				cur = 1;
+				break;
 
-	case '\t':
-	    cur = tabsize * (1 + (cur - 1) / tabsize) + 1;
-	    break;
+			case '\t':
+				cur = tabsize * (1 + (cur - 1) / tabsize) + 1;
+				break;
 
-	case 010:		/* backspace */
-	    --cur;
-	    break;
+			case 010:			/* backspace */
+				--cur;
+				break;
 
-	default:
-	    ++cur;
-	    break;
-	}			/* end of switch */
-    }				/* end of for loop */
-    return (cur);
+			default:
+				++cur;
+				break;
+		}						/* end of switch */
+	}							/* end of for loop */
+	return (cur);
 }
 
 int
 count_spaces(int cur, char *buffer)
 {
-    return (count_spaces_until(cur, buffer, NULL));
+	return (count_spaces_until(cur, buffer, NULL));
 }
 
 void
 diag4(int level, const char *msg, int a, int b)
 {
-    if (level)
-	found_err = 1;
-    if (output == stdout) {
-	fprintf(stdout, "/**INDENT** %s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	fprintf(stdout, msg, a, b);
-	fprintf(stdout, " */\n");
-    }
-    else {
-	fprintf(stderr, "%s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	fprintf(stderr, msg, a, b);
-	fprintf(stderr, "\n");
-    }
+	if (level)
+		found_err = 1;
+	if (output == stdout)
+	{
+		fprintf(stdout, "/**INDENT** %s@%d: ", level == 0 ? "Warning" : "Error", line_no);
+		fprintf(stdout, msg, a, b);
+		fprintf(stdout, " */\n");
+	}
+	else
+	{
+		fprintf(stderr, "%s@%d: ", level == 0 ? "Warning" : "Error", line_no);
+		fprintf(stderr, msg, a, b);
+		fprintf(stderr, "\n");
+	}
 }
 
 void
 diag3(int level, const char *msg, int a)
 {
-    if (level)
-	found_err = 1;
-    if (output == stdout) {
-	fprintf(stdout, "/**INDENT** %s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	fprintf(stdout, msg, a);
-	fprintf(stdout, " */\n");
-    }
-    else {
-	fprintf(stderr, "%s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	fprintf(stderr, msg, a);
-	fprintf(stderr, "\n");
-    }
+	if (level)
+		found_err = 1;
+	if (output == stdout)
+	{
+		fprintf(stdout, "/**INDENT** %s@%d: ", level == 0 ? "Warning" : "Error", line_no);
+		fprintf(stdout, msg, a);
+		fprintf(stdout, " */\n");
+	}
+	else
+	{
+		fprintf(stderr, "%s@%d: ", level == 0 ? "Warning" : "Error", line_no);
+		fprintf(stderr, msg, a);
+		fprintf(stderr, "\n");
+	}
 }
 
 void
 diag2(int level, const char *msg)
 {
-    if (level)
-	found_err = 1;
-    if (output == stdout) {
-	fprintf(stdout, "/**INDENT** %s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	fprintf(stdout, "%s", msg);
-	fprintf(stdout, " */\n");
-    }
-    else {
-	fprintf(stderr, "%s@%d: ", level == 0 ? "Warning" : "Error", line_no);
-	fprintf(stderr, "%s", msg);
-	fprintf(stderr, "\n");
-    }
+	if (level)
+		found_err = 1;
+	if (output == stdout)
+	{
+		fprintf(stdout, "/**INDENT** %s@%d: ", level == 0 ? "Warning" : "Error", line_no);
+		fprintf(stdout, "%s", msg);
+		fprintf(stdout, " */\n");
+	}
+	else
+	{
+		fprintf(stderr, "%s@%d: ", level == 0 ? "Warning" : "Error", line_no);
+		fprintf(stderr, "%s", msg);
+		fprintf(stderr, "\n");
+	}
 }
-

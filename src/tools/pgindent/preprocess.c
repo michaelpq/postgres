@@ -76,13 +76,13 @@ preprocess(const char *source, size_t len, size_t *out_len)
 		if (line_end == NULL)
 			line_end = end;
 		else
-			line_end++;		/* include the newline */
+			line_end++;			/* include the newline */
 
 		line_len = line_end - line_start;
 
 		/*
-		 * Transform 5: Protect CATALOG(...) lines.
-		 * Pattern: ^CATALOG(...)$ -> wraps in comment markers
+		 * Transform 5: Protect CATALOG(...) lines. Pattern: ^CATALOG(...)$ ->
+		 * wraps in comment markers
 		 */
 		if (line_len >= 8 && strncmp(line_start, "CATALOG(", 8) == 0)
 		{
@@ -105,14 +105,15 @@ preprocess(const char *source, size_t len, size_t *out_len)
 		/*
 		 * Transform 4: Protect extern "C" braces.
 		 *
-		 * Pattern for opening brace:
-		 *   #ifdef __cplusplus\nextern "C"\n{ -> replace { with sentinel
+		 * Pattern for opening brace: #ifdef __cplusplus\nextern "C"\n{ ->
+		 * replace { with sentinel
 		 *
-		 * Pattern for closing brace:
-		 *   #ifdef __cplusplus\n} -> replace } with sentinel
+		 * Pattern for closing brace: #ifdef __cplusplus\n} -> replace } with
+		 * sentinel
 		 *
 		 * We track whether the previous line was "extern "C"" preceded by
-		 * #ifdef __cplusplus, and if the current line is just "{", replace it.
+		 * #ifdef __cplusplus, and if the current line is just "{", replace
+		 * it.
 		 */
 		if (prev_was_extern_c == 2)
 		{
@@ -139,8 +140,8 @@ preprocess(const char *source, size_t len, size_t *out_len)
 		}
 
 		/*
-		 * Check for closing brace after #ifdef __cplusplus (for the
-		 * closing of extern "C" block).
+		 * Check for closing brace after #ifdef __cplusplus (for the closing
+		 * of extern "C" block).
 		 */
 		if (prev_was_extern_c == 3)
 		{
@@ -235,9 +236,9 @@ preprocess(const char *source, size_t len, size_t *out_len)
 		for (const char *p = line_start; p < line_end; p++)
 		{
 			/*
-			 * Transform 3: Protect dash-block comments.
-			 * Converts the "slash-star space+ dashes" pattern to use
-			 * the X_X sentinel so indent won't reflow them.
+			 * Transform 3: Protect dash-block comments. Converts the
+			 * "slash-star space+ dashes" pattern to use the X_X sentinel so
+			 * indent won't reflow them.
 			 */
 			if (*p == '/' && (p + 1) < line_end && *(p + 1) == '*')
 			{
@@ -250,8 +251,14 @@ preprocess(const char *source, size_t len, size_t *out_len)
 						q++;
 					if ((q + 2) < line_end && q[0] == '-' && q[1] == '-' && q[2] == '-')
 					{
-						APPEND_STR("/*---X_X");
-						p = q + 2;	/* skip past "---", loop will advance past last '-' */
+						/*
+						 * Replace with the X_X sentinel so indent won't
+						 * reflow the comment block.  The Perl script does:
+						 * s!/\* +---!/* ---!g
+						 */
+						APPEND_STR("/* ---");
+						p = q + 2;	/* skip past "---", loop will advance past
+									 * last '-' */
 						at_line_start = 0;
 						continue;
 					}
@@ -259,15 +266,15 @@ preprocess(const char *source, size_t len, size_t *out_len)
 			}
 
 			/*
-			 * Transform 2: Convert C++ style comments to C style.
-			 * Only at the start of meaningful content on a line (after
-			 * optional whitespace).
+			 * Transform 2: Convert C++ style comments to C style. Only at the
+			 * start of meaningful content on a line (after optional
+			 * whitespace).
 			 */
 			if (*p == '/' && (p + 1) < line_end && *(p + 1) == '/' && at_line_start)
 			{
 				/* Convert the C++ comment to C style */
 				APPEND_STR("/* ");
-				p += 2;		/* skip the double-slash */
+				p += 2;			/* skip the double-slash */
 				/* Copy rest of line (excluding newline) */
 				while (p < line_end && *p != '\n')
 				{

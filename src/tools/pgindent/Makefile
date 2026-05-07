@@ -18,14 +18,18 @@ override CPPFLAGS := -I$(srcdir) $(CPPFLAGS)
 OBJS = \
 	$(WIN32RES) \
 	args.o \
+	discover.o \
 	err.o \
+	filter.o \
 	indent_core.o \
 	io.o \
 	lexi.o \
+	main.o \
 	parse.o \
 	postprocess.o \
 	pr_comment.o \
-	preprocess.o
+	preprocess.o \
+	typedefs.o
 
 $(OBJS): CFLAGS += $(PERMIT_MISSING_VARIABLE_DECLARATIONS)
 

@@ -74,13 +74,13 @@ postprocess(const char *source, size_t len, size_t *out_len)
 		if (line_end == NULL)
 			line_end = end;
 		else
-			line_end++;		/* include the newline */
+			line_end++;			/* include the newline */
 
 		line_len = line_end - line_start;
 
 		/*
-		 * Transform 1: Restore CATALOG lines.
-		 * Removes the comment wrapper added by preprocess.
+		 * Transform 1: Restore CATALOG lines. Removes the comment wrapper
+		 * added by preprocess.
 		 */
 		if (line_len >= 12 && line_start[0] == '/' && line_start[1] == '*' &&
 			strncmp(line_start + 2, "CATALOG(", 8) == 0)
@@ -137,26 +137,22 @@ postprocess(const char *source, size_t len, size_t *out_len)
 		for (const char *p = line_start; p < line_end; p++)
 		{
 			/*
-			 * Transform 3: Restore dash-protected block comments.
-			 * Reverses the X_X sentinel added by preprocess.
+			 * Transform 3: Restore dash-protected block comments. Reverses
+			 * the X_X sentinel added by preprocess. Perl:
+			 * s!/\*---X_X!/* ---!g
 			 */
-			if (*p == '/' && (p + 7) < line_end &&
-				strncmp(p, "/*---X_X", 8) == 0)
+			if (*p == '/' && (p + 8) <= line_end &&
+				strncmp(p, "/* ---", 8) == 0)
 			{
-				APPEND_CHAR('/');
-				APPEND_CHAR('*');
-				APPEND_CHAR(' ');
-				APPEND_CHAR('-');
-				APPEND_CHAR('-');
-				APPEND_CHAR('-');
-				p += 7;		/* loop will advance past last char */
+				APPEND_STR("/* ---");
+				p += 7;			/* loop will advance past last char */
 				continue;
 			}
 
 			/*
-			 * Transform 4: Fix run-together comments.
-			 * When a closing comment delimiter is immediately followed
-			 * by an opening one at end of line, insert a tab.
+			 * Transform 4: Fix run-together comments. When a closing comment
+			 * delimiter is immediately followed by an opening one at end of
+			 * line, insert a tab.
 			 */
 			if (*p == '*' && (p + 1) < line_end && *(p + 1) == '/' &&
 				(p + 2) < line_end && *(p + 2) == '/' && (p + 3) < line_end && *(p + 3) == '*')
@@ -179,7 +175,7 @@ postprocess(const char *source, size_t len, size_t *out_len)
 							APPEND_CHAR('*');
 							APPEND_CHAR('/');
 							APPEND_CHAR('\t');
-							p += 1;	/* skip past the '/' of first close */
+							p += 1; /* skip past the '/' of first close */
 							goto done_char;
 						}
 						break;
@@ -189,8 +185,8 @@ postprocess(const char *source, size_t len, size_t *out_len)
 			}
 
 			/*
-			 * Transform 5: Normalize function return type pointer spacing.
-			 * At start of line: "TypeName   *\n" -> "TypeName *\n"
+			 * Transform 5: Normalize function return type pointer spacing. At
+			 * start of line: "TypeName   *\n" -> "TypeName *\n"
 			 */
 			if (p == line_start &&
 				(isalpha((unsigned char) *p) || *p == '_'))
@@ -231,7 +227,7 @@ postprocess(const char *source, size_t len, size_t *out_len)
 			}
 
 			APPEND_CHAR(*p);
-done_char:
+	done_char:
 			;
 		}
 
