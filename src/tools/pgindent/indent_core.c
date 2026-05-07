@@ -480,7 +480,7 @@ check_type:
 		       (1.0 * ps.com_lines) / code_lines);
 	    }
 	    fflush(output);
-	    exit(found_err);
+	    break;		/* exit main loop */
 	}
 	if (
 		(type_code != comment) &&
@@ -1204,6 +1204,8 @@ check_type:
 	if (type_code != comment && type_code != newline && type_code != preesc)
 	    ps.last_token = type_code;
     }				/* end of main while (1) loop */
+
+    return found_err;
 }
 
 /*
