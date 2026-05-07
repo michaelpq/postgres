@@ -108,3 +108,34 @@ CREATE FUNCTION removable_cutoff(rel regclass)
 RETURNS xid8
 AS 'MODULE_PATHNAME'
 LANGUAGE C CALLED ON NULL INPUT;
+
+--
+-- regress_prockill.c functions
+--
+-- Form a lock group without parallel query so ProcKill lock-group teardown
+-- can be tested with injection points.
+--
+CREATE FUNCTION prockill_become_lock_group_leader()
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+
+CREATE FUNCTION prockill_become_lock_group_member(leader_pid int)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+
+-- Attach injection_wait to point_name scoped to target_pid.  Must be called
+-- from a controller session, not from the victim itself (see source).
+CREATE FUNCTION prockill_attach_injection_wait(point_name text, target_pid int)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
+
+-- Return true if target_pid is currently waiting at the named injection point,
+-- read directly from its PGPROC slot (works inside ProcKill where
+-- pg_stat_activity and ProcArray are already torn down).
+CREATE FUNCTION prockill_backend_in_injection(target_pid int, point_name text)
+RETURNS bool
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;
