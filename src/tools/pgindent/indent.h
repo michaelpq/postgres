@@ -48,6 +48,7 @@ void	lookahead_reset(void);
 void	fill_buffer(void);
 void	parse(int);
 void	pr_comment(void);
+int	indent_file(FILE *inf, FILE *outf);
 void	set_defaults(void);
 void	set_option(char *);
 void	set_profile(const char *);

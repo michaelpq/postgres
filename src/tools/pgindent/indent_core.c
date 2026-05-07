@@ -58,14 +58,14 @@ static char sccsid[] = "@(#)indent.c	5.17 (Berkeley) 6/7/93";
 static void bakcopy(void);
 static void indent_declaration(int cur_dec_ind, int tabs_to_var);
 
-const char *in_name = "Standard Input";	/* will always point to name of input
-					 * file */
-const char *out_name = "Standard Output";	/* will always point to name
-						 * of output file */
-char        bakfile[MAXPGPATH] = "";
-
+/*
+ * indent_file - run the indentation engine on the given input/output streams.
+ *
+ * The caller must have already loaded typedefs via add_typename() and set
+ * the global formatting parameters. Returns 0 on success, non-zero on error.
+ */
 int
-main(int argc, char **argv)
+indent_file(FILE *inf, FILE *outf)
 {
     int         dec_ind;	/* current indentation for declarations */
     int         di_stack[20];	/* a stack of structure indentation levels */
@@ -94,6 +94,7 @@ main(int argc, char **argv)
 
     found_err = 0;
 
+    memset(&ps, 0, sizeof(ps));
     ps.p_stack[0] = stmt;	/* this is the parser's stack */
     ps.last_nl = true;		/* this is true if the last thing scanned was
 				 * a newline */
@@ -110,7 +111,6 @@ main(int argc, char **argv)
     tokenbuf = (char *) malloc(bufsize);
     if (tokenbuf == NULL)
 	err(1, NULL);
-    alloc_typenames();
     l_com = combuf + bufsize - 5;
     l_lab = labbuf + bufsize - 5;
     l_code = codebuf + bufsize - 5;
@@ -144,8 +144,18 @@ main(int argc, char **argv)
     bp_save = NULL;
     be_save = NULL;
 
-    output = NULL;
     tabs_to_var = 0;
+    n_real_blanklines = 0;
+    prefix_blankline_requested = 0;
+    postfix_blankline_requested = 0;
+    suppress_blanklines = 0;
+    inhibit_formatting = 0;
+    ifdef_level = 0;
+    code_lines = 0;
+
+    /* Set the input/output streams */
+    input = inf;
+    output = outf;
 
     /*--------------------------------------------------*\
     |   	HARDCODED POSTGRESQL INDENT STYLE	 |
@@ -153,7 +163,6 @@ main(int argc, char **argv)
 
     /*
      * Set all formatting parameters to the fixed PostgreSQL style.
-     * This replaces the old set_defaults() + set_option() approach.
      */
     blanklines_after_declarations = true;   /* -bad */
     blanklines_after_procs = true;          /* -bap */
@@ -189,55 +198,6 @@ main(int argc, char **argv)
     block_comment_max_col = 0;
     continuation_indent = 0;
     verbose = 0;
-
-    /*--------------------------------------------------*\
-    |   		COMMAND LINE SCAN		 |
-    \*--------------------------------------------------*/
-
-    for (i = 1; i < argc; ++i) {
-	if (argv[i][0] != '-') {
-	    if (input == NULL) {
-		in_name = argv[i];
-		input = fopen(in_name, "r");
-		if (input == NULL)
-			err(1, "%s", in_name);
-		continue;
-	    }
-	    else if (output == NULL) {
-		out_name = argv[i];
-		if (strcmp(in_name, out_name) == 0)
-		    errx(1, "input and output files must be different");
-		output = fopen(out_name, "wb");
-		if (output == NULL)
-			err(1, "%s", out_name);
-		continue;
-	    }
-	    errx(1, "unknown parameter: %s", argv[i]);
-	}
-	else if (argv[i][1] == 'T' && argv[i][2] != '\0') {
-	    add_typename(&argv[i][2]);
-	}
-	else if (argv[i][1] == 'U' && argv[i][2] != '\0') {
-	    add_typedefs_from_file(&argv[i][2]);
-	}
-	else if (strcmp(argv[i], "--version") == 0) {
-	    printf("pgindent (PostgreSQL) %s\n", INDENT_VERSION);
-	    exit(0);
-	}
-	else {
-	    errx(1, "unknown parameter: %s", argv[i]);
-	}
-    }
-    if (input == NULL)
-	input = stdin;
-    if (output == NULL) {
-	if (input == stdin)
-	    output = stdout;
-	else {
-	    out_name = in_name;
-	    bakcopy();
-	}
-    }
 
     if (ps.com_ind <= 1)
 	ps.com_ind = 2;		/* don't put normal comments before column 2 */
@@ -1205,7 +1165,77 @@ check_type:
 	    ps.last_token = type_code;
     }				/* end of main while (1) loop */
 
+    /* Clean up allocated buffers */
+    free(combuf);
+    free(labbuf);
+    free(codebuf);
+    free(tokenbuf);
+    free(in_buffer);
+
     return found_err;
+}
+
+/*
+ * main - parse arguments and invoke the indentation engine.
+ */
+const char *in_name = "Standard Input";
+const char *out_name = "Standard Output";
+char        bakfile[MAXPGPATH] = "";
+
+int
+main(int argc, char **argv)
+{
+    int		i;
+
+    alloc_typenames();
+
+    /* Parse command line arguments */
+    for (i = 1; i < argc; ++i) {
+	if (argv[i][0] != '-') {
+	    if (input == NULL) {
+		in_name = argv[i];
+		input = fopen(in_name, "r");
+		if (input == NULL)
+		    err(1, "%s", in_name);
+	    }
+	    else if (output == NULL) {
+		out_name = argv[i];
+		if (strcmp(in_name, out_name) == 0)
+		    errx(1, "input and output files must be different");
+		output = fopen(out_name, "wb");
+		if (output == NULL)
+		    err(1, "%s", out_name);
+	    }
+	    else
+		errx(1, "unknown parameter: %s", argv[i]);
+	}
+	else if (argv[i][1] == 'T' && argv[i][2] != '\0') {
+	    add_typename(&argv[i][2]);
+	}
+	else if (argv[i][1] == 'U' && argv[i][2] != '\0') {
+	    add_typedefs_from_file(&argv[i][2]);
+	}
+	else if (strcmp(argv[i], "--version") == 0) {
+	    printf("pgindent (PostgreSQL) %s\n", INDENT_VERSION);
+	    exit(0);
+	}
+	else {
+	    errx(1, "unknown parameter: %s", argv[i]);
+	}
+    }
+
+    if (input == NULL)
+	input = stdin;
+    if (output == NULL) {
+	if (input == stdin)
+	    output = stdout;
+	else {
+	    out_name = in_name;
+	    bakcopy();
+	}
+    }
+
+    return indent_file(input, output);
 }
 
 /*
