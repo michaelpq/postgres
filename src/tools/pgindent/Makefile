@@ -23,7 +23,9 @@ OBJS = \
 	io.o \
 	lexi.o \
 	parse.o \
-	pr_comment.o
+	postprocess.o \
+	pr_comment.o \
+	preprocess.o
 
 $(OBJS): CFLAGS += $(PERMIT_MISSING_VARIABLE_DECLARATIONS)
 

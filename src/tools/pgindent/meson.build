@@ -7,7 +7,9 @@ pgindent_sources = files(
   'io.c',
   'lexi.c',
   'parse.c',
+  'postprocess.c',
   'pr_comment.c',
+  'preprocess.c',
 )
 
 if host_system == 'windows'
