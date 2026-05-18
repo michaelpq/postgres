@@ -19,6 +19,7 @@
 
 #include "fmgr.h"
 #include "funcapi.h"
+#include "injection_points.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
 #include "nodes/value.h"
@@ -33,8 +34,6 @@
 #include "utils/memutils.h"
 #include "utils/tuplestore.h"
 #include "utils/wait_event.h"
-
-#include "injection_point_condition.h"
 
 PG_MODULE_MAGIC;
 
