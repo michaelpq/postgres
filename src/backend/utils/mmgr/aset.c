@@ -1683,7 +1683,7 @@ AllocSetCheck(MemoryContext context)
 	const char *name = set->header.name;
 	AllocBlock	prevblock;
 	AllocBlock	block;
-	Size		total_allocated = 0;
+	Size		total_allocated PG_USED_FOR_ASSERTS_ONLY = 0;
 
 	for (prevblock = NULL, block = set->blocks;
 		 block != NULL;
