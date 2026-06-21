@@ -61,6 +61,7 @@
 #include "storage/subsystems.h"
 #include "utils/datetime.h"
 #include "utils/fmgrprotos.h"
+#include "utils/guc.h"
 #include "utils/guc_hooks.h"
 #include "utils/pgstat_internal.h"
 #include "utils/pg_lsn.h"
@@ -341,6 +342,7 @@ static void ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, Time
 static void EnableStandbyMode(void);
 static void readRecoverySignalFile(void);
 static void validateRecoveryParameters(void);
+static void CheckRecoveryTargetConflicts(void);
 static bool read_backup_label(XLogRecPtr *checkPointLoc,
 							  TimeLineID *backupLabelTLI,
 							  bool *backupEndRequired, bool *backupFromStandby);
@@ -1067,6 +1069,8 @@ readRecoverySignalFile(void)
 static void
 validateRecoveryParameters(void)
 {
+	CheckRecoveryTargetConflicts();
+
 	if (!ArchiveRecoveryRequested)
 		return;
 
@@ -1142,6 +1146,75 @@ validateRecoveryParameters(void)
 		 */
 		Assert(recoveryTargetTimeLineGoal == RECOVERY_TARGET_TIMELINE_CONTROLFILE);
 	}
+}
+
+/*
+ * CheckRecoveryTargetConflicts
+ *
+ * Validate that at most one of the recovery_target_* GUCs is set to a
+ * non-empty value.  This is called from validateRecoveryParameters() at every
+ * server startup, regardless of whether archive recovery is requested, so
+ * misconfiguration is detected at server start time rather than later when
+ * recovery.signal is added.
+ *
+ * The check is a separate function rather than inlined into
+ * validateRecoveryParameters() because it intentionally runs even when no
+ * recovery is requested, while the rest of validateRecoveryParameters() is
+ * recovery-mode-only.  Keeping it as a named function makes that separation
+ * explicit.
+ *
+ * The check used to live in the assign hooks of the recovery_target_* GUCs
+ * (calling ereport(ERROR) on conflict), which violated guc.c's contract that
+ * assign hooks must never fail.  Moving the check here keeps the assign hooks
+ * contract-compliant.
+ *
+ * If a future patch adds a sixth recovery_target_* GUC, it must be added to the
+ * list of ADD_TARGET_IF_SET() calls below; the errdetail builds its list of set
+ * parameters dynamically, so it needs no change.
+ */
+static void
+CheckRecoveryTargetConflicts(void)
+{
+	int			ntargets = 0;
+	const char *val;
+	StringInfoData buf;
+
+	initStringInfo(&buf);
+
+	/*
+	 * These GUCs are all PGC_STRING, so GetConfigOption() returns "" (not
+	 * NULL) when a parameter is unset.  Collect the name of each one that is
+	 * set into buf for use in the errdetail below.  The separator and the
+	 * quotes are wrapped in _() so translators can adapt the list punctuation
+	 * to their locale.
+	 */
+#define ADD_TARGET_IF_SET(gucname) \
+	do { \
+		val = GetConfigOption(gucname, false, false); \
+		if (val[0] != '\0') \
+		{ \
+			ntargets++; \
+			if (buf.len == 0) \
+				appendStringInfo(&buf, _("\"%s\""), gucname); \
+			else \
+				appendStringInfo(&buf, _(", \"%s\""), gucname); \
+		} \
+	} while (0)
+
+	ADD_TARGET_IF_SET("recovery_target");
+	ADD_TARGET_IF_SET("recovery_target_lsn");
+	ADD_TARGET_IF_SET("recovery_target_name");
+	ADD_TARGET_IF_SET("recovery_target_time");
+	ADD_TARGET_IF_SET("recovery_target_xid");
+#undef ADD_TARGET_IF_SET
+
+	if (ntargets > 1)
+		ereport(FATAL,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("multiple recovery targets specified"),
+				 errdetail("Recovery targets %s are set, but only one can be set.",
+						   buf.data),
+				 errhint("See pg_settings for the parameter values and where each is set.")));
 }
 
 /*
@@ -4769,31 +4842,26 @@ check_primary_slot_name(char **newval, void **extra, GucSource source)
 }
 
 /*
- * Recovery target settings: Only one of the several recovery_target* settings
- * may be set.  Setting a second one results in an error.  The global variable
+ * Recovery target settings: At most one of the several recovery_target*
+ * settings may be set to a non-empty value.  The global variable
  * recoveryTarget tracks which kind of recovery target was chosen.  Other
  * variables store the actual target value (for example a string or a xid).
- * The assign functions of the parameters check whether a competing parameter
- * was already set.  But we want to allow setting the same parameter multiple
- * times.  We also want to allow unsetting a parameter and setting a different
- * one, so we unset recoveryTarget when the parameter is set to an empty
- * string.
+ * An empty string for any of these GUCs is treated as "not set", equivalent
+ * to the GUC's default; an empty value cannot clobber another GUC's
+ * already-set target.  Conflicts between multiple non-empty settings are
+ * detected in CheckRecoveryTargetConflicts(), called from
+ * validateRecoveryParameters() at every startup.
  *
- * XXX this code is broken by design.  Throwing an error from a GUC assign
- * hook breaks fundamental assumptions of guc.c.  So long as all the variables
- * for which this can happen are PGC_POSTMASTER, the consequences are limited,
- * since we'd just abort postmaster startup anyway.  Nonetheless it's likely
- * that we have odd behaviors such as unexpected GUC ordering dependencies.
+ * Each assign hook clears recoveryTarget only when its own GUC is reassigned
+ * to an empty string after the same GUC was previously assigned a non-empty
+ * value, e.g.
+ *     postgres -c recovery_target_xid=700 -c recovery_target_xid=
+ * (postgresql.conf collapses duplicate keys so only the last value reaches
+ * the assign hook; this same-parameter set-then-clear case only arises from
+ * -c).  The clear is restricted to the hook's own target type so that an
+ * empty value for one recovery_target_* GUC cannot clobber another GUC's
+ * already-set target.
  */
-
-pg_noreturn static void
-error_multiple_recovery_targets(void)
-{
-	ereport(ERROR,
-			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-			 errmsg("multiple recovery targets specified"),
-			 errdetail("At most one of \"recovery_target\", \"recovery_target_lsn\", \"recovery_target_name\", \"recovery_target_time\", \"recovery_target_xid\" may be set.")));
-}
 
 /*
  * GUC check_hook for recovery_target
@@ -4815,13 +4883,9 @@ check_recovery_target(char **newval, void **extra, GucSource source)
 void
 assign_recovery_target(const char *newval, void *extra)
 {
-	if (recoveryTarget != RECOVERY_TARGET_UNSET &&
-		recoveryTarget != RECOVERY_TARGET_IMMEDIATE)
-		error_multiple_recovery_targets();
-
 	if (newval && strcmp(newval, "") != 0)
 		recoveryTarget = RECOVERY_TARGET_IMMEDIATE;
-	else
+	else if (recoveryTarget == RECOVERY_TARGET_IMMEDIATE)
 		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
@@ -4856,16 +4920,12 @@ check_recovery_target_lsn(char **newval, void **extra, GucSource source)
 void
 assign_recovery_target_lsn(const char *newval, void *extra)
 {
-	if (recoveryTarget != RECOVERY_TARGET_UNSET &&
-		recoveryTarget != RECOVERY_TARGET_LSN)
-		error_multiple_recovery_targets();
-
 	if (newval && strcmp(newval, "") != 0)
 	{
 		recoveryTarget = RECOVERY_TARGET_LSN;
 		recoveryTargetLSN = *((XLogRecPtr *) extra);
 	}
-	else
+	else if (recoveryTarget == RECOVERY_TARGET_LSN)
 		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
@@ -4891,16 +4951,12 @@ check_recovery_target_name(char **newval, void **extra, GucSource source)
 void
 assign_recovery_target_name(const char *newval, void *extra)
 {
-	if (recoveryTarget != RECOVERY_TARGET_UNSET &&
-		recoveryTarget != RECOVERY_TARGET_NAME)
-		error_multiple_recovery_targets();
-
 	if (newval && strcmp(newval, "") != 0)
 	{
 		recoveryTarget = RECOVERY_TARGET_NAME;
 		recoveryTargetName = newval;
 	}
-	else
+	else if (recoveryTarget == RECOVERY_TARGET_NAME)
 		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
@@ -4971,13 +5027,9 @@ check_recovery_target_time(char **newval, void **extra, GucSource source)
 void
 assign_recovery_target_time(const char *newval, void *extra)
 {
-	if (recoveryTarget != RECOVERY_TARGET_UNSET &&
-		recoveryTarget != RECOVERY_TARGET_TIME)
-		error_multiple_recovery_targets();
-
 	if (newval && strcmp(newval, "") != 0)
 		recoveryTarget = RECOVERY_TARGET_TIME;
-	else
+	else if (recoveryTarget == RECOVERY_TARGET_TIME)
 		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
 
@@ -5099,15 +5151,11 @@ check_recovery_target_xid(char **newval, void **extra, GucSource source)
 void
 assign_recovery_target_xid(const char *newval, void *extra)
 {
-	if (recoveryTarget != RECOVERY_TARGET_UNSET &&
-		recoveryTarget != RECOVERY_TARGET_XID)
-		error_multiple_recovery_targets();
-
 	if (newval && strcmp(newval, "") != 0)
 	{
 		recoveryTarget = RECOVERY_TARGET_XID;
 		recoveryTargetXid = *((TransactionId *) extra);
 	}
-	else
+	else if (recoveryTarget == RECOVERY_TARGET_XID)
 		recoveryTarget = RECOVERY_TARGET_UNSET;
 }
