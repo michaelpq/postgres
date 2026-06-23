@@ -662,6 +662,23 @@ pgaio_worker_can_timeout(void)
 	return true;
 }
 
+/*
+ * Emit a WARNING if io_min_workers > io_max_workers, since the worker
+ * pool will never exceed io_max_workers regardless of the minimum setting.
+ */
+static void
+check_io_worker_gucs(void)
+{
+	if (io_min_workers > io_max_workers)
+		ereport(WARNING,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("\"%s\" (%d) should be less than or equal to \"%s\" (%d)",
+						"io_min_workers", io_min_workers,
+						"io_max_workers", io_max_workers),
+				 errdetail("The I/O worker pool will not exceed \"%s\" (%d) workers.",
+						   "io_max_workers", io_max_workers)));
+}
+
 void
 IoWorkerMain(const void *startup_data, size_t startup_data_len)
 {
@@ -693,6 +710,10 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 
 	/* also registers a shutdown callback to unregister */
 	pgaio_worker_register();
+
+	/* Emit a WARNING if io_min_workers > io_max_workers. */
+	if (MyIoWorkerId == 0)
+		check_io_worker_gucs();
 
 	sprintf(cmd, "%d", MyIoWorkerId);
 	set_ps_display(cmd);
@@ -1013,6 +1034,10 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 		{
 			ConfigReloadPending = false;
 			ProcessConfigFile(PGC_SIGHUP);
+
+			/* Emit a WARNING if io_min_workers > io_max_workers. */
+			if (MyIoWorkerId == 0)
+				check_io_worker_gucs();
 
 			/* If io_max_workers has been decreased, exit highest first. */
 			if (MyIoWorkerId >= io_max_workers)
