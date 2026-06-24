@@ -30,6 +30,8 @@
 #include "storage/procarray.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/pgstat_internal.h"
+#include "utils/pgstat_kind.h"
 #include "utils/timestamp.h"
 #include "utils/tuplestore.h"
 #include "utils/wait_event.h"
@@ -1636,6 +1638,63 @@ pg_stat_get_backend_io(PG_FUNCTION_ARGS)
 	pg_stat_io_build_tuples(rsinfo, bktype_stats, bktype,
 							backend_stats->stat_reset_timestamp);
 	return (Datum) 0;
+}
+
+Datum
+pg_stat_get_kind_info(PG_FUNCTION_ARGS)
+{
+#define PG_STAT_KIND_INFO_COLS	8
+	ReturnSetInfo *rsinfo;
+
+	InitMaterializedSRF(fcinfo, 0);
+	rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+
+	for (int kind = PGSTAT_KIND_MIN; kind <= PGSTAT_KIND_MAX; kind++)
+	{
+		Datum		values[PG_STAT_KIND_INFO_COLS] = {0};
+		bool		nulls[PG_STAT_KIND_INFO_COLS] = {0};
+		const PgStat_KindInfo *info;
+
+		info = pgstat_get_kind_info(kind);
+		if (info == NULL)
+			continue;
+
+		values[0] = Int32GetDatum(kind);
+		values[1] = CStringGetTextDatum(info->name);
+
+		/* For fixed-amount kinds, count is always 1. The entry is stored in
+		 * PgStat_ShmemControl. If it is not a fixed-amount, then report the
+		 * count of entries if tracked, or NULL if not tracked.
+		 */
+		if (info->fixed_amount)
+			values[2] = Int64GetDatum(1);
+		else if (info->track_entry_count)
+			values[2] = Int64GetDatum(pgstat_get_entry_count(kind));
+		else
+			nulls[2] = true;
+
+		values[3] = BoolGetDatum(pgstat_is_kind_builtin(kind));
+		values[4] = BoolGetDatum(info->fixed_amount);
+		values[5] = BoolGetDatum(info->accessed_across_databases);
+		values[6] = BoolGetDatum(info->write_to_file);
+
+		/*
+		 * Built-in fixed-amount kinds store their single entry in
+		 * PgStat_ShmemControl, so shared_size is unused and left zero in their
+		 * PgStat_KindInfo. Reporting it would be misleading, so report NULL
+		 * instead. Custom fixed-amount kinds declare shared_size to size their
+		 * slot in custom_data[], so it is meaningful and reported as-is.
+		 */
+		if (info->fixed_amount && pgstat_is_kind_builtin(kind))
+			nulls[7] = true;
+		else
+			values[7] = Int64GetDatum(info->shared_size);
+
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
+	}
+
+	return (Datum) 0;
+#undef PG_STAT_KIND_INFO_COLS
 }
 
 /*

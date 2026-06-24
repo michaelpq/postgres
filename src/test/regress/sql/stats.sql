@@ -14,6 +14,14 @@ SELECT backend_type, object, context FROM pg_stat_io
   ORDER BY backend_type COLLATE "C", object COLLATE "C", context COLLATE "C";
 \a
 
+-- List of loaded statistics kinds.
+\a
+SELECT name, id, fixed_amount, accessed_across_databases, written_to_file
+  FROM pg_stat_kind_info
+  WHERE builtin
+  ORDER BY name COLLATE "C";
+\a
+
 -- ensure that both seqscan and indexscan plans are allowed
 SET enable_seqscan TO on;
 SET enable_indexscan TO on;

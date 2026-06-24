@@ -1282,6 +1282,18 @@ SELECT
        b.stats_reset
 FROM pg_stat_get_io() b;
 
+CREATE VIEW pg_stat_kind_info AS
+    SELECT
+        k.id,
+        k.name,
+        k.count,
+        k.builtin,
+        k.fixed_amount,
+        k.accessed_across_databases,
+        k.written_to_file,
+        k.shared_size
+    FROM pg_stat_get_kind_info() k;
+
 CREATE VIEW pg_stat_wal AS
     SELECT
         w.wal_records,
