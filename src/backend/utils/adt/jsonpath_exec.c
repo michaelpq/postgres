@@ -1489,14 +1489,10 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				if (jsp->type == jpiDecimal && jsp->content.args.left)
 				{
 					Datum		numdatum;
-					Datum		dtypmod;
+					int32		dtypmod;
 					int32		precision;
 					int32		scale = 0;
 					bool		noerr;
-					ArrayType  *arrtypmod;
-					Datum		datums[2];
-					char		pstr[12];	/* sign, 10 digits and '\0' */
-					char		sstr[12];	/* sign, 10 digits and '\0' */
 					ErrorSaveContext escontext = {T_ErrorSaveContext};
 
 					jspGetLeftArg(jsp, &elem);
@@ -1527,22 +1523,21 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 					}
 
 					/*
-					 * numerictypmodin() takes the precision and scale in the
-					 * form of CString arrays.
+					 * Pack the precision and scale into a numeric typmod.
+					 * An out-of-range precision or scale is reported softly
+					 * (via escontext) when not throwing errors, so that silent
+					 * mode is honored; this reuses numerictypmodin()'s error
+					 * messages.
 					 */
-					pg_ltoa(precision, pstr);
-					datums[0] = CStringGetDatum(pstr);
-					pg_ltoa(scale, sstr);
-					datums[1] = CStringGetDatum(sstr);
-					arrtypmod = construct_array_builtin(datums, 2, CSTRINGOID);
-
-					dtypmod = DirectFunctionCall1(numerictypmodin,
-												  PointerGetDatum(arrtypmod));
+					dtypmod = make_numeric_typmod_safe(precision, scale,
+													   jspThrowErrors(cxt) ? NULL : (Node *) &escontext);
+					if (escontext.error_occurred)
+						return jperError;
 
 					/* Convert numstr to Numeric with typmod */
 					Assert(numstr != NULL);
 					noerr = DirectInputFunctionCallSafe(numeric_in, numstr,
-														InvalidOid, DatumGetInt32(dtypmod),
+														InvalidOid, dtypmod,
 														(Node *) &escontext,
 														&numdatum);
 
@@ -1553,7 +1548,6 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 													 numstr, jspOperationName(jsp->type), "numeric"))));
 
 					num = DatumGetNumeric(numdatum);
-					pfree(arrtypmod);
 				}
 
 				jbv.type = jbvNumeric;
