@@ -1034,15 +1034,15 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 
 		if (ConfigReloadPending)
 		{
-			int		io_max_workers_prev = io_max_workers;
-			int		io_min_workers_prev = io_min_workers;
+			int			io_max_workers_prev = io_max_workers;
+			int			io_min_workers_prev = io_min_workers;
 
 			ConfigReloadPending = false;
 			ProcessConfigFile(PGC_SIGHUP);
 
 			/*
-			 * Emit a WARNING if io_min_workers > io_max_workers.  If no
-			 * bound has changed, skip this to avoid too many log messages.
+			 * Emit a WARNING if io_min_workers > io_max_workers.  If no bound
+			 * has changed, skip this to avoid too many log messages.
 			 */
 			if (io_min_workers_prev != io_min_workers ||
 				io_max_workers_prev != io_max_workers)
