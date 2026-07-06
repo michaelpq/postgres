@@ -71,6 +71,7 @@
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
 #include "storage/proc.h"
+#include "storage/procarray.h"
 #include "utils/acl.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
@@ -1389,6 +1390,20 @@ copy_table_data(Relation NewHeap, Relation OldHeap, Relation OldIndex,
 	 */
 	memset(&params, 0, sizeof(VacuumParams));
 	vacuum_get_cutoffs(OldHeap, &params, &cutoffs);
+
+	/*
+	 * vacuum_get_cutoffs() folds our own backend's xmin into OldestXmin.  For
+	 * a rewrite that is too conservative: the snapshot we hold exists only to
+	 * evaluate index expressions against other relations, not to read
+	 * OldHeap's historical rows.  If our xmin is held back by a transaction
+	 * that cannot even see OldHeap (e.g. one in another database), we would
+	 * preserve a recently-dead tuple whose TOAST chunks a concurrent or prior
+	 * lazy vacuum was free to remove, and then fail with "missing chunk"
+	 * while copying it.  Recompute OldestXmin ignoring our own backend so it
+	 * matches the horizon lazy vacuum uses.  This can only move OldestXmin
+	 * forward, so the freeze cutoffs derived above remain valid.
+	 */
+	cutoffs.OldestXmin = GetOldestNonRemovableTransactionIdForRewrite(OldHeap);
 
 	/*
 	 * FreezeXid will become the table's new relfrozenxid, and that mustn't go

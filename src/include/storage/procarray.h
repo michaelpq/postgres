@@ -51,6 +51,7 @@ extern RunningTransactions GetRunningTransactionData(void);
 
 extern bool TransactionIdIsInProgress(TransactionId xid);
 extern TransactionId GetOldestNonRemovableTransactionId(Relation rel);
+extern TransactionId GetOldestNonRemovableTransactionIdForRewrite(Relation rel);
 extern TransactionId GetOldestTransactionIdConsideredRunning(void);
 extern TransactionId GetOldestActiveTransactionId(bool inCommitOnly,
 												  bool allDbs);

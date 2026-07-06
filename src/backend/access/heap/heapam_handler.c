@@ -1213,7 +1213,7 @@ heapam_index_build_range_scan(Relation heapRelation,
 
 	/* okay to ignore lazy VACUUMs here */
 	if (!IsBootstrapProcessingMode() && !indexInfo->ii_Concurrent)
-		OldestXmin = GetOldestNonRemovableTransactionId(heapRelation);
+		OldestXmin = GetOldestNonRemovableTransactionIdForRewrite(heapRelation);
 
 	if (!scan)
 	{

@@ -1671,7 +1671,7 @@ TransactionIdIsInProgress(TransactionId xid)
  * code doesn't expect (breaking HOT).
  */
 static void
-ComputeXidHorizons(ComputeXidHorizonsResult *h)
+ComputeXidHorizons(ComputeXidHorizonsResult *h, bool excludeMyself)
 {
 	ProcArrayStruct *arrayP = procArray;
 	TransactionId kaxmin;
@@ -1768,6 +1768,22 @@ ComputeXidHorizons(ComputeXidHorizonsResult *h)
 		 * decoding (which manages xmin separately, check below).
 		 */
 		if (statusFlags & (PROC_IN_VACUUM | PROC_IN_LOGICAL_DECODING))
+			continue;
+
+		/*
+		 * Optionally ignore our own backend's xmin.  A relation rewrite holds
+		 * an MVCC snapshot only so that index expressions can be evaluated
+		 * against other relations; it never reads the historical rows of the
+		 * relation being rewritten through that snapshot.  Letting our own
+		 * xmin hold back that relation's removal horizon makes the rewrite
+		 * more conservative than the lazy vacuum that may already have
+		 * removed a recently-dead tuple's TOAST chunks, which would then fail
+		 * with "missing chunk" while copying the tuple.  This mirrors how
+		 * PROC_IN_VACUUM excludes a lazy vacuum's own xmin.
+		 *
+		 * See also GetOldestNonRemovableTransactionIdForRewrite().
+		 */
+		if (excludeMyself && proc == MyProc)
 			continue;
 
 		/* shared tables need to take backends in all databases into account */
@@ -1898,8 +1914,15 @@ ComputeXidHorizons(ComputeXidHorizonsResult *h)
 		   TransactionIdPrecedesOrEquals(h->oldest_considered_running,
 										 h->slot_catalog_xmin));
 
-	/* update approximate horizons with the computed horizons */
-	GlobalVisUpdateApply(h);
+	/*
+	 * Update approximate horizons with the computed horizons.  Skip this when
+	 * excluding our own xmin: the resulting horizons are more aggressive than
+	 * what is globally safe and are only valid for the caller's own rewrite
+	 * of a single relation, so they must not be published to the shared
+	 * GlobalVisState.
+	 */
+	if (!excludeMyself)
+		GlobalVisUpdateApply(h);
 }
 
 /*
@@ -1945,7 +1968,48 @@ GetOldestNonRemovableTransactionId(Relation rel)
 {
 	ComputeXidHorizonsResult horizons;
 
-	ComputeXidHorizons(&horizons);
+	ComputeXidHorizons(&horizons, false);
+
+	switch (GlobalVisHorizonKindForRel(rel))
+	{
+		case VISHORIZON_SHARED:
+			return horizons.shared_oldest_nonremovable;
+		case VISHORIZON_CATALOG:
+			return horizons.catalog_oldest_nonremovable;
+		case VISHORIZON_DATA:
+			return horizons.data_oldest_nonremovable;
+		case VISHORIZON_TEMP:
+			return horizons.temp_oldest_nonremovable;
+	}
+
+	/* just to prevent compiler warnings */
+	return InvalidTransactionId;
+}
+
+/*
+ * GetOldestNonRemovableTransactionIdForRewrite -- variant of
+ *		GetOldestNonRemovableTransactionId() that ignores the calling backend's
+ *		own xmin.
+ *
+ * A rewrite must preserve recently-dead tuples of the relation being
+ * rewritten so that other backends' snapshots still see them afterwards.
+ *
+ * It is not, however, a reader of that relation's
+ * historical rows itself: the MVCC snapshot it holds exists only to evaluate
+ * index expressions against *other* relations.  Excluding our own xmin yields
+ * the same horizon a lazy vacuum would use (PROC_IN_VACUUM does the equivalent
+ * for lazy vacuum).  That matters for TOAST relations to prevent the removal of
+ * recently-dead tuple's TOAST chunks.
+ *
+ * The caller must hold a lock on rel strong enough that the set of backends
+ * that could read its rows cannot change underneath us.
+ */
+TransactionId
+GetOldestNonRemovableTransactionIdForRewrite(Relation rel)
+{
+	ComputeXidHorizonsResult horizons;
+
+	ComputeXidHorizons(&horizons, true);
 
 	switch (GlobalVisHorizonKindForRel(rel))
 	{
@@ -1974,7 +2038,7 @@ GetOldestTransactionIdConsideredRunning(void)
 {
 	ComputeXidHorizonsResult horizons;
 
-	ComputeXidHorizons(&horizons);
+	ComputeXidHorizons(&horizons, false);
 
 	return horizons.oldest_considered_running;
 }
@@ -1987,7 +2051,7 @@ GetReplicationHorizons(TransactionId *xmin, TransactionId *catalog_xmin)
 {
 	ComputeXidHorizonsResult horizons;
 
-	ComputeXidHorizons(&horizons);
+	ComputeXidHorizons(&horizons, false);
 
 	/*
 	 * Don't want to use shared_oldest_nonremovable here, as that contains the
@@ -4214,7 +4278,7 @@ GlobalVisUpdate(void)
 	ComputeXidHorizonsResult horizons;
 
 	/* updates the horizons as a side-effect */
-	ComputeXidHorizons(&horizons);
+	ComputeXidHorizons(&horizons, false);
 }
 
 /*
