@@ -669,6 +669,10 @@ pgaio_worker_can_timeout(void)
 static void
 check_io_worker_gucs(void)
 {
+	/* Only do the check in one worker, to limit noise */
+	if (MyIoWorkerId == 0)
+		return;
+
 	if (io_min_workers > io_max_workers)
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -711,9 +715,7 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 	/* also registers a shutdown callback to unregister */
 	pgaio_worker_register();
 
-	/* Emit a WARNING if io_min_workers > io_max_workers. */
-	if (MyIoWorkerId == 0)
-		check_io_worker_gucs();
+	check_io_worker_gucs();
 
 	sprintf(cmd, "%d", MyIoWorkerId);
 	set_ps_display(cmd);
@@ -1032,11 +1034,18 @@ IoWorkerMain(const void *startup_data, size_t startup_data_len)
 
 		if (ConfigReloadPending)
 		{
+			int		io_max_workers_prev = io_max_workers;
+			int		io_min_workers_prev = io_min_workers;
+
 			ConfigReloadPending = false;
 			ProcessConfigFile(PGC_SIGHUP);
 
-			/* Emit a WARNING if io_min_workers > io_max_workers. */
-			if (MyIoWorkerId == 0)
+			/*
+			 * Emit a WARNING if io_min_workers > io_max_workers.  If no
+			 * bound has changed, skip this to avoid too many log messages.
+			 */
+			if (io_min_workers_prev != io_min_workers ||
+				io_max_workers_prev != io_max_workers)
 				check_io_worker_gucs();
 
 			/* If io_max_workers has been decreased, exit highest first. */
