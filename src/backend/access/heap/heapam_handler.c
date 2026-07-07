@@ -22,6 +22,7 @@
 #include "access/genam.h"
 #include "access/heapam.h"
 #include "access/heaptoast.h"
+#include "access/detoast.h"
 #include "access/multixact.h"
 #include "access/rewriteheap.h"
 #include "access/syncscan.h"
@@ -48,9 +49,10 @@
 #include "utils/rel.h"
 #include "utils/tuplesort.h"
 
-static void reform_and_rewrite_tuple(HeapTuple tuple,
+static bool reform_and_rewrite_tuple(HeapTuple tuple,
 									 Relation OldHeap, Relation NewHeap,
-									 Datum *values, bool *isnull, RewriteState rwstate);
+									 Datum *values, bool *isnull, RewriteState rwstate,
+									 bool missing_ok);
 static void heap_insert_for_repack(HeapTuple tuple, Relation OldHeap,
 								   Relation NewHeap, Datum *values, bool *isnull,
 								   BulkInsertState bistate);
@@ -717,6 +719,7 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 		HeapTuple	tuple;
 		Buffer		buf;
 		bool		isdead;
+		bool		recently_dead = false;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -802,6 +805,7 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 					break;
 				case HEAPTUPLE_RECENTLY_DEAD:
 					*tups_recently_dead += 1;
+					recently_dead = true;
 					pg_fallthrough;
 				case HEAPTUPLE_LIVE:
 					/* Live or recently dead, must copy it */
@@ -835,6 +839,7 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 							 RelationGetRelationName(OldHeap));
 					/* treat as recently dead */
 					*tups_recently_dead += 1;
+					recently_dead = true;
 					isdead = false;
 					break;
 				default:
@@ -881,8 +886,22 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 			int64		ct_val[2];
 
 			if (!concurrent)
-				reform_and_rewrite_tuple(tuple, OldHeap, NewHeap,
-										 values, isnull, rwstate);
+			{
+				if (!reform_and_rewrite_tuple(tuple, OldHeap, NewHeap,
+											  values, isnull, rwstate,
+											  recently_dead))
+				{
+					/*
+					 * Missing TOAST chunks for a recently-dead tuple. Treat
+					 * it as dead.
+					 */
+					*tups_vacuumed += 1;
+					*num_tuples -= 1;
+					if (recently_dead)
+						*tups_recently_dead -= 1;
+					continue;
+				}
+			}
 			else
 				heap_insert_for_repack(tuple, OldHeap, NewHeap,
 									   values, isnull, bistate);
@@ -937,7 +956,7 @@ heapam_relation_copy_for_cluster(Relation OldHeap, Relation NewHeap,
 				reform_and_rewrite_tuple(tuple,
 										 OldHeap, NewHeap,
 										 values, isnull,
-										 rwstate);
+										 rwstate, true);
 			else
 				heap_insert_for_repack(tuple, OldHeap, NewHeap,
 									   values, isnull, bistate);
@@ -1610,6 +1629,43 @@ heapam_index_build_range_scan(Relation heapRelation,
 		if (predicate != NULL)
 		{
 			if (!ExecQual(predicate, econtext))
+				continue;
+		}
+
+		/*
+		 * For RECENTLY_DEAD tuples, pre-detoast external TOAST values. We do
+		 * this to detect for missing chunks at later stages, feeding inline
+		 * data to the downstream access method code.
+		 */
+		if (!tupleIsAlive)
+		{
+			TupleDesc	tdesc = RelationGetDescr(heapRelation);
+			bool		skip = false;
+
+			slot_getallattrs(slot);
+			for (int i = 0; i < tdesc->natts; i++)
+			{
+				Form_pg_attribute att = TupleDescAttr(tdesc, i);
+
+				if (att->attlen != -1 || att->attisdropped)
+					continue;
+				if (slot->tts_isnull[i])
+					continue;
+				if (VARATT_IS_EXTERNAL_ONDISK(DatumGetPointer(slot->tts_values[i])))
+				{
+					varlena    *detoasted;
+
+					detoasted = detoast_external_attr_extended(
+															   (varlena *) DatumGetPointer(slot->tts_values[i]));
+					if (detoasted == NULL)
+					{
+						skip = true;
+						break;
+					}
+					slot->tts_values[i] = PointerGetDatum(detoasted);
+				}
+			}
+			if (skip)
 				continue;
 		}
 
@@ -2348,19 +2404,25 @@ heapam_scan_sample_next_tuple(TableScanDesc scan, SampleScanState *scanstate,
  *
  * So, we must reconstruct the tuple from component Datums.
  */
-static void
+static bool
 reform_and_rewrite_tuple(HeapTuple tuple,
 						 Relation OldHeap, Relation NewHeap,
-						 Datum *values, bool *isnull, RewriteState rwstate)
+						 Datum *values, bool *isnull, RewriteState rwstate,
+						 bool missing_ok)
 {
 	HeapTuple	newtuple;
 
 	newtuple = reform_tuple(tuple, OldHeap, NewHeap, values, isnull);
 
 	/* The heap rewrite module does the rest */
-	rewrite_heap_tuple(rwstate, tuple, newtuple);
+	if (!rewrite_heap_tuple(rwstate, tuple, newtuple, missing_ok))
+	{
+		heap_freetuple(newtuple);
+		return false;
+	}
 
 	heap_freetuple(newtuple);
+	return true;
 }
 
 /*

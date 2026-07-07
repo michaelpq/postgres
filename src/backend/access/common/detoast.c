@@ -22,7 +22,7 @@
 #include "utils/expandeddatum.h"
 #include "utils/rel.h"
 
-static varlena *toast_fetch_datum(varlena *attr);
+static varlena *toast_fetch_datum(varlena *attr, bool missing_ok);
 static varlena *toast_fetch_datum_slice(varlena *attr,
 										int32 sliceoffset,
 										int32 slicelength);
@@ -51,7 +51,7 @@ detoast_external_attr(varlena *attr)
 		/*
 		 * This is an external stored plain value
 		 */
-		result = toast_fetch_datum(attr);
+		result = toast_fetch_datum(attr, false);
 	}
 	else if (VARATT_IS_EXTERNAL_INDIRECT(attr))
 	{
@@ -103,6 +103,23 @@ detoast_external_attr(varlena *attr)
 
 
 /* ----------
+ * detoast_external_attr_extended -
+ *
+ *	Like detoast_external_attr, but returns NULL if toast chunks are
+ *	missing for external pointers.
+ * ----------
+ */
+varlena *
+detoast_external_attr_extended(varlena *attr)
+{
+	if (VARATT_IS_EXTERNAL_ONDISK(attr))
+		return toast_fetch_datum(attr, true);
+	else
+		return detoast_external_attr(attr);
+}
+
+
+/* ----------
  * detoast_attr -
  *
  *	Public entry point to get back a toasted value from compression
@@ -120,7 +137,7 @@ detoast_attr(varlena *attr)
 		/*
 		 * This is an externally stored datum --- fetch it back from there
 		 */
-		attr = toast_fetch_datum(attr);
+		attr = toast_fetch_datum(attr, false);
 		/* If it's compressed, decompress it */
 		if (VARATT_IS_COMPRESSED(attr))
 		{
@@ -262,7 +279,7 @@ detoast_attr_slice(varlena *attr,
 			preslice = toast_fetch_datum_slice(attr, 0, max_size);
 		}
 		else
-			preslice = toast_fetch_datum(attr);
+			preslice = toast_fetch_datum(attr, false);
 	}
 	else if (VARATT_IS_EXTERNAL_INDIRECT(attr))
 	{
@@ -337,10 +354,12 @@ detoast_attr_slice(varlena *attr,
  *
  *	Reconstruct an in memory Datum from the chunks saved
  *	in the toast relation
+ *
+ *	If missing_ok is true, returns NULL when chunks are missing.
  * ----------
  */
 static varlena *
-toast_fetch_datum(varlena *attr)
+toast_fetch_datum(varlena *attr, bool missing_ok)
 {
 	Relation	toastrel;
 	varlena    *result;
@@ -372,8 +391,14 @@ toast_fetch_datum(varlena *attr)
 	toastrel = table_open(toast_pointer.va_toastrelid, AccessShareLock);
 
 	/* Fetch all chunks */
-	table_relation_fetch_toast_slice(toastrel, toast_pointer.va_valueid,
-									 attrsize, 0, attrsize, result);
+	if (!table_relation_fetch_toast_slice(toastrel, toast_pointer.va_valueid,
+										  attrsize, 0, attrsize, result,
+										  missing_ok))
+	{
+		pfree(result);
+		table_close(toastrel, AccessShareLock);
+		return NULL;
+	}
 
 	/* Close toast table */
 	table_close(toastrel, AccessShareLock);
@@ -454,7 +479,7 @@ toast_fetch_datum_slice(varlena *attr, int32 sliceoffset,
 	/* Fetch all chunks */
 	table_relation_fetch_toast_slice(toastrel, toast_pointer.va_valueid,
 									 attrsize, sliceoffset, slicelength,
-									 result);
+									 result, false);
 
 	/* Close toast table */
 	table_close(toastrel, AccessShareLock);

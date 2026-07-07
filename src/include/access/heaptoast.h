@@ -92,10 +92,14 @@
  * heap_toast_insert_or_update -
  *
  *	Called by heap_insert() and heap_update().
+ *
+ *	If missing_ok is true, returns NULL when failing to fetch external
+ *	TOAST data, instead of throwing an error.
  * ----------
  */
 extern HeapTuple heap_toast_insert_or_update(Relation rel, HeapTuple newtup,
-											 HeapTuple oldtup, uint32 options);
+											 HeapTuple oldtup, uint32 options,
+											 bool missing_ok);
 
 /* ----------
  * heap_toast_delete -
@@ -140,10 +144,13 @@ extern HeapTuple toast_build_flattened_tuple(TupleDesc tupleDesc,
  * heap_fetch_toast_slice
  *
  *	Fetch a slice from a toast value stored in a heap table.
+ *	If missing_ok is true, returns false when chunks are missing
+ *	instead of raising an error.  Returns true on success.
  * ----------
  */
-extern void heap_fetch_toast_slice(Relation toastrel, Oid valueid,
+extern bool heap_fetch_toast_slice(Relation toastrel, Oid valueid,
 								   int32 attrsize, int32 sliceoffset,
-								   int32 slicelength, varlena *result);
+								   int32 slicelength, varlena *result,
+								   bool missing_ok);
 
 #endif							/* HEAPTOAST_H */
