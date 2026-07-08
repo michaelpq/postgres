@@ -23063,7 +23063,7 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 				elog(ERROR, "cannot convert whole-row table reference");
 
 			/* Add a pre-cooked default expression. */
-			StoreAttrDefault(newRel, num, def, true);
+			StoreAttrDefault(newRel, num, def, false);
 
 			/*
 			 * Stored generated column expressions in parent_rel might
@@ -23131,7 +23131,7 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 
 	/* Install all CHECK constraints. */
 	cookedConstraints = AddRelationNewConstraints(newRel, NIL, constraints,
-												  false, true, true, NULL);
+												  false, true, false, NULL);
 
 	/* Make the additional catalog changes visible. */
 	CommandCounterIncrement();
@@ -23193,7 +23193,7 @@ createTableConstraints(List **wqueue, AlteredTableInfo *tab,
 		 * We already set pg_attribute.attnotnull in createPartitionTable. No
 		 * need call set_attnotnull again.
 		 */
-		AddRelationNewConstraints(newRel, NIL, nnconstraints, false, true, true, NULL);
+		AddRelationNewConstraints(newRel, NIL, nnconstraints, false, true, false, NULL);
 	}
 }
 
@@ -23313,7 +23313,7 @@ createPartitionTable(List **wqueue, RangeVar *newPartName,
 										(Datum) 0,
 										true,
 										allowSystemTableMods,
-										true,
+										false,	/* is_internal */
 										InvalidOid,
 										NULL);
 
@@ -23885,7 +23885,7 @@ ATExecMergePartitions(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		object.classId = RelationRelationId;
 		object.objectSubId = 0;
 
-		performDeletionCheck(&object, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
+		performDeletionCheck(&object, DROP_RESTRICT, 0);
 	}
 
 	/*
@@ -24299,7 +24299,7 @@ ATExecSplitPartition(List **wqueue, AlteredTableInfo *tab, Relation rel,
 	object.objectId = splitRelOid;
 	object.classId = RelationRelationId;
 	object.objectSubId = 0;
-	performDeletionCheck(&object, DROP_RESTRICT, PERFORM_DELETION_INTERNAL);
+	performDeletionCheck(&object, DROP_RESTRICT, 0);
 
 	/*
 	 * If a new partition has the same name as the split partition, then we
