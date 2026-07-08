@@ -101,7 +101,7 @@ typedef struct
 #define TOASTCOL_IGNORE						0x0010
 #define TOASTCOL_INCOMPRESSIBLE				0x0020
 
-extern void toast_tuple_init(ToastTupleContext *ttc);
+extern bool toast_tuple_init(ToastTupleContext *ttc, bool missing_ok);
 extern int	toast_tuple_find_biggest_attribute(ToastTupleContext *ttc,
 											   bool for_compression,
 											   bool check_main);

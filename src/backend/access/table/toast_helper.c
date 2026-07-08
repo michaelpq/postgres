@@ -36,9 +36,12 @@
  * toast_flags is just a single uint8, but toast_attr is a caller-provided
  * array with a length equal to tupleDesc->natts.  The caller need not
  * perform any initialization of the array before calling this function.
+ *
+ * If missing_ok is true and an external TOAST value cannot be fetched,
+ * returns false.  Returns true on success.
  */
-void
-toast_tuple_init(ToastTupleContext *ttc)
+bool
+toast_tuple_init(ToastTupleContext *ttc, bool missing_ok)
 {
 	TupleDesc	tupleDesc = ttc->ttc_rel->rd_att;
 	int			numAttrs = tupleDesc->natts;
@@ -137,7 +140,13 @@ toast_tuple_init(ToastTupleContext *ttc)
 			if (VARATT_IS_EXTERNAL(new_value))
 			{
 				ttc->ttc_attr[i].tai_oldexternal = new_value;
-				if (att->attstorage == TYPSTORAGE_PLAIN)
+				if (missing_ok && VARATT_IS_EXTERNAL_ONDISK(new_value))
+				{
+					new_value = detoast_external_attr_extended(new_value);
+					if (new_value == NULL)
+						return false;
+				}
+				else if (att->attstorage == TYPSTORAGE_PLAIN)
 					new_value = detoast_attr(new_value);
 				else
 					new_value = detoast_external_attr(new_value);
@@ -159,6 +168,8 @@ toast_tuple_init(ToastTupleContext *ttc)
 			ttc->ttc_attr[i].tai_colflags |= TOASTCOL_IGNORE;
 		}
 	}
+
+	return true;
 }
 
 /*

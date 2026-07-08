@@ -94,7 +94,7 @@ heap_toast_delete(Relation rel, HeapTuple oldtup, bool is_speculative)
  */
 HeapTuple
 heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
-							uint32 options)
+							uint32 options, bool missing_ok)
 {
 	HeapTuple	result_tuple;
 	TupleDesc	tupleDesc;
@@ -154,7 +154,8 @@ heap_toast_insert_or_update(Relation rel, HeapTuple newtup, HeapTuple oldtup,
 		ttc.ttc_oldisnull = toast_oldisnull;
 	}
 	ttc.ttc_attr = toast_attr;
-	toast_tuple_init(&ttc);
+	if (!toast_tuple_init(&ttc, missing_ok))
+		return NULL;
 
 	/* ----------
 	 * Compress and/or save external until data fits into target length
@@ -621,11 +622,14 @@ toast_build_flattened_tuple(TupleDesc tupleDesc,
  * sliceoffset is the byte offset within the TOAST value from which to fetch.
  * slicelength is the number of bytes to be fetched from the TOAST value.
  * result is the varlena into which the results should be written.
+ * missing_ok if true, return false on missing chunks instead of error.
+ *
+ * Returns true on success, false if missing_ok and chunks are missing.
  */
-void
+bool
 heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 					   int32 sliceoffset, int32 slicelength,
-					   varlena *result)
+					   varlena *result, bool missing_ok)
 {
 	Relation   *toastidxs;
 	ScanKeyData toastkey[3];
@@ -779,13 +783,23 @@ heap_fetch_toast_slice(Relation toastrel, Oid valueid, int32 attrsize,
 	 * Final checks that we successfully fetched the datum
 	 */
 	if (expectedchunk != (endchunk + 1))
+	{
+		if (missing_ok)
+		{
+			systable_endscan_ordered(toastscan);
+			toast_close_indexes(toastidxs, num_indexes, AccessShareLock);
+			return false;
+		}
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg_internal("missing chunk number %d for toast value %u in %s",
 								 expectedchunk, valueid,
 								 RelationGetRelationName(toastrel))));
+	}
 
 	/* End scan and close indexes. */
 	systable_endscan_ordered(toastscan);
 	toast_close_indexes(toastidxs, num_indexes, AccessShareLock);
+
+	return true;
 }

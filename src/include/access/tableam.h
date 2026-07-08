@@ -782,12 +782,16 @@ typedef struct TableAmRoutine
 	 * This callback is invoked when detoasting a value stored in a toast
 	 * table implemented by this AM.  See table_relation_fetch_toast_slice()
 	 * for more details.
+	 *
+	 * If missing_ok is true, returns false when chunks are missing instead of
+	 * raising an error.  Returns true on success.
 	 */
-	void		(*relation_fetch_toast_slice) (Relation toastrel, Oid valueid,
+	bool		(*relation_fetch_toast_slice) (Relation toastrel, Oid valueid,
 											   int32 attrsize,
 											   int32 sliceoffset,
 											   int32 slicelength,
-											   varlena *result);
+											   varlena *result,
+											   bool missing_ok);
 
 
 	/* ------------------------------------------------------------------------
@@ -1981,16 +1985,20 @@ table_relation_toast_am(Relation rel)
  *
  * result is caller-allocated space into which the fetched bytes should be
  * stored.
+ *
+ * missing_ok: if true, return false when toast chunks are missing instead
+ * of raising an error.  Returns true on success.
  */
-static inline void
+static inline bool
 table_relation_fetch_toast_slice(Relation toastrel, Oid valueid,
 								 int32 attrsize, int32 sliceoffset,
-								 int32 slicelength, varlena *result)
+								 int32 slicelength, varlena *result,
+								 bool missing_ok)
 {
-	toastrel->rd_tableam->relation_fetch_toast_slice(toastrel, valueid,
-													 attrsize,
-													 sliceoffset, slicelength,
-													 result);
+	return toastrel->rd_tableam->relation_fetch_toast_slice(toastrel, valueid,
+															attrsize,
+															sliceoffset, slicelength,
+															result, missing_ok);
 }
 
 
