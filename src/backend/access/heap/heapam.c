@@ -682,7 +682,7 @@ heap_prepare_pagescan(TableScanDesc sscan)
 	{
 		if (likely(!check_serializable))
 			scan->rs_ntuples = page_collect_tuples(scan, snapshot, page, buffer,
-												   block, lines, true, false);
+												   block, lines, true, 0);
 		else
 			scan->rs_ntuples = page_collect_tuples(scan, snapshot, page, buffer,
 												   block, lines, true, true);
@@ -691,7 +691,7 @@ heap_prepare_pagescan(TableScanDesc sscan)
 	{
 		if (likely(!check_serializable))
 			scan->rs_ntuples = page_collect_tuples(scan, snapshot, page, buffer,
-												   block, lines, false, false);
+												   block, lines, false, 0);
 		else
 			scan->rs_ntuples = page_collect_tuples(scan, snapshot, page, buffer,
 												   block, lines, false, true);
@@ -1267,7 +1267,7 @@ heap_beginscan(Relation relation, Snapshot snapshot,
 	else
 		scan->rs_base.rs_key = NULL;
 
-	initscan(scan, key, false);
+	initscan(scan, key, 0);
 
 	scan->rs_read_stream = NULL;
 
@@ -2236,7 +2236,7 @@ heap_prepare_insert(Relation relation, HeapTuple tup, TransactionId xid,
 		return tup;
 	}
 	else if (HeapTupleHasExternal(tup) || tup->t_len > TOAST_TUPLE_THRESHOLD)
-		return heap_toast_insert_or_update(relation, tup, NULL, options);
+		return heap_toast_insert_or_update(relation, tup, NULL, options, 0);
 	else
 		return tup;
 }
@@ -2402,7 +2402,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 		 * RelationGetBufferForTuple has ensured that the first tuple fits.
 		 * Put that on the page, and then as many other tuples as fit.
 		 */
-		RelationPutHeapTuple(relation, buffer, heaptuples[ndone], false);
+		RelationPutHeapTuple(relation, buffer, heaptuples[ndone], 0);
 
 		/*
 		 * For logical decoding we need combo CIDs to properly decode the
@@ -2418,7 +2418,7 @@ heap_multi_insert(Relation relation, TupleTableSlot **slots, int ntuples,
 			if (PageGetHeapFreeSpace(page) < MAXALIGN(heaptup->t_len) + saveFreeSpace)
 				break;
 
-			RelationPutHeapTuple(relation, buffer, heaptup, false);
+			RelationPutHeapTuple(relation, buffer, heaptup, 0);
 
 			/*
 			 * For logical decoding we need combo CIDs to properly decode the
@@ -3115,7 +3115,7 @@ l1:
 		Assert(!HeapTupleHasExternal(&tp));
 	}
 	else if (HeapTupleHasExternal(&tp))
-		heap_toast_delete(relation, &tp, false);
+		heap_toast_delete(relation, &tp, 0);
 
 	/*
 	 * Mark tuple for invalidation from system caches at next command
@@ -3871,7 +3871,7 @@ l2:
 		if (need_toast)
 		{
 			/* Note we always use WAL and FSM during updates */
-			heaptup = heap_toast_insert_or_update(relation, newtup, &oldtup, 0);
+			heaptup = heap_toast_insert_or_update(relation, newtup, &oldtup, 0, 0);
 			newtupsize = MAXALIGN(heaptup->t_len);
 		}
 		else
@@ -4043,7 +4043,7 @@ l2:
 		HeapTupleClearHeapOnly(newtup);
 	}
 
-	RelationPutHeapTuple(relation, newbuf, heaptup, false); /* insert new tuple */
+	RelationPutHeapTuple(relation, newbuf, heaptup, 0); /* insert new tuple */
 
 
 	/* Clear obsolete visibility flags, possibly set by ourselves above... */
@@ -4202,7 +4202,7 @@ check_lock_if_inplace_updateable_rel(Relation relation,
 								  relation->rd_lockInfo.lockRelId.relId,
 								  ItemPointerGetBlockNumber(otid),
 								  ItemPointerGetOffsetNumber(otid));
-				if (LockHeldByMe(&tuptag, InplaceUpdateTupleLock, false))
+				if (LockHeldByMe(&tuptag, InplaceUpdateTupleLock, 0))
 					return;
 			}
 			break;
@@ -4236,7 +4236,7 @@ check_lock_if_inplace_updateable_rel(Relation relation,
 				else
 					SET_LOCKTAG_RELATION(tag, dbid, relid);
 
-				if (!LockHeldByMe(&tag, ShareUpdateExclusiveLock, false) &&
+				if (!LockHeldByMe(&tag, ShareUpdateExclusiveLock, 0) &&
 					!LockHeldByMe(&tag, ShareRowExclusiveLock, true))
 					elog(WARNING,
 						 "missing lock for relation \"%s\" (OID %u, relkind %c) @ TID (%u,%u)",
@@ -4924,7 +4924,7 @@ l3:
 
 			if (infomask & HEAP_XMAX_IS_MULTI)
 			{
-				MultiXactStatus status = get_mxact_status_for_lock(mode, false);
+				MultiXactStatus status = get_mxact_status_for_lock(mode, 0);
 
 				/* We only ever lock tuples, never update them */
 				if (status >= MultiXactStatusNoKeyUpdate)
@@ -4940,7 +4940,7 @@ l3:
 					case LockWaitSkip:
 						if (!ConditionalMultiXactIdWait((MultiXactId) xwait,
 														status, infomask, relation,
-														NULL, false))
+														NULL, 0))
 						{
 							result = TM_WouldBlock;
 							/* recovery code expects to have buffer lock held */
@@ -4980,7 +4980,7 @@ l3:
 										  XLTW_Lock);
 						break;
 					case LockWaitSkip:
-						if (!ConditionalXactLockTableWait(xwait, false))
+						if (!ConditionalXactLockTableWait(xwait, 0))
 						{
 							result = TM_WouldBlock;
 							/* recovery code expects to have buffer lock held */
@@ -5251,7 +5251,7 @@ heap_acquire_tuplock(Relation relation, const ItemPointerData *tid, LockTupleMod
 			break;
 
 		case LockWaitSkip:
-			if (!ConditionalLockTupleTuplock(relation, tid, mode, false))
+			if (!ConditionalLockTupleTuplock(relation, tid, mode, 0))
 				return false;
 			break;
 
@@ -5575,7 +5575,7 @@ test_lockmode_for_conflict(MultiXactStatus status, TransactionId xid,
 	MultiXactStatus wantedstatus;
 
 	*needwait = false;
-	wantedstatus = get_mxact_status_for_lock(mode, false);
+	wantedstatus = get_mxact_status_for_lock(mode, 0);
 
 	/*
 	 * Note: we *must* check TransactionIdIsInProgress before
@@ -5687,7 +5687,7 @@ heap_lock_updated_tuple_rec(Relation rel, TransactionId priorXmax,
 		block = ItemPointerGetBlockNumber(&tupid);
 		ItemPointerCopy(&tupid, &(mytup.t_self));
 
-		if (!heap_fetch(rel, SnapshotAny, &mytup, &buf, false))
+		if (!heap_fetch(rel, SnapshotAny, &mytup, &buf, 0))
 		{
 			/*
 			 * if we fail to find the updated version of the tuple, it's
@@ -7439,7 +7439,7 @@ GetMultiXactIdHintBits(MultiXactId multi, uint16 *new_infomask,
 	 * We only use this in multis we just created, so they cannot be values
 	 * pre-pg_upgrade.
 	 */
-	nmembers = GetMultiXactIdMembers(multi, &members, false, false);
+	nmembers = GetMultiXactIdMembers(multi, &members, false, 0);
 
 	for (i = 0; i < nmembers; i++)
 	{
@@ -7518,7 +7518,7 @@ MultiXactIdGetUpdateXid(TransactionId xmax, uint16 t_infomask)
 	 * Since we know the LOCK_ONLY bit is not set, this cannot be a multi from
 	 * pre-pg_upgrade.
 	 */
-	nmembers = GetMultiXactIdMembers(xmax, &members, false, false);
+	nmembers = GetMultiXactIdMembers(xmax, &members, false, 0);
 
 	if (nmembers > 0)
 	{
@@ -7756,7 +7756,7 @@ MultiXactIdWait(MultiXactId multi, MultiXactStatus status, uint16 infomask,
 				int *remaining)
 {
 	(void) Do_MultiXactIdWait(multi, status, infomask, false,
-							  rel, ctid, oper, remaining, false);
+							  rel, ctid, oper, remaining, 0);
 }
 
 /*
