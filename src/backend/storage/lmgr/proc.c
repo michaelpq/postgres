@@ -550,6 +550,10 @@ InitProcess(void)
 	 */
 	PGSemaphoreReset(MyProc->sem);
 
+	/* autovacuum launcher is specially advertised in ProcGlobal */
+	if (MyBackendType == B_AUTOVAC_LAUNCHER)
+		pg_atomic_write_u32(&ProcGlobal->avLauncherProc, MyProcNumber);
+
 	/*
 	 * Arrange to clean up at backend exit.
 	 */
@@ -726,8 +730,6 @@ InitAuxiliaryProcess(void)
 	PGSemaphoreReset(MyProc->sem);
 
 	/* Some aux processes are also advertised in ProcGlobal */
-	if (MyBackendType == B_AUTOVAC_LAUNCHER)
-		pg_atomic_write_u32(&ProcGlobal->avLauncherProc, MyProcNumber);
 	if (MyBackendType == B_WAL_WRITER)
 		pg_atomic_write_u32(&ProcGlobal->walwriterProc, MyProcNumber);
 	if (MyBackendType == B_CHECKPOINTER)
@@ -989,6 +991,12 @@ ProcKill(int code, Datum arg)
 	SwitchBackToLocalLatch();
 	DisownLatch(&MyProc->procLatch);
 
+	if (MyBackendType == B_AUTOVAC_LAUNCHER)
+	{
+		Assert(pg_atomic_read_u32(&ProcGlobal->avLauncherProc) == MyProcNumber);
+		pg_atomic_write_u32(&ProcGlobal->avLauncherProc, INVALID_PROC_NUMBER);
+	}
+
 	proc = MyProc;
 	procgloballist = proc->procgloballist;
 
@@ -1113,11 +1121,6 @@ AuxiliaryProcKill(int code, Datum arg)
 	/*
 	 * If this was one of the aux processes advertised in ProcGlobal, clear it
 	 */
-	if (MyBackendType == B_AUTOVAC_LAUNCHER)
-	{
-		Assert(pg_atomic_read_u32(&ProcGlobal->avLauncherProc) == MyProcNumber);
-		pg_atomic_write_u32(&ProcGlobal->avLauncherProc, INVALID_PROC_NUMBER);
-	}
 	if (MyBackendType == B_WAL_WRITER)
 	{
 		Assert(pg_atomic_read_u32(&ProcGlobal->walwriterProc) == MyProcNumber);
