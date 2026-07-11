@@ -5517,10 +5517,10 @@ ldapServiceLookup(const char *purl, PQconninfoOption *options,
 	int			port = LDAP_DEF_PORT,
 				scope,
 				rc,
-				size,
 				state,
 				oldstate,
 				i;
+	size_t		size;
 #ifndef WIN32
 	int			msgid;
 #endif
