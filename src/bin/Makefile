@@ -14,6 +14,7 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 
 SUBDIRS = \
+	getopt_long_test \
 	initdb \
 	pg_amcheck \
 	pg_archivecleanup \
