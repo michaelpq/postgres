@@ -3309,11 +3309,13 @@ heap_update(Relation relation, const ItemPointerData *otid, HeapTuple newtup,
 	bool		locker_remains;
 	bool		id_has_external = false;
 	TransactionId xmax_new_tuple,
-				xmax_old_tuple;
+				xmax_old_tuple,
+				xmax_lock_old_tuple = InvalidTransactionId;
 	uint16		infomask_old_tuple,
 				infomask2_old_tuple,
 				infomask_new_tuple,
-				infomask2_new_tuple;
+				infomask2_new_tuple,
+				infomask_lock_old_tuple = 0;
 
 	Assert(ItemPointerIsValid(otid));
 
@@ -3750,66 +3752,20 @@ l2:
 	/* Fill in transaction status data */
 
 	/*
-	 * If the tuple we're updating is locked, we need to preserve the locking
-	 * info in the old tuple's Xmax.  Prepare a new Xmax value for this.
-	 */
-	compute_new_xmax_infomask(HeapTupleHeaderGetRawXmax(oldtup.t_data),
-							  oldtup.t_data->t_infomask,
-							  oldtup.t_data->t_infomask2,
-							  xid, *lockmode, true,
-							  &xmax_old_tuple, &infomask_old_tuple,
-							  &infomask2_old_tuple);
-
-	/*
-	 * And also prepare an Xmax value for the new copy of the tuple.  If there
-	 * was no xmax previously, or there was one but all lockers are now gone,
-	 * then use InvalidTransactionId; otherwise, get the xmax from the old
-	 * tuple.  (In rare cases that might also be InvalidTransactionId and yet
-	 * not have the HEAP_XMAX_INVALID bit set; that's fine.)
-	 */
-	if ((oldtup.t_data->t_infomask & HEAP_XMAX_INVALID) ||
-		HEAP_LOCKED_UPGRADED(oldtup.t_data->t_infomask) ||
-		(checked_lockers && !locker_remains))
-		xmax_new_tuple = InvalidTransactionId;
-	else
-		xmax_new_tuple = HeapTupleHeaderGetRawXmax(oldtup.t_data);
-
-	if (!TransactionIdIsValid(xmax_new_tuple))
-	{
-		infomask_new_tuple = HEAP_XMAX_INVALID;
-		infomask2_new_tuple = 0;
-	}
-	else
-	{
-		/*
-		 * If we found a valid Xmax for the new tuple, then the infomask bits
-		 * to use on the new tuple depend on what was there on the old one.
-		 * Note that since we're doing an update, the only possibility is that
-		 * the lockers had FOR KEY SHARE lock.
-		 */
-		if (oldtup.t_data->t_infomask & HEAP_XMAX_IS_MULTI)
-		{
-			GetMultiXactIdHintBits(xmax_new_tuple, &infomask_new_tuple,
-								   &infomask2_new_tuple);
-		}
-		else
-		{
-			infomask_new_tuple = HEAP_XMAX_KEYSHR_LOCK | HEAP_XMAX_LOCK_ONLY;
-			infomask2_new_tuple = 0;
-		}
-	}
-
-	/*
-	 * Prepare the new tuple with the appropriate initial values of Xmin and
-	 * Xmax, as well as initial infomask bits as computed above.
+	 * Prepare the new tuple with initial values of Xmin and Cmin, as well as
+	 * initial infomask bits as computed above.
+	 *
+	 * Xmax and infomask for lockers are updated after the TOAST and/or page
+	 * extension work, as releasing the buffer lock for TOAST allows
+	 * concurrent transactions to add tuple locks that we must incorporate.
+	 * See below for more details.
 	 */
 	newtup->t_data->t_infomask &= ~(HEAP_XACT_MASK);
 	newtup->t_data->t_infomask2 &= ~(HEAP2_XACT_MASK);
 	HeapTupleHeaderSetXmin(newtup->t_data, xid);
 	HeapTupleHeaderSetCmin(newtup->t_data, cid);
-	newtup->t_data->t_infomask |= HEAP_UPDATED | infomask_new_tuple;
-	newtup->t_data->t_infomask2 |= infomask2_new_tuple;
-	HeapTupleHeaderSetXmax(newtup->t_data, xmax_new_tuple);
+	newtup->t_data->t_infomask |= HEAP_UPDATED | HEAP_XMAX_INVALID;
+	HeapTupleHeaderSetXmax(newtup->t_data, InvalidTransactionId);
 
 	/*
 	 * Replace cid with a combo CID if necessary.  Note that we already put
@@ -3847,9 +3803,7 @@ l2:
 
 	if (need_toast || newtupsize > pagefree)
 	{
-		TransactionId xmax_lock_old_tuple;
-		uint16		infomask_lock_old_tuple,
-					infomask2_lock_old_tuple;
+		uint16		infomask2_lock_old_tuple;
 		bool		cleared_all_frozen = false;
 
 		/*
@@ -4036,6 +3990,88 @@ l2:
 	}
 
 	newpage = BufferGetPage(newbuf);
+
+	/*
+	 * Now compute the final Xmax values for both old and new tuples.  We
+	 * intentionally do this *after* the TOAST and/or page-extension work, as
+	 * concurrent transactions may have added tuple locks, modifying the
+	 * tuple's xmax.
+	 */
+	if (heaptup != newtup || newbuf != buffer)
+	{
+		/*
+		 * If the tuple's xmax/infomask changed from the temporary lock we
+		 * wrote before releasing the buffer lock, a concurrent locker must
+		 * have arrived during TOAST.  We compare the tuple's current Xmax
+		 * and infomask with the values saved before the buffer was unlocked.
+		 * If these values have not changed, the pre-TOAST checked_lockers
+		 * and locker_remains are still valid.  If these values differ, a
+		 * new locker has arrived: assume that the locker is still active so
+		 * that its lock is preserved in the new tuple's Xmax.
+		 */
+		if (xmax_infomask_changed(oldtup.t_data->t_infomask,
+								  infomask_lock_old_tuple) ||
+			!TransactionIdEquals(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+								 xmax_lock_old_tuple))
+		{
+			checked_lockers = true;
+			locker_remains = true;
+		}
+	}
+	compute_new_xmax_infomask(HeapTupleHeaderGetRawXmax(oldtup.t_data),
+							  oldtup.t_data->t_infomask,
+							  oldtup.t_data->t_infomask2,
+							  xid, *lockmode, true,
+							  &xmax_old_tuple, &infomask_old_tuple,
+							  &infomask2_old_tuple);
+
+	/*
+	 * Also prepare an Xmax value for the new copy of the tuple.  If there was
+	 * no xmax previously, or there was one but all lockers are now gone, then
+	 * use InvalidTransactionId; otherwise, get the xmax from the old tuple.
+	 * (In rare cases that might also be InvalidTransactionId and yet not have
+	 * the HEAP_XMAX_INVALID bit set; that's fine.)
+	 */
+	if ((oldtup.t_data->t_infomask & HEAP_XMAX_INVALID) ||
+		HEAP_LOCKED_UPGRADED(oldtup.t_data->t_infomask) ||
+		(checked_lockers && !locker_remains))
+		xmax_new_tuple = InvalidTransactionId;
+	else
+		xmax_new_tuple = HeapTupleHeaderGetRawXmax(oldtup.t_data);
+
+	if (!TransactionIdIsValid(xmax_new_tuple))
+	{
+		infomask_new_tuple = HEAP_XMAX_INVALID;
+		infomask2_new_tuple = 0;
+	}
+	else
+	{
+		/*
+		 * If we found a valid Xmax for the new tuple, then the infomask bits
+		 * to use on the new tuple depend on what was there on the old one.
+		 * Note that since we're doing an update, the only possibility is that
+		 * the lockers had FOR KEY SHARE lock.
+		 */
+		if (oldtup.t_data->t_infomask & HEAP_XMAX_IS_MULTI)
+		{
+			GetMultiXactIdHintBits(xmax_new_tuple, &infomask_new_tuple,
+								   &infomask2_new_tuple);
+		}
+		else
+		{
+			infomask_new_tuple = HEAP_XMAX_KEYSHR_LOCK | HEAP_XMAX_LOCK_ONLY;
+			infomask2_new_tuple = 0;
+		}
+	}
+
+	/*
+	 * Set the new tuple's Xmax and associated infomask bits.
+	 */
+	heaptup->t_data->t_infomask &= ~(HEAP_XMAX_BITS);
+	heaptup->t_data->t_infomask2 &= ~(HEAP_KEYS_UPDATED);
+	heaptup->t_data->t_infomask |= infomask_new_tuple;
+	heaptup->t_data->t_infomask2 |= infomask2_new_tuple;
+	HeapTupleHeaderSetXmax(heaptup->t_data, xmax_new_tuple);
 
 	/*
 	 * We're about to do the actual update -- check for conflict first, to

@@ -1,0 +1,12 @@
+Parsed test spec with 4 sessions
+
+starting permutation: s1_reindex s2_update s3_insert s1_commit s4_delete s3_commit
+step s1_reindex: BEGIN; REINDEX TABLE pg_toast.pk_toast_toast;
+step s2_update: UPDATE pk_toast SET payload = repeat('x', 10000) WHERE id = 1; <waiting ...>
+step s3_insert: BEGIN; INSERT INTO fk_child(pid) VALUES (1);
+step s1_commit: COMMIT;
+step s2_update: <... completed>
+step s4_delete: DELETE FROM pk_toast WHERE id = 1; <waiting ...>
+step s3_commit: COMMIT;
+step s4_delete: <... completed>
+ERROR:  update or delete on table "pk_toast" violates foreign key constraint "fk_child_pid_fkey" on table "fk_child"
