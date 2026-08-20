@@ -121,9 +121,14 @@ typedef struct PgStat_BackendSubEntry
 /* ----------
  * PgStat_TableCounts			The actual per-table counts kept by a backend
  *
+ * These counters are nontransactional: they are recorded whether the
+ * transaction commits or aborts.  Counters whose effect depends on the
+ * transaction outcome are kept separately, in PgStat_TableCountsXact.
+ *
  * This struct should contain only actual event counters, because we make use
  * of pg_memory_is_all_zeros() to detect whether there are any stats updates
- * to apply.
+ * to apply.  The StaticAssertDecl() below ensures that it contains no
+ * padding, so that it can also be compared as a whole.
  *
  * It is a component of PgStat_RelationStatus (within-backend state, for
  * table data).
@@ -131,11 +136,6 @@ typedef struct PgStat_BackendSubEntry
  * Note: tuples_returned is the number of tuples successfully fetched by
  * heap_getnext, while tuples_fetched is the number of tuples successfully
  * fetched by heap_fetch under the control of bitmap indexscans.
- *
- * tuples_inserted/updated/deleted/hot_updated/newpage_updated count attempted
- * actions, regardless of whether the transaction committed.  delta_live_tuples,
- * delta_dead_tuples, and changed_tuples are set depending on commit or abort.
- * Note that delta_live_tuples and delta_dead_tuples can be negative!
  * ----------
  */
 typedef struct PgStat_TableCounts
@@ -145,20 +145,51 @@ typedef struct PgStat_TableCounts
 	PgStat_Counter tuples_returned;
 	PgStat_Counter tuples_fetched;
 
+	PgStat_Counter blocks_fetched;
+	PgStat_Counter blocks_hit;
+} PgStat_TableCounts;
+
+/* Keep this in sync with the number of counters defined above. */
+#define PGSTAT_TABLECOUNTS_NUM_COUNTERS 5
+StaticAssertDecl(sizeof(PgStat_TableCounts) ==
+				 PGSTAT_TABLECOUNTS_NUM_COUNTERS * sizeof(PgStat_Counter),
+				 "PgStat_TableCounts has padding");
+
+/* ----------
+ * PgStat_TableCountsXact		Per-table counts kept by a backend whose
+ *								effect depends on the transaction outcome
+ *
+ * The same rules as for PgStat_TableCounts apply: this struct should contain
+ * only actual event counters, and the StaticAssertDecl() below ensures that it
+ * contains no padding.
+ *
+ * It is a component of PgStat_RelationStatus (within-backend state, for
+ * table data).
+ *
+ * tuples_inserted/updated/deleted/hot_updated/newpage_updated count attempted
+ * actions, regardless of whether the transaction committed.  delta_live_tuples,
+ * delta_dead_tuples, and changed_tuples are set depending on commit or abort.
+ * Note that delta_live_tuples and delta_dead_tuples can be negative!
+ * ----------
+ */
+typedef struct PgStat_TableCountsXact
+{
 	PgStat_Counter tuples_inserted;
 	PgStat_Counter tuples_updated;
 	PgStat_Counter tuples_deleted;
 	PgStat_Counter tuples_hot_updated;
 	PgStat_Counter tuples_newpage_updated;
-	bool		truncdropped;
 
 	PgStat_Counter delta_live_tuples;
 	PgStat_Counter delta_dead_tuples;
 	PgStat_Counter changed_tuples;
+} PgStat_TableCountsXact;
 
-	PgStat_Counter blocks_fetched;
-	PgStat_Counter blocks_hit;
-} PgStat_TableCounts;
+/* Keep this in sync with the number of counters defined above. */
+#define PGSTAT_TABLECOUNTS_XACT_NUM_COUNTERS 8
+StaticAssertDecl(sizeof(PgStat_TableCountsXact) ==
+				 PGSTAT_TABLECOUNTS_XACT_NUM_COUNTERS * sizeof(PgStat_Counter),
+				 "PgStat_TableCountsXact has padding");
 
 /* ----------
  * PgStat_IndexCounts			Per-index pending event counters
@@ -210,8 +241,12 @@ typedef struct PgStat_RelationStatus
 		{
 			Oid			id;		/* table's OID */
 			bool		shared; /* is it a shared catalog? */
+			bool		truncdropped;	/* pending truncate/drop reset */
 			struct PgStat_TableXactStatus *trans;	/* lowest subxact's counts */
-			PgStat_TableCounts counts;	/* event counts to be sent */
+			PgStat_TableCounts counts;	/* nontransactional event counts to be
+										 * sent */
+			PgStat_TableCountsXact counts_xact; /* event counts depending on
+												 * the transaction outcome */
 		}			tab;
 
 		/* index counters */
