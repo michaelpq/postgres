@@ -4436,7 +4436,7 @@ va_list
 vacuumingOptions
 validate_string_relopt
 varatt_expanded
-varatt_external
+varatt_external_oid
 varatt_indirect
 varattrib_1b
 varattrib_1b_e
