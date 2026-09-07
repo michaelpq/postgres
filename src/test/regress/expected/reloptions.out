@@ -194,6 +194,51 @@ SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
 -- Fail on non-existent options in toast namespace
 CREATE TABLE reloptions_test2 (i int) WITH (toast.not_existing_option = 42);
 ERROR:  unrecognized parameter "not_existing_option"
+-- Test toast_value_type, which selects the chunk_id type of the TOAST
+-- relation.  This is a heap option, not a toast.* one.
+CREATE TABLE reloptions_test2 (s VARCHAR) WITH (toast.toast_value_type = 'oid8');
+ERROR:  unrecognized parameter "toast_value_type"
+CREATE TABLE reloptions_test2 (s VARCHAR) WITH (toast_value_type = 'int8');
+ERROR:  invalid value for enum option "toast_value_type": int8
+DETAIL:  Valid values are "oid" and "oid8".
+CREATE TABLE reloptions_test2 (s VARCHAR) WITH (toast_value_type = 'oid8');
+SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test2'::regclass;
+       reloptions        
+-------------------------
+ {toast_value_type=oid8}
+(1 row)
+
+SELECT a.atttypid::regtype AS chunk_id_type
+	FROM pg_class AS c, pg_attribute AS a
+	WHERE c.oid = 'reloptions_test2'::regclass AND
+	      a.attrelid = c.reltoastrelid AND a.attname = 'chunk_id';
+ chunk_id_type 
+---------------
+ oid8
+(1 row)
+
+-- The option is only consulted when the TOAST relation is created, so
+-- changing it afterwards leaves chunk_id alone.
+ALTER TABLE reloptions_test2 SET (toast_value_type = 'oid');
+SELECT a.atttypid::regtype AS chunk_id_type
+	FROM pg_class AS c, pg_attribute AS a
+	WHERE c.oid = 'reloptions_test2'::regclass AND
+	      a.attrelid = c.reltoastrelid AND a.attname = 'chunk_id';
+ chunk_id_type 
+---------------
+ oid8
+(1 row)
+
+ALTER TABLE reloptions_test2 RESET (toast_value_type);
+DROP TABLE reloptions_test2;
+-- Not supported for relations without a TOAST relation
+CREATE INDEX reloptions_test_idx0 ON reloptions_test (s)
+	WITH (toast_value_type = 'oid8');
+ERROR:  unrecognized parameter "toast_value_type"
+CREATE TABLE reloptions_test2 (i int) PARTITION BY RANGE (i)
+	WITH (toast_value_type = 'oid8');
+ERROR:  cannot specify storage parameters for a partitioned table
+HINT:  Specify storage parameters for its leaf partitions instead.
 -- Mix TOAST & heap
 DROP TABLE reloptions_test;
 CREATE TABLE reloptions_test (s VARCHAR) WITH
