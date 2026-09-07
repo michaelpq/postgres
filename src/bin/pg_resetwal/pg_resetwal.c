@@ -253,7 +253,7 @@ main(int argc, char *argv[])
 
 			case 'o':
 				errno = 0;
-				next_oid_val = strtou64(optarg, &endptr, 0);
+				next_oid_val = strtouint64_strict(optarg, &endptr, 0);
 				if (endptr == optarg || *endptr != '\0' || errno != 0)
 				{
 					pg_log_error("invalid argument for option %s", "-o");

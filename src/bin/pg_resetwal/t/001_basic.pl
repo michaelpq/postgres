@@ -133,6 +133,10 @@ command_fails_like(
 	qr/error: invalid argument for option -o/,
 	'fails with incorrect -o option');
 command_fails_like(
+	[ 'pg_resetwal', '-o' => '-1', $node->data_dir ],
+	qr/error: invalid argument for option -o/,
+	'fails with -o value -1');
+command_fails_like(
 	[ 'pg_resetwal', '-o' => '0', $node->data_dir ],
 	qr/must not be 0/,
 	'fails with -o value 0');
@@ -260,5 +264,20 @@ command_like(
 
 $node->start;
 ok(1, 'server started after reset');
+
+# The OID counter is 8 bytes wide, so a value that does not fit in 32 bits
+# must survive a round trip through pg_control and the server.
+$node->stop;
+command_ok(
+	[ 'pg_resetwal', '--next-oid' => '4295067296', $node->data_dir ],
+	'runs with a --next-oid value above 2^32');
+command_like(
+	[ 'pg_resetwal', '--dry-run', $node->data_dir ],
+	qr/^Latest checkpoint's NextOID: *4295067296$/m,
+	'8-byte --next-oid value is preserved in pg_control');
+$node->start;
+is( $node->safe_psql('postgres', 'SELECT next_oid FROM pg_control_checkpoint()'),
+	'4295067296',
+	'8-byte OID counter is reported without truncation');
 
 done_testing();

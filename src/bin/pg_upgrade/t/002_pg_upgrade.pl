@@ -588,6 +588,22 @@ $oldnode->start;
 $oldnode->safe_psql('postgres', 'DROP DATABASE regression_invalid');
 $oldnode->stop;
 
+# The OID counter is 8 bytes wide, and pg_upgrade has to carry its full value
+# over to the new cluster.  Truncating it would move the counter backwards,
+# handing out object IDs that the migrated relations already use.  Only do
+# this for a same-version upgrade, as older pg_resetwal versions cap
+# --next-oid at 32 bits.
+my $big_next_oid = '4295067296';    # 2^32 + 100000
+if (!defined($ENV{oldinstall}))
+{
+	command_ok(
+		[
+			'pg_resetwal', '--next-oid' => $big_next_oid,
+			$oldnode->data_dir
+		],
+		'set an 8-byte OID counter in the old instance');
+}
+
 # --check command works here, cleans up pg_upgrade_output.d.
 command_ok(
 	[
@@ -623,6 +639,15 @@ ok( !-d $newnode->data_dir . "/pg_upgrade_output.d",
 	"pg_upgrade_output.d/ removed after pg_upgrade success");
 
 $newnode->start;
+
+# The 8-byte OID counter set above must have been transferred in full.
+if (!defined($ENV{oldinstall}))
+{
+	is( $newnode->safe_psql(
+			'postgres', 'SELECT next_oid FROM pg_control_checkpoint()'),
+		$big_next_oid,
+		'8-byte OID counter is carried over by pg_upgrade');
+}
 
 # Check if there are any logs coming from pg_upgrade, that would only be
 # retained on failure.
