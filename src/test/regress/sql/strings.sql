@@ -723,6 +723,19 @@ SELECT c1.relname, a.atttypid::regtype
 ALTER TABLE toasttest_oid RESET (toast_value_type);
 ALTER TABLE toasttest_oid8 RESET (toast_value_type);
 
+-- These two relations are left behind for pg_upgrade coverage, so reset the
+-- column storage to its default.  The values already stored out-of-line stay
+-- untouched, as SET STORAGE only affects subsequent writes, but this keeps
+-- the attstorage/typstorage cross-check of type_sanity meaningful.
+ALTER TABLE toasttest_oid ALTER COLUMN f1 SET STORAGE EXTENDED;
+ALTER TABLE toasttest_oid8 ALTER COLUMN f1 SET STORAGE EXTENDED;
+-- Both TOAST relations must still hold their out-of-line values, as this is
+-- what makes these two relations worth keeping around for pg_upgrade.
+SELECT c.relname, pg_relation_size(c.reltoastrelid) > 0 AS has_toast_data
+  FROM pg_class AS c
+  WHERE c.relname IN ('toasttest_oid', 'toasttest_oid8')
+  ORDER BY c.relname COLLATE "C";
+
 -- UPDATE with out-of-line datum that belongs to another TOAST table.
 CREATE TABLE toastupd_oid(f1 text) WITH (toast_value_type = 'oid');
 CREATE TABLE toastupd_oid8(f1 text) WITH (toast_value_type = 'oid8');
