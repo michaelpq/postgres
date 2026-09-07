@@ -25,7 +25,6 @@
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
-#include "utils/lsyscache.h"
 
 static bool toastrel_valueid_exists(Relation toastrel, Oid8 valueid);
 static bool toastid_valueid_exists(Oid toastrelid, Oid8 valueid);
@@ -131,7 +130,7 @@ toast_save_datum(Relation rel, Datum value,
 	Pointer		dval = DatumGetPointer(value);
 	int			num_indexes;
 	int			validIndex;
-	Oid			toast_typid = get_atttype(rel->rd_rel->reltoastrelid, 1);
+	Oid			toast_typid = RelationGetToastChunkIdType(rel);
 	int32		max_chunk_size;
 
 	/* Fields that will be assembled into the TOAST pointer at the end */
