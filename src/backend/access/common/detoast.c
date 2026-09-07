@@ -254,22 +254,30 @@ detoast_attr_slice(varlena *attr,
 			return toast_fetch_datum_slice(attr, sliceoffset, slicelength);
 
 		/*
-		 * For compressed values, we need to fetch enough slices to
-		 * decompress at least the requested part (when a prefix is
-		 * requested).  Otherwise, just fetch all slices.
-		 *
-		 * At least for now, if it's LZ4 data, we'll have to fetch the
-		 * whole thing, because there doesn't seem to be an API call to
-		 * determine how much compressed data we need to be sure of being
-		 * able to decompress the required slice.
+		 * For compressed values, we need to fetch enough slices to decompress
+		 * at least the requested part (when a prefix is requested).
+		 * Otherwise, just fetch all slices.
 		 */
 		if (slicelimit >= 0)
 		{
 			int32		max_size = extsize;
 
+			/*
+			 * Determine maximum amount of compressed data needed for a prefix
+			 * of a given length (after decompression).
+			 *
+			 * At least for now, if it's LZ4 data, we'll have to fetch the
+			 * whole thing, because there doesn't seem to be an API call to
+			 * determine how much compressed data we need to be sure of being
+			 * able to decompress the required slice.
+			 */
 			if (compress_method == TOAST_PGLZ_COMPRESSION_ID)
 				max_size = pglz_maximum_compressed_size(slicelimit, max_size);
 
+			/*
+			 * Fetch enough compressed slices (compressed marker will get set
+			 * automatically).
+			 */
 			preslice = toast_fetch_datum_slice(attr, 0, max_size);
 		}
 		else

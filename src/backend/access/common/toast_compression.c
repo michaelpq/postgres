@@ -269,7 +269,7 @@ toast_get_compression_id(varlena *attr)
 		if (VARATT_EXTERNAL_OID8_IS_COMPRESSED(toast_pointer))
 			cmid = VARATT_EXTERNAL_OID8_GET_COMPRESS_METHOD(toast_pointer);
 	}
-	else if (VARATT_IS_EXTERNAL_ONDISK(attr))
+	else if (VARATT_IS_EXTERNAL_ONDISK_OID(attr))
 	{
 		varatt_external_oid toast_pointer;
 

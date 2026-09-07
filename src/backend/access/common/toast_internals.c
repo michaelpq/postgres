@@ -467,7 +467,7 @@ toast_save_datum(Relation rel, Datum value,
 
 		toast_pointer.va_rawsize = va_rawsize;
 		toast_pointer.va_extinfo = va_extinfo;
-		VARATT_EXTERNAL_OID8_SET_VALUEID(toast_pointer, va_valueid);
+		VARATT_EXTERNAL_OID8_SET_VALUEID(&toast_pointer, va_valueid);
 		toast_pointer.va_toastrelid = va_toastrelid;
 
 		result = (varlena *) palloc(TOAST_OID8_POINTER_SIZE);

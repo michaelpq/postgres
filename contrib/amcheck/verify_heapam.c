@@ -1877,23 +1877,10 @@ check_tuple_attribute(HeapCheckContext *ctx)
 
 		ta = palloc0_object(ToastedAttribute);
 
+		/* The pointer has already been decoded above, just reuse it */
 		ta->tag = va_tag_value;
-		if (va_tag_value == VARTAG_ONDISK_OID8)
-		{
-			varatt_external_oid8 tp;
-
-			VARATT_EXTERNAL_GET_POINTER(tp, attr);
-			ta->va_valueid = VARATT_EXTERNAL_OID8_GET_VALUEID(tp);
-			ta->va_extinfo = tp.va_extinfo;
-		}
-		else
-		{
-			varatt_external_oid tp;
-
-			VARATT_EXTERNAL_GET_POINTER(tp, attr);
-			ta->va_valueid = tp.va_valueid;
-			ta->va_extinfo = tp.va_extinfo;
-		}
+		ta->va_valueid = toast_pointer_valueid;
+		ta->va_extinfo = va_extinfo;
 		ta->blkno = ctx->blkno;
 		ta->offnum = ctx->offnum;
 		ta->attnum = ctx->attnum;

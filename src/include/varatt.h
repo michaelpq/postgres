@@ -41,11 +41,18 @@ typedef struct varatt_external_oid
 /*
  * varatt_external_oid8 is a "TOAST pointer" for TOAST tables that use
  * Oid8 (64-bit) as their chunk_id type.  Same layout as varatt_external_oid
- * except that va_valueid is split into two uint32 halves to enforce a
- * stricter structure size without padding.
+ * except for the value ID, which is 8 bytes wide.
  *
  * This struct must not contain any padding, because we sometimes compare
- * these pointers using memcmp.
+ * these pointers using memcmp.  That is why the value ID is split into two
+ * uint32 halves rather than declared as a single Oid8: an 8-byte member would
+ * force the struct up to its own alignment, adding four bytes of trailing
+ * padding.  Beside making memcmp unreliable, those four bytes would be paid
+ * for on disk by every single TOAST pointer.
+ *
+ * Note that this information is stored unaligned within actual tuples, so
+ * you need to memcpy from the tuple into a local struct variable before
+ * you can look at these fields!
  */
 typedef struct varatt_external_oid8
 {
@@ -61,14 +68,20 @@ StaticAssertDecl((sizeof(int32) + 3 * sizeof(uint32) + sizeof(Oid)) ==
 				 sizeof(varatt_external_oid8),
 				 "varatt_external_oid8 should have no padding");
 
-/* Helper macros to get/set the 64-bit value ID from the lo/hi fields */
-#define VARATT_EXTERNAL_OID8_GET_VALUEID(tp) \
-	((Oid8) (tp).va_valueid_lo | ((Oid8) (tp).va_valueid_hi << 32))
-#define VARATT_EXTERNAL_OID8_SET_VALUEID(tp, id) \
-	do { \
-		(tp).va_valueid_lo = (uint32) (id); \
-		(tp).va_valueid_hi = (uint32) ((id) >> 32); \
-	} while (0)
+/* Get/set the 64-bit value ID from the lo/hi halves */
+static inline Oid8
+VARATT_EXTERNAL_OID8_GET_VALUEID(varatt_external_oid8 toast_pointer)
+{
+	return ((Oid8) toast_pointer.va_valueid_lo) |
+		(((Oid8) toast_pointer.va_valueid_hi) << 32);
+}
+
+static inline void
+VARATT_EXTERNAL_OID8_SET_VALUEID(varatt_external_oid8 *toast_pointer, Oid8 id)
+{
+	toast_pointer->va_valueid_lo = (uint32) id;
+	toast_pointer->va_valueid_hi = (uint32) (id >> 32);
+}
 
 /*
  * These macros define the "saved size" portion of va_extinfo.  Its remaining
@@ -113,6 +126,12 @@ typedef struct varatt_expanded
  * value for VARTAG_ONDISK_OID comes from a requirement for on-disk
  * compatibility with a previous notion that the tag field was the pointer
  * datum's length.
+ *
+ * VARTAG_ONDISK_OID8 does not follow that convention: the tag has not meant
+ * a length for a long time, and only VARTAG_ONDISK_OID has to keep its
+ * historical value, so newer on-disk tags just take the next free number.
+ * Note that this makes small values meaningful as on-disk tags, where they
+ * used to indicate an in-memory pointer only.
  */
 typedef enum vartag_external
 {
