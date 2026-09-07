@@ -260,7 +260,16 @@ toast_get_compression_id(varlena *attr)
 	 * the external toast pointer.  If compressed inline, fetch it from the
 	 * toast compression header.
 	 */
-	if (VARATT_IS_EXTERNAL_ONDISK(attr))
+	if (VARATT_IS_EXTERNAL_ONDISK_OID8(attr))
+	{
+		varatt_external_oid8 toast_pointer;
+
+		VARATT_EXTERNAL_GET_POINTER(toast_pointer, attr);
+
+		if (VARATT_EXTERNAL_OID8_IS_COMPRESSED(toast_pointer))
+			cmid = VARATT_EXTERNAL_OID8_GET_COMPRESS_METHOD(toast_pointer);
+	}
+	else if (VARATT_IS_EXTERNAL_ONDISK(attr))
 	{
 		varatt_external_oid toast_pointer;
 

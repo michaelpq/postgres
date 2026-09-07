@@ -723,6 +723,31 @@ SELECT c1.relname, a.atttypid::regtype
 ALTER TABLE toasttest_oid RESET (toast_value_type);
 ALTER TABLE toasttest_oid8 RESET (toast_value_type);
 
+-- UPDATE with out-of-line datum that belongs to another TOAST table.
+CREATE TABLE toastupd_oid(f1 text) WITH (toast_value_type = 'oid');
+CREATE TABLE toastupd_oid8(f1 text) WITH (toast_value_type = 'oid8');
+ALTER TABLE toastupd_oid ALTER COLUMN f1 SET STORAGE EXTERNAL;
+ALTER TABLE toastupd_oid8 ALTER COLUMN f1 SET STORAGE EXTERNAL;
+SELECT reltoastrelid::regclass AS upd_oid_toast FROM pg_class
+  WHERE oid = 'toastupd_oid'::regclass \gset
+SELECT reltoastrelid::regclass AS upd_oid8_toast FROM pg_class
+  WHERE oid = 'toastupd_oid8'::regclass \gset
+INSERT INTO toastupd_oid VALUES (repeat('a', 100000));
+INSERT INTO toastupd_oid8 VALUES (repeat('b', 100000));
+-- old value is an oid8 pointer, new value an oid pointer.
+UPDATE toastupd_oid8 SET f1 = toastupd_oid.f1 FROM toastupd_oid;
+SELECT length(f1), substr(f1, 1, 3) FROM toastupd_oid8;
+-- replaced value must be gone, leaving a single value behind.
+SELECT count(*) FROM :upd_oid8_toast WHERE chunk_seq = 0;
+-- reverse: old value is an oid pointer, new value an oid8 pointer.
+TRUNCATE toastupd_oid;
+INSERT INTO toastupd_oid VALUES (repeat('c', 100000));
+UPDATE toastupd_oid SET f1 = toastupd_oid8.f1 FROM toastupd_oid8;
+SELECT length(f1), substr(f1, 1, 3) FROM toastupd_oid;
+SELECT count(*) FROM :upd_oid_toast WHERE chunk_seq = 0;
+
+DROP TABLE toastupd_oid, toastupd_oid8;
+
 -- test internally compressing datums
 
 -- this tests compressing a datum to a very small size which exercises a
