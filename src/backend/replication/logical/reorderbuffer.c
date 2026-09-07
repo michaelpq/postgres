@@ -5199,12 +5199,18 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		/* ok, we know we have a toast datum */
 		varlena_pointer = (varlena *) DatumGetPointer(attrs[natt]);
 
-		/* no need to do anything if the tuple isn't external */
-		if (!VARATT_IS_EXTERNAL(varlena_pointer))
+		/*
+		 * No need to do anything if the tuple isn't stored externally
+		 * on-disk.  Testing for an on-disk pointer specifically matters
+		 * because the branch below decodes the datum as one of the two on-disk
+		 * pointer structs; an indirect or expanded pointer is shorter than
+		 * either of those and would be read past its end.
+		 */
+		if (!VARATT_IS_EXTERNAL_ONDISK(varlena_pointer))
 			continue;
 
 		/* Branch on vartag to handle both pointer types */
-		if (VARTAG_EXTERNAL(varlena_pointer) == VARTAG_ONDISK_OID8)
+		if (VARATT_IS_EXTERNAL_ONDISK_OID8(varlena_pointer))
 		{
 			VARATT_EXTERNAL_GET_POINTER(toast_pointer8, varlena_pointer);
 			toast_valueid = VARATT_EXTERNAL_OID8_GET_VALUEID(toast_pointer8);
@@ -5260,7 +5266,7 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		}
 
 		/* Verify size and set compression status based on pointer type */
-		if (VARTAG_EXTERNAL(varlena_pointer) == VARTAG_ONDISK_OID8)
+		if (VARATT_IS_EXTERNAL_ONDISK_OID8(varlena_pointer))
 		{
 			Assert(data_done == VARATT_EXTERNAL_OID8_GET_EXTSIZE(toast_pointer8));
 

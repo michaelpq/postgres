@@ -240,37 +240,59 @@ toast_save_datum(Relation rel, Datum value,
 			va_valueid = InvalidOid8;
 			if (oldexternal != NULL)
 			{
-				varatt_external_oid8 old_toast_pointer;
-
 				Assert(VARATT_IS_EXTERNAL_ONDISK(oldexternal));
-				/* Must copy to access aligned fields */
-				VARATT_EXTERNAL_GET_POINTER(old_toast_pointer, oldexternal);
-				if (old_toast_pointer.va_toastrelid == rel->rd_toastoid)
+
+				/*
+				 * Only consider the old pointer if its vartag matches the
+				 * kind of pointer we are about to build.  A rewrite keeps the
+				 * chunk_id type of the TOAST relation, so a mismatch is not
+				 * expected here, but decoding the pointer as the wrong type
+				 * would read past its end and hand back a bogus value ID, so
+				 * check rather than assume.  Falling through simply allocates
+				 * a fresh value ID, as for a value that had no prior external
+				 * representation.
+				 */
+				if (VARATT_IS_EXTERNAL_ONDISK_OID8(oldexternal))
 				{
-					/* This value came from the old toast table; reuse its ID */
-					va_valueid = VARATT_EXTERNAL_OID8_GET_VALUEID(old_toast_pointer);
-					/*
-					 * There is a corner case here: the table rewrite might
-					 * have to copy both live and recently-dead versions of a
-					 * row, and those versions could easily reference the same
-					 * toast value.  When we copy the second or later version
-					 * of such a row, reusing the OID will mean we select an
-					 * OID that's already in the new toast table.  Check for
-					 * that, and if so, just fall through without writing the
-					 * data again.
-					 *
-					 * While annoying and ugly-looking, this is a good thing
-					 * because it ensures that we wind up with only one copy
-					 * of the toast value when there is only one copy in the
-					 * old toast table.  Before we detected this case, we'd
-					 * have made multiple copies, wasting space; and what's
-					 * worse, the copies belonging to already-deleted heap
-					 * tuples would not be reclaimed by VACUUM.
-					 */
-					if (toastrel_valueid_exists(toastrel, va_valueid))
+					varatt_external_oid8 old_toast_pointer;
+
+					/* Must copy to access aligned fields */
+					VARATT_EXTERNAL_GET_POINTER(old_toast_pointer, oldexternal);
+					if (old_toast_pointer.va_toastrelid == rel->rd_toastoid)
 					{
-						/* Match, so short-circuit the data storage loop below */
-						data_todo = 0;
+						/*
+						 * This value came from the old toast table; reuse its
+						 * ID.
+						 */
+						va_valueid = VARATT_EXTERNAL_OID8_GET_VALUEID(old_toast_pointer);
+
+						/*
+						 * There is a corner case here: the table rewrite
+						 * might have to copy both live and recently-dead
+						 * versions of a row, and those versions could easily
+						 * reference the same toast value.  When we copy the
+						 * second or later version of such a row, reusing the
+						 * OID will mean we select an OID that's already in the
+						 * new toast table.  Check for that, and if so, just
+						 * fall through without writing the data again.
+						 *
+						 * While annoying and ugly-looking, this is a good
+						 * thing because it ensures that we wind up with only
+						 * one copy of the toast value when there is only one
+						 * copy in the old toast table.  Before we detected
+						 * this case, we'd have made multiple copies, wasting
+						 * space; and what's worse, the copies belonging to
+						 * already-deleted heap tuples would not be reclaimed
+						 * by VACUUM.
+						 */
+						if (toastrel_valueid_exists(toastrel, va_valueid))
+						{
+							/*
+							 * Match, so short-circuit the data storage loop
+							 * below.
+							 */
+							data_todo = 0;
+						}
 					}
 				}
 			}
@@ -302,24 +324,35 @@ toast_save_datum(Relation rel, Datum value,
 			va_valueid = InvalidOid;
 			if (oldexternal != NULL)
 			{
-				varatt_external_oid old_toast_pointer;
-
 				Assert(VARATT_IS_EXTERNAL_ONDISK(oldexternal));
-				/* Must copy to access aligned fields */
-				VARATT_EXTERNAL_GET_POINTER(old_toast_pointer, oldexternal);
-				if (old_toast_pointer.va_toastrelid == rel->rd_toastoid)
-				{
-					/* This value came from the old toast table; reuse its OID */
-					va_valueid = old_toast_pointer.va_valueid;
 
-					/*
-					 * Corner case during table rewrite with multiple
-					 * versions of the same row.  See above for details.
-					 */
-					if (toastrel_valueid_exists(toastrel, va_valueid))
+				/* Only reuse a pointer of the matching type; see above */
+				if (VARATT_IS_EXTERNAL_ONDISK_OID(oldexternal))
+				{
+					varatt_external_oid old_toast_pointer;
+
+					/* Must copy to access aligned fields */
+					VARATT_EXTERNAL_GET_POINTER(old_toast_pointer, oldexternal);
+					if (old_toast_pointer.va_toastrelid == rel->rd_toastoid)
 					{
-						/* Match, so short-circuit the data storage loop below */
-						data_todo = 0;
+						/*
+						 * This value came from the old toast table; reuse its
+						 * OID.
+						 */
+						va_valueid = old_toast_pointer.va_valueid;
+
+						/*
+						 * Corner case during table rewrite with multiple
+						 * versions of the same row.  See above for details.
+						 */
+						if (toastrel_valueid_exists(toastrel, va_valueid))
+						{
+							/*
+							 * Match, so short-circuit the data storage loop
+							 * below.
+							 */
+							data_todo = 0;
+						}
 					}
 				}
 			}
@@ -604,18 +637,19 @@ toastrel_valueid_exists(Relation toastrel, Oid8 valueid)
 	/*
 	 * Setup a scan key to find chunks with matching va_valueid
 	 */
-	if (toast_typid == OIDOID)
-		ScanKeyInit(&toastkey,
-					(AttrNumber) 1,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(valueid));
-	else if (toast_typid == OID8OID)
+	if (toast_typid == OID8OID)
 		ScanKeyInit(&toastkey,
 					(AttrNumber) 1,
 					BTEqualStrategyNumber, F_OID8EQ,
 					ObjectId8GetDatum(valueid));
 	else
-		Assert(false);
+	{
+		Assert(valueid <= PG_UINT32_MAX);
+		ScanKeyInit(&toastkey,
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum((Oid) valueid));
+	}
 
 	/*
 	 * Is there any such chunk?

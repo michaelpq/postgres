@@ -660,19 +660,25 @@ heap_fetch_toast_slice(Relation toastrel, Oid8 valueid, int32 attrsize,
 	endchunk = (sliceoffset + slicelength - 1) / max_chunk_size;
 	Assert(endchunk <= totalchunks);
 
-	/* Set up a scan key to fetch from the index. */
-	if (toast_typid == OIDOID)
-		ScanKeyInit(&toastkey[0],
-					(AttrNumber) 1,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(valueid));
-	else if (toast_typid == OID8OID)
+	/*
+	 * Set up a scan key to fetch from the index.  The caller derived the value
+	 * ID from the vartag of the TOAST pointer, so a value ID that does not fit
+	 * in the chunk_id type of this TOAST relation means the pointer and the
+	 * relation disagree, which would silently build a scan key finding nothing.
+	 */
+	if (toast_typid == OID8OID)
 		ScanKeyInit(&toastkey[0],
 					(AttrNumber) 1,
 					BTEqualStrategyNumber, F_OID8EQ,
 					ObjectId8GetDatum(valueid));
 	else
-		Assert(false);
+	{
+		Assert(valueid <= PG_UINT32_MAX);
+		ScanKeyInit(&toastkey[0],
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum((Oid) valueid));
+	}
 
 	/*
 	 * No additional condition if fetching all chunks. Otherwise, use an

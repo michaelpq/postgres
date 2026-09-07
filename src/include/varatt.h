@@ -404,6 +404,13 @@ VARATT_IS_EXTERNAL_ONDISK(const void *PTR)
 	return (tag == VARTAG_ONDISK_OID || tag == VARTAG_ONDISK_OID8);
 }
 
+/* Is varlena datum a pointer to on-disk toasted data with 4-byte value ID? */
+static inline bool
+VARATT_IS_EXTERNAL_ONDISK_OID(const void *PTR)
+{
+	return VARATT_IS_EXTERNAL(PTR) && VARTAG_EXTERNAL(PTR) == VARTAG_ONDISK_OID;
+}
+
 /* Is varlena datum a pointer to on-disk toasted data with 8-byte value ID? */
 static inline bool
 VARATT_IS_EXTERNAL_ONDISK_OID8(const void *PTR)
