@@ -112,6 +112,26 @@ SELECT reloptions FROM pg_class WHERE oid = :toast_oid;
 -- Fail on non-existent options in toast namespace
 CREATE TABLE reloptions_test2 (i int) WITH (toast.not_existing_option = 42);
 
+-- Test toast_value_type.
+CREATE TABLE reloptions_test2 (s VARCHAR) WITH (toast.toast_value_type = 'oid8');
+CREATE TABLE reloptions_test2 (s VARCHAR) WITH (toast_value_type = 'int8');
+CREATE TABLE reloptions_test2 (s VARCHAR) WITH (toast_value_type = 'oid8');
+SELECT reloptions FROM pg_class WHERE oid = 'reloptions_test2'::regclass;
+-- The option is only consulted when the TOAST relation is created, so
+-- changing it afterwards leaves chunk_id alone.
+ALTER TABLE reloptions_test2 SET (toast_value_type = 'oid');
+SELECT a.atttypid::regtype AS chunk_id_type
+	FROM pg_class AS c, pg_attribute AS a
+	WHERE c.oid = 'reloptions_test2'::regclass AND
+	      a.attrelid = c.reltoastrelid AND a.attname = 'chunk_id';
+ALTER TABLE reloptions_test2 RESET (toast_value_type);
+DROP TABLE reloptions_test2;
+-- Non-supported relkinds.
+CREATE INDEX reloptions_test_idx0 ON reloptions_test (s)
+	WITH (toast_value_type = 'oid8');
+CREATE TABLE reloptions_test2 (i int) PARTITION BY RANGE (i)
+	WITH (toast_value_type = 'oid8');
+
 -- Mix TOAST & heap
 DROP TABLE reloptions_test;
 
