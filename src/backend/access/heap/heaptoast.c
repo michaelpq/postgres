@@ -650,7 +650,10 @@ heap_fetch_toast_slice(Relation toastrel, Oid8 valueid, int32 attrsize,
 
 	toast_typid = TupleDescAttr(toastrel->rd_att, 0)->atttypid;
 	Assert(toast_typid == OIDOID || toast_typid == OID8OID);
-	max_chunk_size = TOAST_OID_MAX_CHUNK_SIZE;
+	if (toast_typid == OID8OID)
+		max_chunk_size = TOAST_OID8_MAX_CHUNK_SIZE;
+	else
+		max_chunk_size = TOAST_OID_MAX_CHUNK_SIZE;
 
 	totalchunks = ((attrsize - 1) / max_chunk_size) + 1;
 	startchunk = sliceoffset / max_chunk_size;
@@ -658,18 +661,16 @@ heap_fetch_toast_slice(Relation toastrel, Oid8 valueid, int32 attrsize,
 	Assert(endchunk <= totalchunks);
 
 	/* Set up a scan key to fetch from the index. */
-	if (toast_typid == OIDOID)
-		ScanKeyInit(&toastkey[0],
-					(AttrNumber) 1,
-					BTEqualStrategyNumber, F_OIDEQ,
-					ObjectIdGetDatum(valueid));
-	else if (toast_typid == OID8OID)
+	if (toast_typid == OID8OID)
 		ScanKeyInit(&toastkey[0],
 					(AttrNumber) 1,
 					BTEqualStrategyNumber, F_OID8EQ,
 					ObjectId8GetDatum(valueid));
 	else
-		Assert(false);
+		ScanKeyInit(&toastkey[0],
+					(AttrNumber) 1,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum((Oid) valueid));
 
 	/*
 	 * No additional condition if fetching all chunks. Otherwise, use an
