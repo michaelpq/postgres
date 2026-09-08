@@ -186,8 +186,9 @@ FullTransactionIdAdvance(FullTransactionId *dest)
  * more painful, however, since some user-defined OIDs will appear in
  * on-disk data; such a change would probably break pg_upgrade.
  *
- * NOTE: if the OID generator wraps around, we skip over OIDs 0-16383
- * and resume with 16384.  This minimizes the odds of OID conflict, by not
+ * NOTE: the OID generator is 8 bytes wide (see GetNewObjectId8())).  For
+ * its lower 4 bytes, we skip over OIDs 0-16383 and resume with 16384.
+ * This minimizes the odds of OID conflict when using GetNewObjectId(), by not
  * reassigning OIDs that might have been assigned during initdb.  Critically,
  * it also ensures that no user-created object will be considered pinned.
  * ----------
