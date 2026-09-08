@@ -167,10 +167,21 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 			return false;
 
 		value_type = RelationGetToastValueType(rel, STDRD_OPTION_TOAST_VALUE_TYPE_OID);
-		if (value_type == STDRD_OPTION_TOAST_VALUE_TYPE_OID)
-			toast_chunkid_typid = OIDOID;
-		else if (value_type == STDRD_OPTION_TOAST_VALUE_TYPE_OID8)
-			toast_chunkid_typid = OID8OID;
+
+		/* no default clause to catch new values added */
+		switch (value_type)
+		{
+			case STDRD_OPTION_TOAST_VALUE_TYPE_OID:
+				toast_chunkid_typid = OIDOID;
+				break;
+			case STDRD_OPTION_TOAST_VALUE_TYPE_OID8:
+				toast_chunkid_typid = OID8OID;
+				break;
+			case STDRD_OPTION_TOAST_VALUE_TYPE_INVALID:
+				elog(ERROR, "unexpected toast_value_type value %d",
+					 value_type);
+				break;
+		}
 	}
 	else
 	{

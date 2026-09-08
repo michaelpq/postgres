@@ -69,12 +69,16 @@ toast_tuple_init(ToastTupleContext *ttc)
 			/*
 			 * If the old value is stored on disk, check if it has changed so
 			 * we have to delete it later.
+			 *
+			 * Note that TOAST pointers could have different vartags, for oid
+			 * or oid8, and these can have a different sizes.
 			 */
 			if (att->attlen == -1 && !ttc->ttc_oldisnull[i] &&
 				VARATT_IS_EXTERNAL_ONDISK(old_value))
 			{
 				if (ttc->ttc_isnull[i] ||
 					!VARATT_IS_EXTERNAL_ONDISK(new_value) ||
+					VARTAG_EXTERNAL(old_value) != VARTAG_EXTERNAL(new_value) ||
 					memcmp(old_value, new_value,
 						   VARSIZE_EXTERNAL(old_value)) != 0)
 				{

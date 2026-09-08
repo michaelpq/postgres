@@ -386,7 +386,7 @@ typedef struct StdRdOptions
  */
 #define RelationGetToastValueType(relation, defaulttarg) \
 	((relation)->rd_options ? \
-	 ((StdRdOptions *) (relation)->rd_options)->toast_value_type : defaulttarg)
+	 ((StdRdOptions *) (relation)->rd_options)->toast_value_type : (defaulttarg))
 
 /*
  * RelationGetFillFactor
