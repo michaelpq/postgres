@@ -757,6 +757,8 @@ GuessControlValues(void)
 static void
 PrintControlValues(bool guessed)
 {
+	char		nextoid_str[32];
+
 	if (guessed)
 		printf(_("Guessed pg_control values:\n\n"));
 	else
@@ -775,8 +777,9 @@ PrintControlValues(bool guessed)
 	printf(_("Latest checkpoint's NextXID:          %u:%u\n"),
 		   EpochFromFullTransactionId(ControlFile.checkPointCopy.nextXid),
 		   XidFromFullTransactionId(ControlFile.checkPointCopy.nextXid));
-	printf(_("Latest checkpoint's NextOID:          " OID8_FORMAT "\n"),
-		   ControlFile.checkPointCopy.nextOid);
+	snprintf(nextoid_str, sizeof(nextoid_str), OID8_FORMAT,
+			 ControlFile.checkPointCopy.nextOid);
+	printf(_("Latest checkpoint's NextOID:          %s\n"), nextoid_str);
 	printf(_("Latest checkpoint's NextMultiXactId:  %u\n"),
 		   ControlFile.checkPointCopy.nextMulti);
 	printf(_("Latest checkpoint's NextMultiOffset:  %" PRIu64 "\n"),
@@ -835,6 +838,7 @@ static void
 PrintNewControlValues(void)
 {
 	char		fname[MAXFNAMELEN];
+	char		nextoid_str[32];
 
 	/* This will be always printed in order to keep format same. */
 	printf(_("\n\nValues to be changed:\n\n"));
@@ -861,8 +865,9 @@ PrintNewControlValues(void)
 
 	if (next_oid_given)
 	{
-		printf(_("NextOID:                              " OID8_FORMAT "\n"),
-			   ControlFile.checkPointCopy.nextOid);
+		snprintf(nextoid_str, sizeof(nextoid_str), OID8_FORMAT,
+				 ControlFile.checkPointCopy.nextOid);
+		printf(_("NextOID:                              %s\n"), nextoid_str);
 	}
 
 	if (next_xid_given)

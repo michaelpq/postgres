@@ -101,6 +101,7 @@ main(int argc, char *argv[])
 	char		pgctime_str[128];
 	char		ckpttime_str[128];
 	char		mock_auth_nonce_str[MOCK_AUTH_NONCE_LEN * 2 + 1];
+	char		nextoid_str[32];
 	const char *strftime_fmt = "%c";
 	const char *progname;
 	char		xlogfilename[MAXFNAMELEN];
@@ -269,8 +270,9 @@ main(int argc, char *argv[])
 	printf(_("Latest checkpoint's NextXID:          %u:%u\n"),
 		   EpochFromFullTransactionId(ControlFile->checkPointCopy.nextXid),
 		   XidFromFullTransactionId(ControlFile->checkPointCopy.nextXid));
-	printf(_("Latest checkpoint's NextOID:          " OID8_FORMAT "\n"),
-		   ControlFile->checkPointCopy.nextOid);
+	snprintf(nextoid_str, sizeof(nextoid_str), OID8_FORMAT,
+			 ControlFile->checkPointCopy.nextOid);
+	printf(_("Latest checkpoint's NextOID:          %s\n"), nextoid_str);
 	printf(_("Latest checkpoint's NextMultiXactId:  %u\n"),
 		   ControlFile->checkPointCopy.nextMulti);
 	printf(_("Latest checkpoint's NextMultiOffset:  %" PRIu64 "\n"),
