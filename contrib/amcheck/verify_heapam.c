@@ -1884,7 +1884,7 @@ check_toasted_attribute(HeapCheckContext *ctx, ToastedAttribute *ta)
 	int32		max_chunk_size;
 	Oid8		toast_valueid;
 	Oid			toast_typid;
-	vartag_external expected_tag;
+	vartag_external expected_tag = VARTAG_ONDISK_OID;
 
 	toast_valueid = ta->va_valueid;
 	extsize = VARATT_EXTINFO_GET_EXTSIZE(ta->va_extinfo);
