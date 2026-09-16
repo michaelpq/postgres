@@ -312,9 +312,10 @@ else
 }
 
 # Checks for 8-byte OIDs
-if (!defined($ENV{oldinstall}))
+if (!defined($ENV{olddump}))
 {
-	# Table with 8-byte OID values, past 2^32.
+	# Table with 8-byte OID values, past 2^32.  toasttest_oid8 is
+	# defined in strings.sql.
 	is( $oldnode->safe_psql(
 			'regression',
 			"SELECT max(pg_column_toast_chunk_id(f1)) > '$big_next_oid'::oid8 FROM toasttest_oid8"
