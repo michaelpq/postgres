@@ -17,34 +17,29 @@
 #include "storage/lockdefs.h"
 #include "utils/relcache.h"
 #include "utils/snapshot.h"
+#include "varatt.h"
 
 /*
- *	The information at the start of the compressed toast data.
+ * Fill in the header of a compressed-in-line datum: the original data size
+ * (excluding header) and the compression method.
+ *
+ * The compression routine must already have laid out the datum with
+ * VARHDRSZ_COMPRESSED bytes of header, since the compressed data starts
+ * right after it.  The varlena length word is not touched here.
  */
-typedef struct toast_compress_header
+static inline void
+toast_compress_set_size_and_method(varlena *ptr, uint32 rawsize,
+								   ToastCompressionId cmid)
 {
-	int32		vl_len_;		/* varlena header (do not touch directly!) */
-	uint32		tcinfo;			/* 2 bits for compression method and 30 bits
-								 * external size; see va_extinfo */
-} toast_compress_header;
+	varattrib_4b *va = (varattrib_4b *) ptr;
 
-/*
- * Utilities for manipulation of header information for compressed
- * toast entries.
- */
-#define TOAST_COMPRESS_EXTSIZE(ptr) \
-	(((toast_compress_header *) (ptr))->tcinfo & VARLENA_EXTSIZE_MASK)
-#define TOAST_COMPRESS_METHOD(ptr) \
-	(((toast_compress_header *) (ptr))->tcinfo >> VARLENA_EXTSIZE_BITS)
+	Assert(rawsize > 0 && rawsize <= VARLENA_EXTSIZE_MASK);
+	Assert(cmid == TOAST_PGLZ_COMPRESSION_ID ||
+		   cmid == TOAST_LZ4_COMPRESSION_ID);
 
-#define TOAST_COMPRESS_SET_SIZE_AND_COMPRESS_METHOD(ptr, len, cm_method) \
-	do { \
-		Assert((len) > 0 && (len) <= VARLENA_EXTSIZE_MASK); \
-		Assert((cm_method) == TOAST_PGLZ_COMPRESSION_ID || \
-			   (cm_method) == TOAST_LZ4_COMPRESSION_ID); \
-		((toast_compress_header *) (ptr))->tcinfo = \
-			(len) | ((uint32) (cm_method) << VARLENA_EXTSIZE_BITS); \
-	} while (0)
+	va->va_compressed.va_tcinfo =
+		rawsize | ((uint32) cmid << VARLENA_EXTSIZE_BITS);
+}
 
 extern Datum toast_compress_datum(Datum value, char cmethod);
 extern Oid	toast_get_valid_index(Oid toastoid, LOCKMODE lock);

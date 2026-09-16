@@ -1751,7 +1751,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 	{
 		uint8		va_tag = VARTAG_EXTERNAL(tp + ctx->offset);
 
-		if (va_tag != VARTAG_ONDISK_OID && va_tag != VARTAG_ONDISK_OID8)
+		if (!VARTAG_IS_ONDISK(va_tag))
 		{
 			report_corruption(ctx,
 							  psprintf("toasted attribute has unexpected TOAST tag %u",
@@ -1816,7 +1816,7 @@ check_tuple_attribute(HeapCheckContext *ctx)
 		bool		valid = false;
 
 		/* Compressed attributes should have a valid compression method */
-		cmid = VARATT_EXTINFO_GET_COMPRESS_METHOD(toast_ext_data.extinfo);
+		cmid = toast_ext_data.compress_method;
 		switch (cmid)
 		{
 				/* List of all valid compression method IDs */

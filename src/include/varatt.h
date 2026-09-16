@@ -141,6 +141,13 @@ VARTAG_IS_EXPANDED(vartag_external tag)
 	return ((tag & ~1) == VARTAG_EXPANDED_RO);
 }
 
+/* Is a TOAST pointer any of the on-disk kinds? */
+static inline bool
+VARTAG_IS_ONDISK(vartag_external tag)
+{
+	return (tag == VARTAG_ONDISK_OID || tag == VARTAG_ONDISK_OID8);
+}
+
 /* Size of the data part of a "TOAST pointer" datum */
 static inline Size
 VARTAG_SIZE(vartag_external tag)
@@ -406,12 +413,7 @@ VARATT_IS_EXTERNAL(const void *PTR)
 static inline bool
 VARATT_IS_EXTERNAL_ONDISK(const void *PTR)
 {
-	vartag_external tag;
-
-	if (!VARATT_IS_EXTERNAL(PTR))
-		return false;
-	tag = VARTAG_EXTERNAL(PTR);
-	return (tag == VARTAG_ONDISK_OID || tag == VARTAG_ONDISK_OID8);
+	return VARATT_IS_EXTERNAL(PTR) && VARTAG_IS_ONDISK(VARTAG_EXTERNAL(PTR));
 }
 
 /* Is varlena datum an indirect pointer? */
