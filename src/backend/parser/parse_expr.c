@@ -3370,7 +3370,20 @@ transformJsonValueExpr(ParseState *pstate, const char *constructName,
 
 			default:
 				if (typcategory == TYPCATEGORY_STRING)
-					return expr;
+				{
+					/*
+					 * Coerce the remaining string types to text, as
+					 * JsonItemFromDatum() only knows about text and varchar.
+					 * This covers domains over the string types, character(n)
+					 * (whose blank padding the cast discards) and types like
+					 * citext that declare themselves as string types.
+					 */
+					return coerce_to_target_type(pstate, expr, exprtype,
+												 TEXTOID, -1,
+												 COERCION_EXPLICIT,
+												 COERCE_EXPLICIT_CAST,
+												 location);
+				}
 				/* else convert argument to json[b] type */
 				break;
 		}

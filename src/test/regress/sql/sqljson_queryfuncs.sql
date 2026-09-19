@@ -499,6 +499,14 @@ INSERT INTO test_passing_toast SELECT repeat('x', 10000);
 SELECT JSON_VALUE(jsonb 'null', '$a' PASSING t AS a) = t AS ok FROM test_passing_toast;
 DROP TABLE test_passing_toast;
 
+-- Test PASSING of the other types of the string category, which are coerced
+-- to text.  Note that the blank padding of character(n) is discarded.
+CREATE DOMAIN queryfuncs_textdom AS text;
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING 'foo'::char(5) AS a);
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING 'foo'::name AS a);
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING 'foo'::queryfuncs_textdom AS a);
+DROP DOMAIN queryfuncs_textdom;
+
 -- Test ON ERROR / EMPTY value validity for the function; all fail.
 SELECT JSON_EXISTS(jsonb '1', '$' DEFAULT 1 ON ERROR);
 SELECT JSON_VALUE(jsonb '1', '$' EMPTY ON ERROR);

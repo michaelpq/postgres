@@ -1489,6 +1489,28 @@ SELECT JSON_VALUE(jsonb 'null', '$a' PASSING t AS a) = t AS ok FROM test_passing
 (2 rows)
 
 DROP TABLE test_passing_toast;
+-- Test PASSING of the other types of the string category, which are coerced
+-- to text.  Note that the blank padding of character(n) is discarded.
+CREATE DOMAIN queryfuncs_textdom AS text;
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING 'foo'::char(5) AS a);
+ json_value 
+------------
+ foo
+(1 row)
+
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING 'foo'::name AS a);
+ json_value 
+------------
+ foo
+(1 row)
+
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING 'foo'::queryfuncs_textdom AS a);
+ json_value 
+------------
+ foo
+(1 row)
+
+DROP DOMAIN queryfuncs_textdom;
 -- Test ON ERROR / EMPTY value validity for the function; all fail.
 SELECT JSON_EXISTS(jsonb '1', '$' DEFAULT 1 ON ERROR);
 ERROR:  invalid ON ERROR behavior
