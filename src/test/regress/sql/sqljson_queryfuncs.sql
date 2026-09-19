@@ -488,6 +488,17 @@ SELECT JSON_QUERY(jsonb 'null', '$Xyz' PASSING 1 AS Xyz);
 SELECT JSON_QUERY(jsonb 'null', '$Xyz' PASSING 1 AS "Xyz");
 SELECT JSON_QUERY(jsonb 'null', '$"Xyz"' PASSING 1 AS "Xyz");
 
+-- Test PASSING of toasted text values, with one value compressed and kept
+-- in line, and one value pushed out of line as SET STORAGE EXTERNAL
+-- disables compression for it.
+CREATE TABLE test_passing_toast (t text);
+ALTER TABLE test_passing_toast ALTER COLUMN t SET STORAGE EXTENDED;
+INSERT INTO test_passing_toast SELECT repeat('x', 10000);
+ALTER TABLE test_passing_toast ALTER COLUMN t SET STORAGE EXTERNAL;
+INSERT INTO test_passing_toast SELECT repeat('x', 10000);
+SELECT JSON_VALUE(jsonb 'null', '$a' PASSING t AS a) = t AS ok FROM test_passing_toast;
+DROP TABLE test_passing_toast;
+
 -- Test ON ERROR / EMPTY value validity for the function; all fail.
 SELECT JSON_EXISTS(jsonb '1', '$' DEFAULT 1 ON ERROR);
 SELECT JSON_VALUE(jsonb '1', '$' EMPTY ON ERROR);
