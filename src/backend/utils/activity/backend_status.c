@@ -912,6 +912,7 @@ pgstat_read_current_status(void)
 			 */
 			localentry->proc_number = procNumber;
 			ProcNumberGetTransactionIds(procNumber,
+										localentry->backendStatus.st_procpid,
 										&localentry->backend_xid,
 										&localentry->backend_xmin,
 										&localentry->backend_subxact_count,

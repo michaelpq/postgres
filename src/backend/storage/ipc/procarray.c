@@ -3120,9 +3120,13 @@ ProcNumberGetProc(ProcNumber procNumber)
  * Get the xid, xmin, nsubxid and overflow status of the backend.  The
  * result may be out of date arbitrarily quickly, so the caller must be
  * careful about how this information is used.
+ *
+ * "pid" is the PID of the backend the caller expects to find using this
+ * proc number.  If the proc number has been reused by a different backend
+ * since the caller looked at it, nothing is reported.
  */
 void
-ProcNumberGetTransactionIds(ProcNumber procNumber, TransactionId *xid,
+ProcNumberGetTransactionIds(ProcNumber procNumber, int pid, TransactionId *xid,
 							TransactionId *xmin, int *nsubxid, bool *overflowed)
 {
 	PGPROC	   *proc;
@@ -3139,7 +3143,7 @@ ProcNumberGetTransactionIds(ProcNumber procNumber, TransactionId *xid,
 	/* Need to lock out additions/removals of backends */
 	LWLockAcquire(ProcArrayLock, LW_SHARED);
 
-	if (proc->pid != 0)
+	if (proc->pid != 0 && proc->pid == pid)
 	{
 		*xid = proc->xid;
 		*xmin = proc->xmin;
