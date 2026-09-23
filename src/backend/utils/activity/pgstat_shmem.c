@@ -305,11 +305,7 @@ pgstat_detach_shmem(void)
 /*
  * Allocate the DSA body for a new variable-numbered pgstats entry.
  *
- * Returns InvalidDsaPointer if the allocation fails without throwing.  Call
- * this before inserting a hash entry: dsa_allocate_extended() can still raise
- * ERROR when creating a new DSM segment (for example ENOSPC), and doing that
- * after the insert would leave a live hash entry with body ==
- * InvalidDsaPointer.
+ * Returns InvalidDsaPointer in the event of an allocation failure.
  */
 dsa_pointer
 pgstat_alloc_entry_body(PgStat_Kind kind)
@@ -322,15 +318,10 @@ pgstat_alloc_entry_body(PgStat_Kind kind)
 }
 
 /*
- * Initialize a newly-inserted hash entry around an already-allocated DSA
- * body.
+ * Initialize variable-numbered pgstats entry.
  *
- * The caller must hold the dshash partition lock.  The entry cannot be found
- * by other backends until that lock is released, so it is safe to publish
- * refcount/dropped/body here.  Caller needs to increment the refcount further
- * if a longer-lived reference is needed.
- *
- * chunk must be a valid pointer from pgstat_alloc_entry_body().
+ * "chunk" must be a valid pointer, allocated previously by
+ * pgstat_alloc_entry_body().
  */
 PgStatShared_Common *
 pgstat_init_entry(PgStat_Kind kind,
@@ -342,12 +333,24 @@ pgstat_init_entry(PgStat_Kind kind,
 
 	Assert(DsaPointerIsValid(chunk));
 
+	/*
+	 * Initialize refcount to 1, marking it as valid / not dropped. The entry
+	 * can't be freed before the initialization because it can't be found as
+	 * long as we hold the dshash partition lock. Caller needs to increase
+	 * further if a longer lived reference is needed.
+	 */
+	pg_atomic_init_u32(&shhashent->refcount, 1);
+
+	/*
+	 * Initialize "generation" to 0, as freshly created.
+	 */
+	pg_atomic_init_u32(&shhashent->generation, 0);
+	shhashent->dropped = false;
+
 	shheader = dsa_get_address(pgStatLocal.dsa, chunk);
 	shheader->magic = 0xdeadbeef;
 
-	pg_atomic_init_u32(&shhashent->refcount, 1);
-	pg_atomic_init_u32(&shhashent->generation, 0);
-	shhashent->dropped = false;
+	/* Link the new entry from the hash entry. */
 	shhashent->body = chunk;
 
 	/* Increment entry count, if required. */
@@ -553,12 +556,7 @@ pgstat_get_entry_ref(PgStat_Kind kind, Oid dboid, uint64 objid, bool create,
 		bool		shfound;
 		dsa_pointer chunk;
 
-		/*
-		 * Allocate the stats body before inserting a hash entry.  Creating a
-		 * new DSA segment can raise ERROR (e.g. ENOSPC on posix shm); doing
-		 * that after the insert would leave a live hash entry with an
-		 * invalid body.
-		 */
+		/* Allocate the stats body before inserting a hash entry. */
 		chunk = pgstat_alloc_entry_body(kind);
 		if (chunk == InvalidDsaPointer)
 		{

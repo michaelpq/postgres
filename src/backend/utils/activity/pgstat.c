@@ -2097,9 +2097,7 @@ pgstat_read_statsfile(void)
 					 * putting all stats into checkpointer's
 					 * pgStatEntryRefHash would be wasted effort and memory.
 					 *
-					 * Allocate the DSA body before inserting the hash entry,
-					 * so a dsm_create failure cannot leave a half-initialized
-					 * shared entry behind.
+					 * Allocate the DSA body before inserting the hash entry.
 					 */
 					chunk = pgstat_alloc_entry_body(key.kind);
 					if (chunk == InvalidDsaPointer)
@@ -2120,6 +2118,8 @@ pgstat_read_statsfile(void)
 					if (!p)
 					{
 						dsa_free(pgStatLocal.dsa, chunk);
+
+						/* for the same reason as previously, ERROR not WARNING */
 						elog(ERROR, "could not insert entry %u/%u/%" PRIu64 " of type %c",
 							 key.kind, key.dboid,
 							 key.objid, t);
