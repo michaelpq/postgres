@@ -1123,6 +1123,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 	Datum		pgstdat = (Datum) 0;
 	Oid			elemtypid = InvalidOid;
 	Oid			elemeqopr = InvalidOid;
+	Oid			rtypid = InvalidOid;
 	bool		found[NUM_ATTRIBUTE_STATS_ELEMS] = {0};
 	JsonbValue	val[NUM_ATTRIBUTE_STATS_ELEMS] = {0};
 
@@ -1259,8 +1260,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 		found[RANGE_EMPTY_FRAC_ELEM] ||
 		found[RANGE_BOUNDS_HISTOGRAM_ELEM])
 	{
-		if (typcache->typtype != TYPTYPE_RANGE &&
-			typcache->typtype != TYPTYPE_MULTIRANGE)
+		if (!statatt_get_range_type(typid, &rtypid))
 		{
 			ereport(WARNING,
 					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -1476,14 +1476,8 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 		Datum		stavalues;
 		bool		val_ok = false;
 		char	   *s;
-		Oid			rtypid = typid;
 
-		/*
-		 * If it's a multirange, step down to the range type, as is done by
-		 * multirange_typanalyze().
-		 */
-		if (type_is_multirange(typid))
-			rtypid = get_multirange_range(typid);
+		Assert(OidIsValid(rtypid));
 
 		s = jbv_string_get_cstr(&val[RANGE_BOUNDS_HISTOGRAM_ELEM]);
 

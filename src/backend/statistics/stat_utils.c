@@ -552,6 +552,36 @@ statatt_get_elem_type(Oid atttypid, char atttyptype,
 }
 
 /*
+ * Derive the range type to use from the attribute type, returning false if
+ * the attribute cannot have range statistics at all.
+ *
+ * The attribute type may be a domain, in which case its base type decides
+ * whether range statistics apply (see also range_typanalyze() and
+ * multirange_typanalyze()).  For a multirange type, we step down to its
+ * range type, because compute_range_stats() stores range bounds even when
+ * analyzing a multirange column.
+ *
+ * The atttypid should be derived from a previous call to statatt_get_type().
+ */
+bool
+statatt_get_range_type(Oid atttypid, Oid *rangetypid)
+{
+	Oid			basetypid = getBaseType(atttypid);
+
+	if (type_is_multirange(basetypid))
+		*rangetypid = get_multirange_range(basetypid);
+	else if (type_is_range(basetypid))
+		*rangetypid = basetypid;
+	else
+	{
+		*rangetypid = InvalidOid;
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * Build an array with element type typid from a text datum, used as
  * value of an attribute in a tuple to-be-inserted into pg_statistic.
  *

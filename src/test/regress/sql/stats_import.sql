@@ -1082,6 +1082,124 @@ SELECT pg_catalog.pg_restore_attribute_stats(
   'range_bounds_histogram', '{"[1,30)","[11,30)","[21,130)"}'::text
 );
 
+-- test for domains over range and multirange types
+CREATE DOMAIN stats_import.dom_int4 AS int4;
+CREATE DOMAIN stats_import.dom_range AS int4range;
+CREATE DOMAIN stats_import.dom_mrange AS int4multirange;
+
+CREATE TABLE stats_import.test_dom(
+    id stats_import.dom_int4,
+    drange stats_import.dom_range,
+    dmrange stats_import.dom_mrange
+) WITH (autovacuum_enabled = false);
+
+INSERT INTO stats_import.test_dom
+VALUES (1, '[1,3)', '{[1,3),[5,9),[20,30)}'),
+  (2, '[5,9)', '{[11,13),[15,19),[20,30)}'),
+  (3, '[11,15)', '{[21,23),[25,29),[120,130)}');
+
+-- warn: domain a scalar type cannot have range stats
+SELECT pg_catalog.pg_restore_attribute_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_dom',
+  'attname', 'id',
+  'inherited', false,
+  'null_frac', 0.25::real,
+  'range_length_histogram', '{2,4,4}'::text,
+  'range_empty_frac', '0'::real,
+  'range_bounds_histogram', '{"[1,3)","[5,9)","[11,15)"}'::text
+);
+
+SELECT *
+FROM stats_import.pg_stats_stable
+WHERE schemaname = 'stats_import'
+AND tablename = 'test_dom'
+AND inherited = false
+AND attname = 'id';
+
+-- ok: range stats for a domain over a range type
+SELECT pg_catalog.pg_restore_attribute_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_dom',
+  'attname', 'drange',
+  'inherited', false,
+  'range_length_histogram', '{2,4,4}'::text,
+  'range_empty_frac', '0'::real,
+  'range_bounds_histogram', '{"[1,3)","[5,9)","[11,15)"}'::text
+);
+
+SELECT *
+FROM stats_import.pg_stats_stable
+WHERE schemaname = 'stats_import'
+AND tablename = 'test_dom'
+AND inherited = false
+AND attname = 'drange';
+
+-- ok: range stats for a domain over a multirange type.
+SELECT pg_catalog.pg_restore_attribute_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_dom',
+  'attname', 'dmrange',
+  'inherited', false,
+  'range_length_histogram', '{29,29,109}'::text,
+  'range_empty_frac', '0'::real,
+  'range_bounds_histogram', '{"[1,30)","[11,30)","[21,130)"}'::text
+);
+
+SELECT *
+FROM stats_import.pg_stats_stable
+WHERE schemaname = 'stats_import'
+AND tablename = 'test_dom'
+AND inherited = false
+AND attname = 'dmrange';
+
+-- warn: multirange values in the bounds histogram of a domain.  These
+-- must be ranges.
+SELECT pg_catalog.pg_restore_attribute_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_dom',
+  'attname', 'dmrange',
+  'inherited', false,
+  'range_length_histogram', '{29,29,109}'::text,
+  'range_empty_frac', '0'::real,
+  'range_bounds_histogram', '{"{[1,30)}","{[11,30)}"}'::text
+);
+
+--
+-- Check that the range stats that ANALYZE generates for domains over range
+-- and multirange types can be restored exactly.
+--
+ANALYZE stats_import.test_dom;
+
+CREATE TABLE stats_import.test_dom_clone ( LIKE stats_import.test_dom )
+    WITH (autovacuum_enabled = false);
+
+SELECT s.attname, s.inherited, r.*
+FROM pg_catalog.pg_stats AS s
+CROSS JOIN LATERAL
+    pg_catalog.pg_restore_attribute_stats(
+        'schemaname', 'stats_import',
+        'relname', 'test_dom_clone',
+        'attname', s.attname::text,
+        'inherited', s.inherited,
+        'null_frac', s.null_frac,
+        'avg_width', s.avg_width,
+        'n_distinct', s.n_distinct,
+        'most_common_vals', s.most_common_vals::text,
+        'most_common_freqs', s.most_common_freqs,
+        'histogram_bounds', s.histogram_bounds::text,
+        'correlation', s.correlation,
+        'range_bounds_histogram', s.range_bounds_histogram::text,
+        'range_empty_frac', s.range_empty_frac,
+        'range_length_histogram', s.range_length_histogram::text) AS r
+WHERE s.schemaname = 'stats_import'
+AND s.tablename = 'test_dom'
+ORDER BY s.attname, s.inherited;
+
+SELECT relname, (stats).*
+FROM stats_import.pg_statistic_get_difference('test_dom', 'test_dom_clone')
+\gx
+
 --
 -- Test the ability to exactly copy data from one table to an identical table,
 -- correctly reconstructing the stakind order as well as the staopN and
@@ -1931,6 +2049,51 @@ SELECT e.expr, e.null_frac, e.avg_width, e.n_distinct, e.most_common_vals,
 FROM pg_stats_ext_exprs AS e
 WHERE e.statistics_schemaname = 'stats_import' AND
     e.statistics_name = 'test_mr_stat' AND
+    e.inherited = false
+\gx
+
+-- Check import of range stats for expressions whose type is a domain over a
+-- range or a multirange type.
+CREATE STATISTICS stats_import.test_dom_stat
+  ON id,
+     (range_merge(drange, drange)::stats_import.dom_range),
+     ((dmrange + '{}'::int4multirange)::stats_import.dom_mrange)
+  FROM stats_import.test_dom;
+
+-- warn: reject multirange values in the bounds histogram of a domain.  These
+-- must be ranges.
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_dom',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_dom_stat',
+  'inherited', false,
+  'exprs', '[{"range_length_histogram": "{2,4,4}",
+              "range_empty_frac": "0",
+              "range_bounds_histogram": "{\"[1,3)\",\"[5,9)\",\"[11,15)\"}"},
+             {"range_length_histogram": "{29,29,109}",
+              "range_empty_frac": "0",
+              "range_bounds_histogram": "{\"{[1,30)}\",\"{[11,30)}\"}"}]'::jsonb);
+
+-- ok: range stats for domains over range and multirange types
+SELECT pg_catalog.pg_restore_extended_stats(
+  'schemaname', 'stats_import',
+  'relname', 'test_dom',
+  'statistics_schemaname', 'stats_import',
+  'statistics_name', 'test_dom_stat',
+  'inherited', false,
+  'exprs', '[{"range_length_histogram": "{2,4,4}",
+              "range_empty_frac": "0",
+              "range_bounds_histogram": "{\"[1,3)\",\"[5,9)\",\"[11,15)\"}"},
+             {"range_length_histogram": "{29,29,109}",
+              "range_empty_frac": "0",
+              "range_bounds_histogram": "{\"[1,30)\",\"[11,30)\",\"[21,130)\"}"}]'::jsonb);
+
+SELECT e.expr, e.range_length_histogram, e.range_empty_frac,
+       e.range_bounds_histogram
+FROM pg_stats_ext_exprs AS e
+WHERE e.statistics_schemaname = 'stats_import' AND
+    e.statistics_name = 'test_dom_stat' AND
     e.inherited = false
 \gx
 

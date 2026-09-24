@@ -57,6 +57,7 @@ extern Datum statatt_build_stavalues(const char *staname, FmgrInfo *array_in, Da
 									 Oid typid, int32 typmod, bool *ok);
 extern bool statatt_get_elem_type(Oid atttypid, char atttyptype,
 								  Oid *elemtypid, Oid *elem_eq_opr);
+extern bool statatt_get_range_type(Oid atttypid, Oid *rangetypid);
 
 extern bool statatt_check_bounds_histogram(Datum arrayval);
 

@@ -229,6 +229,8 @@ attribute_statistics_update_internal(Oid reloid,
 	Oid			elemtypid = InvalidOid;
 	Oid			elem_eq_opr = InvalidOid;
 
+	Oid			bounds_typid = InvalidOid;
+
 	FmgrInfo	array_in_fn;
 
 	bool		do_mcv = !PG_ARGISNULL(MOST_COMMON_FREQS_ARG) &&
@@ -334,7 +336,7 @@ attribute_statistics_update_internal(Oid reloid,
 
 	/* only range types can have range stats */
 	if ((do_range_length_histogram || do_bounds_histogram) &&
-		!(atttyptype == TYPTYPE_RANGE || atttyptype == TYPTYPE_MULTIRANGE))
+		!statatt_get_range_type(atttypid, &bounds_typid))
 	{
 		ereport(WARNING,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -498,14 +500,8 @@ attribute_statistics_update_internal(Oid reloid,
 	{
 		bool		converted = false;
 		Datum		stavalues;
-		Oid			bounds_typid = atttypid;
 
-		/*
-		 * If it's a multirange, step down to the range type, as is done by
-		 * multirange_typanalyze().
-		 */
-		if (type_is_multirange(atttypid))
-			bounds_typid = get_multirange_range(atttypid);
+		Assert(OidIsValid(bounds_typid));
 
 		stavalues = statatt_build_stavalues("range_bounds_histogram",
 											&array_in_fn,
