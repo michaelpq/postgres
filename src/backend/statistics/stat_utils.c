@@ -435,6 +435,9 @@ stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
  * This duplicates the logic in examine_attribute() but it will not skip the
  * attribute if the attstattarget is 0.
  *
+ * *atttypid and *atttypmod describe the type as declared.  *basetypcache is
+ * the cache entry of the base type behind any domain.
+ *
  * This information, retrieved from pg_attribute and pg_type with some
  * specific handling for index expressions, is a prerequisite to calling
  * any of the other statatt_*() functions.

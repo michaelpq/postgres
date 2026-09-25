@@ -1098,7 +1098,7 @@ VALUES (1, '[1,3)', '{[1,3),[5,9),[20,30)}'),
   (2, '[5,9)', '{[11,13),[15,19),[20,30)}'),
   (3, '[11,15)', '{[21,23),[25,29),[120,130)}');
 
--- warn: domain a scalar type cannot have range stats
+-- warn: domain over a scalar type cannot have range stats
 SELECT pg_catalog.pg_restore_attribute_stats(
   'schemaname', 'stats_import',
   'relname', 'test_dom',
