@@ -26,10 +26,11 @@ session s2
 step wait2	{ SELECT injection_points_run('injection-points-wait'); }
 step noop2	{ }
 
-# Control session.  The blocker annotations on cancel3/terminate3,
-# together with noop3, make the tester wait until wait1 has fully
-# completed before starting wait2.  Otherwise, wait2 could register a
-# new waiter slot while s1 still owns the previous one.
+# Control session.  The blocker annotation on cancel3, together with
+# noop3, makes the tester wait until wait1 has fully completed before
+# starting wait2.  Otherwise, wait2 could register a new waiter slot
+# while s1 still owns the previous one.  In the terminate permutation,
+# terminate3 waits for s1's backend to exit instead.
 session s3
 step cancel3	{
 	SELECT pg_cancel_backend(pid) FROM pg_stat_activity
@@ -38,13 +39,29 @@ step cancel3	{
 step terminate3	{
 	SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 	  WHERE wait_event = 'injection-points-wait';
+	DO $$
+	BEGIN
+	  WHILE EXISTS (SELECT FROM pg_stat_activity
+					WHERE application_name = 'isolation/wait_cleanup/s1')
+	  LOOP
+		PERFORM pg_sleep(0.01);
+		PERFORM pg_stat_clear_snapshot();
+	  END LOOP;
+	END$$;
 }
 step wakeup3	{ SELECT injection_points_wakeup('injection-points-wait'); }
 step detach3	{ SELECT injection_points_detach('injection-points-wait'); }
+step release3	{ DO $$BEGIN RAISE NOTICE 'release wait1'; END$$; }
 step noop3	{ }
 
 permutation wait1 cancel3(wait1) noop3 wait2 wakeup3 noop2 detach3
 
 # The terminate permutation has to stay last: s1's connection is dead
 # afterwards, and the tester never reconnects a session.
-permutation wait1 terminate3(wait1) noop3 wait2 wakeup3 noop2 detach3
+#
+# On Windows, the FATAL of a terminated backend can get lost, as the
+# backend's exit resets the connection and unread data is discarded.
+# Holding wait1 until release3 makes the tester notice the lost
+# connection while the step is still blocked, and report it on a later
+# retry, see wait_cleanup_1.out.
+permutation wait1(release3 notices 1) terminate3 release3 wait2 wakeup3 noop2 detach3

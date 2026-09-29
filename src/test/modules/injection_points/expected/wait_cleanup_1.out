@@ -69,10 +69,10 @@ t
 s3: NOTICE:  release wait1
 step release3: DO $$BEGIN RAISE NOTICE 'release wait1'; END$$;
 step wait1: <... completed>
-FATAL:  terminating connection due to administrator command
 server closed the connection unexpectedly
 	This probably means the server terminated abnormally
 	before or while processing the request.
+invalid socket
 
 step wait2: SELECT injection_points_run('injection-points-wait'); <waiting ...>
 step wakeup3: SELECT injection_points_wakeup('injection-points-wait');

@@ -851,7 +851,7 @@ try_complete_step(TestSpec *testspec, PermutationStep *pstep, int flags)
 		}
 	}
 
-	if (sock < 0)
+	if (sock < 0 && PQstatus(conn) != CONNECTION_BAD)
 	{
 		fprintf(stderr, "invalid socket: %s", PQerrorMessage(conn));
 		exit(1);
@@ -908,7 +908,7 @@ try_complete_step(TestSpec *testspec, PermutationStep *pstep, int flags)
 					 * returns false, we might as well go examine the
 					 * available result.
 					 */
-					if (!PQconsumeInput(conn))
+					if (!PQconsumeInput(conn) && PQstatus(conn) != CONNECTION_BAD)
 					{
 						fprintf(stderr, "PQconsumeInput failed: %s\n",
 								PQerrorMessage(conn));
@@ -977,7 +977,8 @@ try_complete_step(TestSpec *testspec, PermutationStep *pstep, int flags)
 				exit(1);
 			}
 		}
-		else if (!PQconsumeInput(conn)) /* select(): data available */
+		else if (!PQconsumeInput(conn) &&
+				 PQstatus(conn) != CONNECTION_BAD)	/* select(): data available */
 		{
 			fprintf(stderr, "PQconsumeInput failed: %s\n",
 					PQerrorMessage(conn));
