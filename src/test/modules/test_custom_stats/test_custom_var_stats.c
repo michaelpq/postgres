@@ -18,6 +18,7 @@
 #include "storage/dsm_registry.h"
 #include "storage/fd.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
 #include "utils/pgstat_internal.h"
 
 PG_MODULE_MAGIC_EXT(
@@ -111,7 +112,27 @@ static void test_custom_stats_var_finish(PgStat_StatsFileOp status);
  *--------------------------------------------------------------------------
  */
 
-static const PgStat_KindInfo custom_stats = {
+/* Which variable-sized custom stats kind definition to register. */
+static char *test_custom_stats_kind = "test_custom_var_stats";
+
+static const PgStat_KindInfo custom_stats_own_hash = {
+	.name = "test_custom_var_stats_own_hash",
+	.fixed_amount = false,		/* variable number of entries */
+	.write_to_file = true,		/* persist across restarts */
+	.track_entry_count = true,	/* count active entries */
+	.accessed_across_databases = true,	/* global statistics */
+	.own_hash = true,			/* use dedicated dshash */
+	.shared_size = sizeof(PgStatShared_CustomVarEntry),
+	.shared_data_off = offsetof(PgStatShared_CustomVarEntry, stats),
+	.shared_data_len = sizeof(((PgStatShared_CustomVarEntry *) 0)->stats),
+	.pending_size = sizeof(PgStat_StatCustomVarEntry),
+	.flush_pending_cb = test_custom_stats_var_flush_pending_cb,
+	.to_serialized_data = test_custom_stats_var_to_serialized_data,
+	.from_serialized_data = test_custom_stats_var_from_serialized_data,
+	.finish = test_custom_stats_var_finish,
+};
+
+static const PgStat_KindInfo custom_stats_shared_hash = {
 	.name = "test_custom_var_stats",
 	.fixed_amount = false,		/* variable number of entries */
 	.write_to_file = true,		/* persist across restarts */
@@ -135,8 +156,27 @@ static const PgStat_KindInfo custom_stats = {
 void
 _PG_init(void)
 {
-	/* Register custom statistics kind */
-	pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS, &custom_stats);
+	DefineCustomStringVariable("test_custom_var_stats.kind",
+							   "Sets the custom variable stats kind to register.",
+							   NULL,
+							   &test_custom_stats_kind,
+							   "test_custom_var_stats",
+							   PGC_POSTMASTER,
+							   0,
+							   NULL, NULL, NULL);
+
+	if (strcmp(test_custom_stats_kind, custom_stats_shared_hash.name) == 0)
+		pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS,
+							 &custom_stats_shared_hash);
+	else if (strcmp(test_custom_stats_kind, custom_stats_own_hash.name) == 0)
+		pgstat_register_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS,
+							 &custom_stats_own_hash);
+	else
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid value for parameter \"%s\": \"%s\"",
+						"test_custom_var_stats.kind",
+						test_custom_stats_kind)));
 }
 
 /*--------------------------------------------------------------------------
@@ -616,6 +656,19 @@ test_custom_stats_var_drop(PG_FUNCTION_ARGS)
 }
 
 /*
+ * test_custom_stats_var_reset
+ *		Reset all custom statistic entries
+ */
+PG_FUNCTION_INFO_V1(test_custom_stats_var_reset);
+Datum
+test_custom_stats_var_reset(PG_FUNCTION_ARGS)
+{
+	pgstat_reset_of_kind(PGSTAT_KIND_TEST_CUSTOM_VAR_STATS);
+
+	PG_RETURN_VOID();
+}
+
+/*
  * test_custom_stats_var_report
  *		Retrieve custom statistic values
  *
@@ -700,4 +753,41 @@ test_custom_stats_var_report(PG_FUNCTION_ARGS)
 	}
 
 	SRF_RETURN_DONE(funcctx);
+}
+
+/*
+ * test_custom_stats_var_is_own_hash
+ *		Verify whether the kind uses a dedicated dshash
+ *
+ * Scans pgStatLocal.all_hashes[] looking for the kind's hash.  Index 0 is
+ * always the shared hash, so finding it at a non-zero index confirms it has
+ * its own hash.  Also verifies that the kind's DSA matches its hash.
+ */
+PG_FUNCTION_INFO_V1(test_custom_stats_var_is_own_hash);
+Datum
+test_custom_stats_var_is_own_hash(PG_FUNCTION_ARGS)
+{
+	dsa_area   *dsa;
+	dshash_table *hash;
+
+	hash = pgStatLocal.kind_hash[PGSTAT_KIND_TEST_CUSTOM_VAR_STATS];
+	dsa = pgStatLocal.kind_dsa[PGSTAT_KIND_TEST_CUSTOM_VAR_STATS];
+
+	if (hash == NULL || dsa == NULL)
+		elog(ERROR, "custom variable stats kind hash or DSA is not attached");
+
+	if (pgStatLocal.num_hashes <= 0 || pgStatLocal.all_hashes[0] == NULL)
+		elog(ERROR, "stats hash table list is not initialized");
+
+	if (dsa != dshash_get_dsa_area(hash))
+		elog(ERROR, "custom variable stats kind hash and DSA do not match");
+
+	for (int i = 0; i < pgStatLocal.num_hashes; i++)
+	{
+		if (pgStatLocal.all_hashes[i] == hash)
+			PG_RETURN_BOOL(i != 0);
+	}
+
+	elog(ERROR, "custom variable stats kind hash is not registered for iteration");
+	PG_RETURN_NULL();
 }
