@@ -64,6 +64,14 @@ foreach my $stats_kind (@var_stats_kinds)
 		"test_custom_var_stats.kind = '$kind_name'");
 	$node->restart;
 
+	$result = $node->safe_psql(
+		'postgres',
+		q(SELECT own_hash FROM pg_stat_kind_info
+		  WHERE name = current_setting('test_custom_var_stats.kind')));
+	is( $result,
+		$own_hash,
+		"pg_stat_kind_info reports own_hash=$own_hash for $kind_name");
+
 	$result = $node->safe_psql('postgres',
 		q(select test_custom_stats_var_is_own_hash()));
 	is( $result,
