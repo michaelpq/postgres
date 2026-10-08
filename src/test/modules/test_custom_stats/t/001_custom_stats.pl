@@ -68,14 +68,12 @@ foreach my $stats_kind (@var_stats_kinds)
 		'postgres',
 		q(SELECT own_hash FROM pg_stat_kind_info
 		  WHERE name = current_setting('test_custom_var_stats.kind')));
-	is( $result,
-		$own_hash,
+	is($result, $own_hash,
 		"pg_stat_kind_info reports own_hash=$own_hash for $kind_name");
 
 	$result = $node->safe_psql('postgres',
 		q(select test_custom_stats_var_is_own_hash()));
-	is( $result,
-		$own_hash,
+	is($result, $own_hash,
 		"check if dedicated hash is allocated for $kind_name");
 
 	# Create entries for variable-sized stats.
@@ -89,7 +87,8 @@ foreach my $stats_kind (@var_stats_kinds)
 		q(select test_custom_stats_var_create('entry4', 'Test entry 4')));
 
 	# Update counters: entry1=2, entry2=3, entry3=2, entry4=3
-	$node->safe_psql('postgres',
+	$node->safe_psql(
+		'postgres',
 		q(select test_custom_stats_var_update(name)
 		  from (values ('entry1', 2), ('entry2', 3),
 		               ('entry3', 2), ('entry4', 3)) as stats(name, n),
@@ -168,14 +167,14 @@ foreach my $stats_kind (@var_stats_kinds)
 
 	$result = $node->safe_psql('postgres',
 		q(select * from test_custom_stats_var_report('entry1')));
-	is( $result,
-		"",
-		"variable-sized stats of entry1 lost after crash recovery for $kind_name");
+	is($result, "",
+		"variable-sized stats of entry1 lost after crash recovery for $kind_name"
+	);
 	$result = $node->safe_psql('postgres',
 		q(select * from test_custom_stats_var_report('entry2')));
-	is( $result,
-		"",
-		"variable-sized stats of entry2 lost after crash recovery for $kind_name");
+	is($result, "",
+		"variable-sized stats of entry2 lost after crash recovery for $kind_name"
+	);
 }
 
 # fixed-sized stats are updated 3 times, so the report below should match.

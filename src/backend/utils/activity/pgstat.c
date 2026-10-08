@@ -1746,7 +1746,8 @@ pgstat_write_statsfile(void)
 	}
 
 	/*
-	 * Walk through the stats entries
+	 * Walk through the stats entries, as long as writes can happen (note that
+	 * switching to a STATS_DISCARD status is possible while walking through).
 	 */
 	for (int h = 0; h < pgStatLocal.num_hashes && status == STATS_WRITE; h++)
 	{
@@ -1903,7 +1904,6 @@ pgstat_read_statsfile(void)
 	PgStat_StatsFileOp status = STATS_READ;
 	const char *statfile = PGSTAT_STAT_PERMANENT_FILENAME;
 	PgStat_ShmemControl *shmem = pgStatLocal.shmem;
-	dshash_table *hash;
 
 	/* shouldn't be called from postmaster */
 	Assert(IsUnderPostmaster || !IsPostmasterEnvironment);
@@ -2105,8 +2105,6 @@ pgstat_read_statsfile(void)
 						Assert(key.kind == kind);
 					}
 
-					hash = pgStatLocal.kind_hash[key.kind];
-
 					/*
 					 * This intentionally doesn't use pgstat_get_entry_ref() -
 					 * putting all stats into checkpointer's
@@ -2127,7 +2125,7 @@ pgstat_read_statsfile(void)
 							 key.objid, t);
 					}
 
-					p = dshash_find_or_insert_extended(hash,
+					p = dshash_find_or_insert_extended(pgStatLocal.kind_hash[key.kind],
 													   &key, &found,
 													   DSHASH_INSERT_NO_OOM);
 					if (!p)
@@ -2146,7 +2144,7 @@ pgstat_read_statsfile(void)
 					/* don't allow duplicate entries */
 					if (found)
 					{
-						dshash_release_lock(hash, p);
+						dshash_release_lock(pgStatLocal.kind_hash[key.kind], p);
 						dsa_free(pgStatLocal.kind_dsa[key.kind], chunk);
 						elog(WARNING, "found duplicate stats entry %u/%u/%" PRIu64 " of type %c",
 							 key.kind, key.dboid,
@@ -2155,7 +2153,7 @@ pgstat_read_statsfile(void)
 					}
 
 					header = pgstat_init_entry(key.kind, p, chunk);
-					dshash_release_lock(hash, p);
+					dshash_release_lock(pgStatLocal.kind_hash[key.kind], p);
 
 					if (!read_chunk(fpin,
 									pgstat_get_entry_data(key.kind, header),

@@ -576,8 +576,8 @@ typedef struct PgStat_ShmemControl
 
 	/*
 	 * Counters for the number of entries associated to a single
-	 * variable-numbered stats kind. These counters can be enabled on a
-	 * per-kind basis, when track_entry_count is set. This counter is
+	 * variable-numbered stats kind.  These counters can be enabled on a
+	 * per-kind basis, when track_entry_count is set.  A counter is
 	 * incremented each time a new entry is created (not reused) in a stats
 	 * hashtable, and is decremented each time an entry is freed from a stats
 	 * hashtable.

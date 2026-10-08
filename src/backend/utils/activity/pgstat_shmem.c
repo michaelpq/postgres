@@ -327,6 +327,7 @@ pgstat_attach_shmem(void)
 		{
 			dsa_area   *kind_dsa;
 
+			/* per-kind hashtable */
 			kind_dsa =
 				dsa_attach_in_place(pgStatLocal.shmem->raw_kind_dsa_area[kind],
 									NULL);
@@ -342,11 +343,13 @@ pgstat_attach_shmem(void)
 		}
 		else if (kind_info && !kind_info->fixed_amount)
 		{
+			/* main shared hashtable */
 			pgStatLocal.kind_hash[kind] = shared_hash;
 			pgStatLocal.kind_dsa[kind] = shared_dsa;
 		}
 		else
 		{
+			/* unassigned kind ID */
 			pgStatLocal.kind_hash[kind] = NULL;
 			pgStatLocal.kind_dsa[kind] = NULL;
 		}
@@ -410,9 +413,8 @@ dsa_pointer
 pgstat_alloc_entry_body(PgStat_Kind kind)
 {
 	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
-	dsa_area   *dsa = pgStatLocal.kind_dsa[kind];
 
-	return dsa_allocate_extended(dsa,
+	return dsa_allocate_extended(pgStatLocal.kind_dsa[kind],
 								 kind_info->shared_size,
 								 DSA_ALLOC_ZERO | DSA_ALLOC_NO_OOM);
 }
@@ -430,7 +432,6 @@ pgstat_init_entry(PgStat_Kind kind,
 {
 	PgStatShared_Common *shheader;
 	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
-	dsa_area   *dsa = pgStatLocal.kind_dsa[kind];
 
 	Assert(DsaPointerIsValid(chunk));
 
@@ -448,7 +449,7 @@ pgstat_init_entry(PgStat_Kind kind,
 	pg_atomic_init_u32(&shhashent->generation, 0);
 	shhashent->dropped = false;
 
-	shheader = dsa_get_address(dsa, chunk);
+	shheader = dsa_get_address(pgStatLocal.kind_dsa[kind], chunk);
 	shheader->magic = 0xdeadbeef;
 
 	/* Link the new entry from the hash entry. */
@@ -464,12 +465,12 @@ pgstat_init_entry(PgStat_Kind kind,
 }
 
 static PgStatShared_Common *
-pgstat_reinit_entry(PgStat_Kind kind, dsa_area *dsa,
-					PgStatShared_HashEntry *shhashent)
+pgstat_reinit_entry(PgStat_Kind kind, PgStatShared_HashEntry *shhashent)
 {
 	PgStatShared_Common *shheader;
 
-	shheader = dsa_get_address(dsa, shhashent->body);
+	shheader = dsa_get_address(pgStatLocal.kind_dsa[kind],
+							   shhashent->body);
 
 	/* mark as not dropped anymore */
 	pg_atomic_fetch_add_u32(&shhashent->refcount, 1);
@@ -650,13 +651,14 @@ pgstat_get_entry_ref(PgStat_Kind kind, Oid dboid, uint64 objid, bool create,
 
 	Assert(entry_ref != NULL);
 
+	/* Per-kind hashtable and DSA area */
+	hash = pgStatLocal.kind_hash[kind];
+	dsa = pgStatLocal.kind_dsa[kind];
+
 	/*
 	 * Do a lookup in the hash table first - it's quite likely that the entry
 	 * already exists, and that way we only need a shared lock.
 	 */
-	hash = pgStatLocal.kind_hash[kind];
-	dsa = pgStatLocal.kind_dsa[kind];
-
 	shhashent = dshash_find(hash, &key, false);
 
 	if (create && !shhashent)
@@ -689,8 +691,8 @@ pgstat_get_entry_ref(PgStat_Kind kind, Oid dboid, uint64 objid, bool create,
 			dsa_free(dsa, chunk);
 
 			/*
-			 * Clean up the local reference when failing to insert into the
-			 * stats hashtable.
+			 * Clean up the local reference when failing insert into the stats
+			 * hashtable.
 			 */
 			pgstat_release_entry_ref(key, entry_ref, false);
 			ereport(ERROR,
@@ -744,7 +746,7 @@ pgstat_get_entry_ref(PgStat_Kind kind, Oid dboid, uint64 objid, bool create,
 			 * stats to their plain state, while incrementing its "generation"
 			 * in the shared entry for any remaining local references.
 			 */
-			shheader = pgstat_reinit_entry(kind, dsa, shhashent);
+			shheader = pgstat_reinit_entry(kind, shhashent);
 			pgstat_acquire_entry_ref(entry_ref, hash, shhashent, shheader);
 
 			if (created_entry != NULL)
@@ -793,7 +795,6 @@ pgstat_release_entry_ref(PgStat_HashKey key, PgStat_EntryRef *entry_ref,
 		 */
 		if (pg_atomic_fetch_sub_u32(&entry_ref->shared_entry->refcount, 1) == 1)
 		{
-			dshash_table *hash = pgStatLocal.kind_hash[key.kind];
 			PgStatShared_HashEntry *shent;
 
 			/*
@@ -804,7 +805,8 @@ pgstat_release_entry_ref(PgStat_HashKey key, PgStat_EntryRef *entry_ref,
 			/* only dropped entries can reach a 0 refcount */
 			Assert(entry_ref->shared_entry->dropped);
 
-			shent = dshash_find(hash, &entry_ref->shared_entry->key, true);
+			shent = dshash_find(pgStatLocal.kind_hash[key.kind],
+								&entry_ref->shared_entry->key, true);
 			if (!shent)
 				elog(ERROR, "could not find just referenced shared stats entry");
 
@@ -827,7 +829,7 @@ pgstat_release_entry_ref(PgStat_HashKey key, PgStat_EntryRef *entry_ref,
 				 * Shared stats entry has been reinitialized, so do not drop
 				 * its shared entry, only release its lock.
 				 */
-				dshash_release_lock(hash, shent);
+				dshash_release_lock(pgStatLocal.kind_hash[key.kind], shent);
 			}
 		}
 	}
@@ -1040,29 +1042,24 @@ pgstat_release_db_entry_refs(Oid dboid)
 static void
 pgstat_free_entry(PgStatShared_HashEntry *shent, dshash_seq_status *hstat)
 {
-	dshash_table *hash;
-	dsa_area   *dsa;
 	dsa_pointer pdsa;
 	PgStat_Kind kind = shent->key.kind;
-	const PgStat_KindInfo *kind_info = pgstat_get_kind_info(kind);
 
 	/*
 	 * Fetch dsa pointer before deleting entry - that way we can free the
 	 * memory after releasing the lock.
 	 */
-	hash = pgStatLocal.kind_hash[kind];
-	dsa = pgStatLocal.kind_dsa[kind];
 	pdsa = shent->body;
 
 	if (!hstat)
-		dshash_delete_entry(hash, shent);
+		dshash_delete_entry(pgStatLocal.kind_hash[kind], shent);
 	else
 		dshash_delete_current(hstat);
 
-	dsa_free(dsa, pdsa);
+	dsa_free(pgStatLocal.kind_dsa[kind], pdsa);
 
 	/* Decrement entry count, if required. */
-	if (kind_info && kind_info->track_entry_count)
+	if (pgstat_get_kind_info(kind)->track_entry_count)
 		pg_atomic_sub_fetch_u64(&pgStatLocal.shmem->entry_counts[kind - 1], 1);
 }
 
@@ -1178,14 +1175,12 @@ pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid,
 				  bool missing_ok)
 {
 	PgStat_HashKey key = {0};
-	dshash_table *hash;
 	PgStatShared_HashEntry *shent;
 	bool		freed = true;
 
 	Assert(kind >= PGSTAT_KIND_MIN && kind <= PGSTAT_KIND_MAX);
 	Assert(pgStatLocal.kind_hash[kind] != NULL);
 
-	hash = pgStatLocal.kind_hash[kind];
 
 	key.kind = kind;
 	key.dboid = dboid;
@@ -1203,22 +1198,20 @@ pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid,
 	}
 
 	/* mark entry in the stats hashtable as deleted, drop if possible */
-	shent = dshash_find(hash, &key, true);
+	shent = dshash_find(pgStatLocal.kind_hash[kind], &key, true);
 	if (shent)
 	{
 		if (shent->dropped)
 		{
-			const PgStat_KindInfo *kind_info = pgstat_get_kind_info(shent->key.kind);
-
 			if (!missing_ok)
 				elog(ERROR,
 					 "trying to drop stats entry already dropped: kind=%s dboid=%u objid=%" PRIu64 " refcount=%u generation=%u",
-					 kind_info->name,
+					 pgstat_get_kind_info(shent->key.kind)->name,
 					 shent->key.dboid,
 					 shent->key.objid,
 					 pg_atomic_read_u32(&shent->refcount),
 					 pg_atomic_read_u32(&shent->generation));
-			dshash_release_lock(hash, shent);
+			dshash_release_lock(pgStatLocal.kind_hash[kind], shent);
 			return true;
 		}
 
