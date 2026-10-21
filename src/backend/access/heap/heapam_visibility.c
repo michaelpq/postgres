@@ -1178,10 +1178,30 @@ HeapTupleSatisfiesVacuumHorizon(HeapTuple htup, Buffer buffer, TransactionId *de
 			if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(tuple)))
 				return HEAPTUPLE_DELETE_IN_PROGRESS;
 			/* deleting subtransaction must have aborted */
+			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
+						InvalidTransactionId);
 			return HEAPTUPLE_INSERT_IN_PROGRESS;
 		}
 		else if (TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple)))
 		{
+			/*
+			 * If the updater of the tuple has already aborted (a rolled-back
+			 * subtransaction of the inserter), remember that, as callers like
+			 * rewriteheap.c rely on HEAP_XMAX_INVALID to tell a live tuple
+			 * from an updated one.
+			 */
+			if (!(tuple->t_infomask & HEAP_XMAX_INVALID) &&
+				!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask) &&
+				!HeapTupleHeaderIsOnlyLocked(tuple))
+			{
+				TransactionId xmax = HeapTupleHeaderGetUpdateXid(tuple);
+
+				if (!TransactionIdIsInProgress(xmax) &&
+					!TransactionIdDidCommit(xmax))
+					SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
+								InvalidTransactionId);
+			}
+
 			/*
 			 * It'd be possible to discern between INSERT/DELETE in progress
 			 * here by looking at xmax - but that doesn't seem beneficial for
