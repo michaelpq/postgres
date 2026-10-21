@@ -122,6 +122,7 @@ test: plpgsql-toast
 test: cluster-conflict
 test: cluster-conflict-partition
 test: cluster-toast-value-reuse
+test: cluster-catalog-aborted-update
 test: truncate-conflict
 test: serializable-parallel
 test: serializable-parallel-2

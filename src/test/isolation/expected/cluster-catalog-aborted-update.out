@@ -1,0 +1,22 @@
+Parsed test spec with 2 sessions
+
+starting permutation: s1_create s1_alter s2_vacfull s1_commit s2_check
+step s1_create: BEGIN; CREATE TABLE cluster_catalog_tab (a int);
+step s1_alter: SAVEPOINT sp; ALTER TABLE cluster_catalog_tab ADD COLUMN b int; ROLLBACK TO sp;
+step s2_vacfull: VACUUM FULL pg_class;
+step s1_commit: COMMIT;
+step s2_check: SELECT count(*) FROM pg_class WHERE relname = 'cluster_catalog_tab';
+count
+-----
+    1
+(1 row)
+
+
+starting permutation: s1_plain s1_count
+step s1_plain: BEGIN; CREATE TABLE cluster_plain_tab (a int, b int); CREATE INDEX cluster_plain_idx ON cluster_plain_tab (b); INSERT INTO cluster_plain_tab VALUES (1, 1); SAVEPOINT sp; UPDATE cluster_plain_tab SET a = 2; ROLLBACK TO sp; CLUSTER cluster_plain_tab USING cluster_plain_idx; COMMIT;
+step s1_count: SELECT count(*) FROM cluster_plain_tab;
+count
+-----
+    1
+(1 row)
+
