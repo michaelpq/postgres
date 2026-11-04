@@ -222,6 +222,18 @@ RESET enable_bitmapscan;
 
 DROP INDEX wowidx;
 
+-- Two index tuples that don't fit on one page
+CREATE TABLE test_tsvector_wide (a tsvector, b bytea);
+CREATE INDEX ON test_tsvector_wide USING gist (a) INCLUDE (b);
+INSERT INTO test_tsvector_wide
+  SELECT 'foo', decode(string_agg(md5(g::text), ''), 'hex')
+  FROM generate_series(1, 300) g;
+INSERT INTO test_tsvector_wide SELECT 'bar', b FROM test_tsvector_wide;
+SET enable_seqscan = off;
+SELECT count(*) FROM test_tsvector_wide WHERE a @@ 'bar';
+RESET enable_seqscan;
+DROP TABLE test_tsvector_wide;
+
 ALTER TABLE test_tsvector SET (parallel_workers = 2);
 CREATE INDEX wowidx ON test_tsvector USING gin (a);
 
