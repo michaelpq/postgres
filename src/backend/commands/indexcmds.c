@@ -3790,6 +3790,7 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 	List	   *indexIds = NIL;
 	List	   *newIndexIds = NIL;
 	List	   *relationLocks = NIL;
+	List	   *phase1Rels = NIL;
 	List	   *lockTags = NIL;
 	ListCell   *lc,
 			   *lc2;
@@ -4215,8 +4216,13 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 
 		MemoryContextSwitchTo(oldcontext);
 
-		index_close(indexRel, NoLock);
-		index_close(newIndexRel, NoLock);
+		/*
+		 * Index expressions and predicates of the indexes processed in the
+		 * next iterations are evaluated in this loop, so keep the relations
+		 * opened until all the new indexes are created.
+		 */
+		phase1Rels = lappend(phase1Rels, indexRel);
+		phase1Rels = lappend(phase1Rels, newIndexRel);
 
 		/* Roll back any GUC changes executed by index functions */
 		AtEOXact_GUC(false, save_nestlevel);
@@ -4224,7 +4230,7 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 		/* Restore userid and security context */
 		SetUserIdAndSecContext(save_userid, save_sec_context);
 
-		table_close(heapRel, NoLock);
+		phase1Rels = lappend(phase1Rels, heapRel);
 
 		/*
 		 * If a statement is available, telling that this comes from a REINDEX
@@ -4278,6 +4284,10 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 
 		LockRelationIdForSession(lockrelid, ShareUpdateExclusiveLock);
 	}
+
+	/* Session locks are taken, release the relations opened in phase 1 */
+	ReindexUnpinRelations(phase1Rels);
+	phase1Rels = NIL;
 
 	PopActiveSnapshot();
 	CommitTransactionCommand();
