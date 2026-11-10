@@ -2015,6 +2015,7 @@ CREATE STATISTICS stats_import.test_mr_stat_clone
 
 -- Check for invalid value combinations for range types.
 -- Only range_bounds_histogram (other two missing)
+-- this is ok per bug 19842
 SELECT pg_catalog.pg_restore_extended_stats(
   'schemaname', 'stats_import',
   'relname', 'test_mr',
@@ -2022,16 +2023,7 @@ SELECT pg_catalog.pg_restore_extended_stats(
   'statistics_name', 'test_mr_stat',
   'inherited', false,
   'exprs', '[{"range_bounds_histogram": "{\"[1,10200)\",\"[11,10200)\"}"}]'::jsonb);
--- Only range_length_histogram and range_empty_frac
--- (range_bounds_histogram missing)
-SELECT pg_catalog.pg_restore_extended_stats(
-  'schemaname', 'stats_import',
-  'relname', 'test_mr',
-  'statistics_schemaname', 'stats_import',
-  'statistics_name', 'test_mr_stat',
-  'inherited', false,
-  'exprs', '[{"range_length_histogram": "{10179,10189}", "range_empty_frac": "0"}]'::jsonb);
--- Only range_bounds_histogram and range_empty_frac
+-- Only range_empty_frac
 -- (range_length_histogram missing)
 SELECT pg_catalog.pg_restore_extended_stats(
   'schemaname', 'stats_import',
@@ -2039,8 +2031,8 @@ SELECT pg_catalog.pg_restore_extended_stats(
   'statistics_schemaname', 'stats_import',
   'statistics_name', 'test_mr_stat',
   'inherited', false,
-  'exprs', '[{"range_bounds_histogram": "{\"[1,10200)\"}", "range_empty_frac": "0"}]'::jsonb);
--- Only range_bounds_histogram and range_length_histogram
+  'exprs', '[{"range_empty_frac": "0"}]'::jsonb);
+-- Only range_length_histogram
 -- (range_empty_frac missing)
 SELECT pg_catalog.pg_restore_extended_stats(
   'schemaname', 'stats_import',
@@ -2048,7 +2040,7 @@ SELECT pg_catalog.pg_restore_extended_stats(
   'statistics_schemaname', 'stats_import',
   'statistics_name', 'test_mr_stat',
   'inherited', false,
-  'exprs', '[{"range_bounds_histogram": "{\"[1,10200)\"}", "range_length_histogram": "{10179}"}]'::jsonb);
+  'exprs', '[{"range_length_histogram": "{10179}"}]'::jsonb);
 -- warn: range bounds histogram with unsorted elements
 SELECT pg_catalog.pg_restore_extended_stats(
   'schemaname', 'stats_import',
