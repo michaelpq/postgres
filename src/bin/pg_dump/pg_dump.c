@@ -11341,6 +11341,13 @@ dumpRelationStats_dumper(Archive *fout, const void *userArg, const TocEntry *te)
 				pg_fatal("could not find index attname \"%s\"", attname);
 		}
 
+		/*
+		 * Prior to v19, range_length_histogram and most_common_elems could
+		 * have a NULL value while corresponding stanumbers field
+		 * (range_empty_frac and most_common_elem_freqs, respectively) had a
+		 * NOT NULL value.  Those values are represented as an empty array
+		 * going forward.
+		 */
 		if (!PQgetisnull(res, rownum, i_inherited))
 			appendNamedArgument(out, fout, "inherited", "boolean",
 								PQgetvalue(res, rownum, i_inherited));
@@ -11368,6 +11375,8 @@ dumpRelationStats_dumper(Archive *fout, const void *userArg, const TocEntry *te)
 		if (!PQgetisnull(res, rownum, i_most_common_elems))
 			appendNamedArgument(out, fout, "most_common_elems", "text",
 								PQgetvalue(res, rownum, i_most_common_elems));
+		else if (fout->remoteVersion < 190000 && !PQgetisnull(res, rownum, i_most_common_elem_freqs))
+			appendNamedArgument(out, fout, "most_common_elems", "text", "{}");
 		if (!PQgetisnull(res, rownum, i_most_common_elem_freqs))
 			appendNamedArgument(out, fout, "most_common_elem_freqs", "real[]",
 								PQgetvalue(res, rownum, i_most_common_elem_freqs));
@@ -11379,6 +11388,8 @@ dumpRelationStats_dumper(Archive *fout, const void *userArg, const TocEntry *te)
 			if (!PQgetisnull(res, rownum, i_range_length_histogram))
 				appendNamedArgument(out, fout, "range_length_histogram", "text",
 									PQgetvalue(res, rownum, i_range_length_histogram));
+			else if (fout->remoteVersion < 190000 && !PQgetisnull(res, rownum, i_range_empty_frac))
+				appendNamedArgument(out, fout, "range_length_histogram", "text", "{}");
 			if (!PQgetisnull(res, rownum, i_range_empty_frac))
 				appendNamedArgument(out, fout, "range_empty_frac", "real",
 									PQgetvalue(res, rownum, i_range_empty_frac));
@@ -18718,7 +18729,27 @@ dumpStatisticsExtStats(Archive *fout, const StatsExtInfo *statsextinfo)
 								 "       'most_common_freqs', ee.most_common_freqs::text, "
 								 "       'histogram_bounds', ee.histogram_bounds::text, "
 								 "       'correlation', ee.correlation::text, "
-								 "       'most_common_elems', ee.most_common_elems::text, "
+								 "       'most_common_elems', ");
+
+			/*
+			 * In versions prior to v19, most_common_elems could be NULL when
+			 * most_common_elem_freqs was NOT NULL.  In such cases the NULL
+			 * value should be replaced with the empty array "{}".
+			 *
+			 * The field range_length_histogram was not yet present in
+			 * pg_stats_ext_exprs until v19, otherwise it would have had the
+			 * same issue.
+			 */
+			if (fout->remoteVersion >= 190000)
+				appendPQExpBufferStr(pq, "ee.most_common_elems::text, ");
+			else
+				appendPQExpBufferStr(pq, "CASE "
+									 "    WHEN ee.most_common_elem_freqs IS NOT NULL "
+									 "    THEN coalesce(ee.most_common_elems::text, '{}'::text) "
+									 "    ELSE ee.most_common_elems::text "
+									 "END, ");
+
+			appendPQExpBufferStr(pq,
 								 "       'most_common_elem_freqs', ee.most_common_elem_freqs::text, "
 								 "       'elem_count_histogram', ee.elem_count_histogram::text");
 
