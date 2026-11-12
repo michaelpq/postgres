@@ -3103,4 +3103,35 @@ SELECT pg_catalog.pg_restore_attribute_stats(
     'most_common_elems', '{{one},{two}}'::text,
     'most_common_elem_freqs', '{0.1,0.1,0.1,0.1,0}'::real[]);
 
+-- BUG #19842
+TRUNCATE TABLE stats_import.test;
+
+INSERT INTO stats_import.test(id, arange)
+VALUES (1, int4range(1,5)), (2, 'empty'::int4range);
+
+CREATE STATISTICS stats_import.range_stat ON (arange * int4range(1,10))
+FROM stats_import.test;
+
+ANALYZE stats_import.test;
+
+SELECT * FROM pg_catalog.pg_restore_extended_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'statistics_schemaname', 'stats_import',
+    'statistics_name', 'range_stat',
+    'inherited', 'f'::boolean,
+    'exprs', '[{"avg_width": "13","null_frac": "0","n_distinct": "-1",
+                "range_empty_frac": "0.5"}]'::jsonb
+);
+
+SELECT * FROM pg_catalog.pg_restore_extended_stats(
+    'schemaname', 'stats_import',
+    'relname', 'test',
+    'statistics_schemaname', 'stats_import',
+    'statistics_name', 'range_stat',
+    'inherited', 'f'::boolean,
+    'exprs', '[{"avg_width": "13","null_frac": "0","n_distinct": "-1",
+                "range_length_histogram": "{}", "range_empty_frac": "0.5"}]'::jsonb
+);
+
 DROP SCHEMA stats_import CASCADE;
