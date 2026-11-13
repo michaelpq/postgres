@@ -1555,6 +1555,9 @@ tblspc_redo(XLogReaderState *record)
 		/* Close all smgr fds in all backends. */
 		WaitForProcSignalBarrier(EmitProcSignalBarrier(PROCSIGNAL_BARRIER_SMGRRELEASE));
 
+		/* Update minimum recovery point first, as in dbase_redo() */
+		XLogFlush(record->EndRecPtr);
+
 		/*
 		 * If we issued a WAL record for a drop tablespace it implies that
 		 * there were no files in it at all when the DROP was done. That means

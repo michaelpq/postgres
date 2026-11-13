@@ -3471,6 +3471,12 @@ dbase_redo(XLogReaderState *record)
 		/* Close all smgr fds in all backends. */
 		WaitForProcSignalBarrier(EmitProcSignalBarrier(PROCSIGNAL_BARRIER_SMGRRELEASE));
 
+		/*
+		 * Update minimum recovery point to cover this record before removing
+		 * the files, like xact_redo_commit() does for dropped relations.
+		 */
+		XLogFlush(record->EndRecPtr);
+
 		for (i = 0; i < xlrec->ntablespaces; i++)
 		{
 			dst_path = GetDatabasePath(xlrec->db_id, xlrec->tablespace_ids[i]);
