@@ -300,7 +300,7 @@ ProcessQuery(PlannedStmt *plan,
  * ChoosePortalStrategy
  *		Select portal execution strategy given the intended statement list.
  *
- * The list elements can be Querys or PlannedStmts.
+ * List elements can be pointers to Query or PlannedStmt objects.
  * That's more general than portals need, but plancache.c uses this too.
  *
  * See the comments in portal.h.
